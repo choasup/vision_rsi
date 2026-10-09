@@ -35,6 +35,17 @@ class CandidateTests(unittest.TestCase):
         (Path(record['checkout'])/'vision_rsi/strategy_candidate.py').write_text('changed = True')
         with self.assertRaisesRegex(ValueError,'Git state changed'):self.store.verify(record)
 
+    def test_recommitting_modified_candidate_cannot_relabel_original_proposal(self):
+        record=self.store.create(proposal(),{})
+        checkout=Path(record['checkout']);name='vision_rsi/strategy_candidate.py'
+        (checkout/name).write_text('def choose(rows):\n    return None\n')
+        git(checkout,'add',name)
+        git(checkout,'-c','user.name=Test','-c','user.email=test@local.invalid','commit','--amend','-m','tampered')
+        record['git_revision']=git(checkout,'rev-parse','HEAD')
+        import hashlib
+        record['source_hashes'][name]=hashlib.sha256((checkout/name).read_bytes()).hexdigest()
+        with self.assertRaisesRegex(ValueError,'original proposal'):self.store.verify(record)
+
     def test_protected_paths_invalid_code_and_base_hash(self):
         for name in ('vision_rsi/acceptance.py','vision_rsi/contracts.py','vision_rsi/jobs.py','../escape.py','vision_rsi/strategy_X.py'):
             changed=proposal();changed['edits'][0]['path']=name

@@ -1,0 +1,18 @@
+[
+  {
+    "history": [],
+    "actions": [
+      {"id": "inspect-errors", "estimated_cost": 1, "expected_gain": 0.5, "uncertainty": 0.1, "kind": "analysis"},
+      {"id": "train-candidate", "estimated_cost": 8, "expected_gain": 2, "uncertainty": 0.2, "kind": "training"}
+    ],
+    "budget": 2
+  },
+  {
+    "history": [{"id": "inspect-errors", "status": "completed", "kind": "analysis", "observed_gain": 0.1}],
+    "actions": [
+      {"id": "inspect-errors", "estimated_cost": 1, "expected_gain": 0.5, "uncertainty": 0.1, "kind": "analysis"},
+      {"id": "train-candidate", "estimated_cost": 8, "expected_gain": 2, "uncertainty": 0.2, "kind": "training"}
+    ],
+    "budget": 2
+  }
+]

@@ -91,15 +91,18 @@ class Candidates:
 
     def verify(self,record):
         if digest(record['identity'])!=record['candidate_id']:raise ValueError('Candidate identity changed')
+        validate_proposal(record['identity']['proposal'])
         checkout=Path(record['checkout'])
-        if not checkout.resolve().is_relative_to(self.root):raise ValueError('Candidate checkout outside store')
+        if checkout.resolve()!=(self.root/record['candidate_id']/'checkout').resolve():raise ValueError('Candidate checkout outside expected identity')
         if git(checkout,'rev-parse','HEAD')!=record['git_revision'] or git(checkout,'status','--porcelain','--untracked-files=all'):
             raise ValueError('Candidate Git state changed')
         if git(checkout,'rev-parse','HEAD^')!=record['identity']['base_revision']:raise ValueError('Candidate parent changed')
         edits=record['identity']['proposal']['edits']
         if set(git(checkout,'diff','--name-only','HEAD^','HEAD').splitlines())!={edit['path'] for edit in edits}:
             raise ValueError('Candidate changes outside proposal')
-        for name,expected in record['source_hashes'].items():
+        proposal_hashes={edit['path']:hashlib.sha256(edit['content'].encode('utf-8')).hexdigest() for edit in edits}
+        if record['source_hashes']!=proposal_hashes:raise ValueError('Candidate hashes differ from original proposal')
+        for name,expected in proposal_hashes.items():
             if hashlib.sha256((checkout/name).read_bytes()).hexdigest()!=expected:raise ValueError('Candidate source changed')
         return record
 
@@ -228,4 +231,6 @@ def main(argv):
             for record in records:
                 print('候选: '+record['candidate_id']+'\n状态: '+record['status']+'\nGit: '+record['git_revision']+
                       '\n假设: '+record['identity']['proposal']['hypothesis']+'\n已采用: 否')
+    except (ValueError,TypeError,KeyError,SyntaxError,OSError,RuntimeError,subprocess.SubprocessError) as error:
+        parser.exit(1,str(error)+'\n')
     finally:store.close()
