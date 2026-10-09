@@ -110,6 +110,12 @@ class Sessions:
                 db.execute('CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,task TEXT,turns TEXT,versions TEXT,pending INTEGER)')
                 yield db
         finally: db.close()
+    def list(self):
+        with self.db() as db:
+            rows = db.execute('SELECT id FROM sessions ORDER BY rowid DESC').fetchall()
+        return [{'session_id': r['session_id'], 'task_id': r['task_id'], 'status': r['status'],
+                 'contract_version': len(r['versions'])} for r in (self.show(row[0]) for row in rows)]
+
     def create(self,name,goal):
         task_id(name)
         if not isinstance(goal,str) or not goal.strip(): raise ValueError('goal is required')
@@ -150,3 +156,20 @@ class Sessions:
             turns.append({'role':'assistant','content':json.dumps({'contract':contract,'issues':errors},ensure_ascii=False)})
             db.execute('UPDATE sessions SET turns=?,versions=?,pending=0 WHERE id=?',(json.dumps(turns,ensure_ascii=False),json.dumps(versions,ensure_ascii=False),session))
         return self.show(session)
+
+
+def validate_manifest(contract, path):
+    results=[]; seen=set()
+    for line_number,line in enumerate(Path(path).read_text(encoding='utf-8-sig').splitlines(),1):
+        if not line.strip(): continue
+        sample_id=None
+        try:
+            sample=json.loads(line)
+            sample_id=sample.get('sample_id') if isinstance(sample,dict) else None
+            validate_sample(contract,sample)
+            if sample_id in seen: raise ValueError('Duplicate sample_id')
+            seen.add(sample_id)
+            results.append({'line':line_number,'sample_id':sample_id,'valid':True})
+        except (ValueError,TypeError,KeyError) as error:
+            results.append({'line':line_number,'sample_id':sample_id,'valid':False,'error':str(error)})
+    return {'valid':bool(results) and all(r['valid'] for r in results),'samples':results,'media_decoded':False}

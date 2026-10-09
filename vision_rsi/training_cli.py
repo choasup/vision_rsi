@@ -4,15 +4,29 @@ import hashlib
 import json
 from pathlib import Path
 
-from .contracts import Sessions, validate_sample, validate_schema
+from .contracts import Sessions, validate_sample, validate_schema, validate_manifest
+
+
+def summary(result):
+    lines=['任务: '+result['task_id'], '会话: '+result['session_id'], '阶段: '+result['status']]
+    if not result['versions']: return '\n'.join(lines+['尚未定义接口，请补充需求。'])
+    latest=result['versions'][-1];contract=latest['contract']
+    lines+=['接口版本: '+str(latest['version']), '目标: '+str(contract.get('goal','待定义'))]
+    for name,field in contract.get('inputs',{}).items():
+        lines.append('输入 '+name+': '+str(field.get('type'))+' / '+('必填' if field.get('required') else '可选'))
+    lines.append('输出字段: '+', '.join(contract.get('output_schema',{}).get('properties',{})))
+    if latest['issues']: lines+=['待澄清/修正:']+['- '+x for x in latest['issues']]
+    else: lines.append('接口检查通过，可导出。训练适配器尚待接入。')
+    return '\n'.join(lines)
 
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','list','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
+    parser.add_argument('--manifest', help='JSONL samples for batch protocol validation')
     parser.add_argument('--interactive',action='store_true');parser.add_argument('--offline',action='store_true')
     parser.add_argument('--sessions',default='runs/training-sessions')
     parser.add_argument('--config',default='config.local.json')
@@ -22,6 +36,9 @@ def main(argv):
         config=json.loads(Path(args.config).read_text(encoding='utf-8'))
         return store.clarify(session,config['llm'],message)
     try:
+        if args.action=='list':
+            print(json.dumps(store.list(),ensure_ascii=False,indent=2))
+            return
         if args.action=='start':
             goal=Path(args.requirements).read_text(encoding='utf-8') if args.requirements else args.goal
             if not goal and args.interactive: goal=input('请描述任务目标、输入输出与效果要求：\n> ')
@@ -43,7 +60,10 @@ def main(argv):
                 if latest['issues']: raise ValueError('Interface incomplete: '+'; '.join(latest['issues']))
                 contract=latest['contract']
                 if args.action=='validate':
-                    if args.sample: result=validate_sample(contract,json.loads(Path(args.sample).read_text(encoding='utf-8')))
+                    if sum(bool(x) for x in (args.sample,args.result,args.manifest)) > 1:
+                        raise ValueError('Choose only one: --sample, --manifest, --result')
+                    if args.manifest: result=validate_manifest(contract,args.manifest)
+                    elif args.sample: result=validate_sample(contract,json.loads(Path(args.sample).read_text(encoding='utf-8')))
                     elif args.result:
                         validate_schema(contract['output_schema'],json.loads(Path(args.result).read_text(encoding='utf-8')))
                         result={'valid':True}
@@ -56,9 +76,17 @@ def main(argv):
                     result={'status':'blocked','session_id':session,'contract_version':latest['version'],'reason':'接口定义已完成；通用 harness 构建/训练适配器尚未接入。未执行训练或注册能力。'}
         if args.interactive:
             while True:
-                print(json.dumps(result,ensure_ascii=False,indent=2))
-                message=input('补充或纠正需求（/quit 保存退出，/show 查看）：\n> ').strip()
+                print(summary(result))
+                try:
+                    message=input('补充需求（/quit 退出，/show 摘要，/contract 完整接口）：\n> ').strip()
+                except (EOFError, KeyboardInterrupt):
+                    print('\n会话已保存。session_id: '+session)
+                    break
                 if message=='/quit': break
+                if message=='/contract':
+                    current=store.show(session)
+                    print(json.dumps(current['versions'][-1]['contract'] if current['versions'] else {},ensure_ascii=False,indent=2))
+                    continue
                 if message=='/show': result=store.show(session)
                 elif message: result=clarify(session,message)
         else: print(json.dumps(result,ensure_ascii=False,indent=2))

@@ -1,0 +1,1 @@
+{  "sample_id": "sample-001",  "inputs": {    "views": {      "type": "image_list",      "items": [        {          "uri": "front.jpg"        },        {          "uri": "side.jpg"        }      ]    },    "clip": {      "type": "video",      "uri": "clip.mp4"    }  }}

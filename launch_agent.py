@@ -2,6 +2,8 @@
 import argparse
 import json
 import os
+import sys
+import runpy
 from pathlib import Path
 from urllib.request import urlopen
 from urllib.error import URLError
@@ -9,6 +11,18 @@ from urllib.error import URLError
 
 def main():
     os.chdir(Path(__file__).resolve().parent)
+    if len(sys.argv) > 1 and sys.argv[1] == '--cli':
+        if os.name == 'nt' and not os.environ.get('DEEPSEEK_API_KEY'):
+            import winreg
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as registry:
+                    value, _ = winreg.QueryValueEx(registry, 'DEEPSEEK_API_KEY')
+                    if isinstance(value, str): os.environ['DEEPSEEK_API_KEY'] = value
+            except OSError:
+                pass
+        sys.argv = ['vision-rsi'] + sys.argv[2:]
+        runpy.run_module('vision_rsi', run_name='__main__')
+        return
     parser = argparse.ArgumentParser()
     parser.add_argument('--check', action='store_true', help='Validate launch setup without starting a server')
     args = parser.parse_args()

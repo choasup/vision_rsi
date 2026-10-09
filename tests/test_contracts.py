@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
-from vision_rsi.contracts import Sessions,issues,validate_sample,validate_schema
+from vision_rsi.contracts import Sessions,issues,validate_sample,validate_schema,validate_manifest
 
 class ContractTests(unittest.TestCase):
     def setUp(self): self.contract=json.loads(Path('examples/interface-contract.json').read_text())
@@ -35,3 +35,28 @@ class ContractTests(unittest.TestCase):
             before=client.return_value.complete.call_count
             with self.assertRaises(RuntimeError):store.clarify(session,{'model':'fixture'})
             self.assertEqual(client.return_value.complete.call_count,before)
+
+
+class ManifestTests(unittest.TestCase):
+    def test_batch_errors_do_not_hide_valid_rows(self):
+        contract=json.loads(Path('examples/interface-contract.json').read_text())
+        with tempfile.TemporaryDirectory() as root:
+            path=Path(root)/'samples.jsonl'
+            sample=contract['example_input']
+            path.write_text(json.dumps(sample)+'\n'+json.dumps(sample)+'\n{invalid json}\n',encoding='utf-8')
+            result=validate_manifest(contract,path)
+            self.assertFalse(result['valid'])
+            self.assertEqual([x['valid'] for x in result['samples']],[True,False,False])
+
+    @patch('builtins.input', return_value='/quit')
+    def test_resume_interactive_without_model_request(self,_):
+        from vision_rsi.training_cli import main
+        import contextlib,io
+        with tempfile.TemporaryDirectory() as root:
+            store=Sessions(root)
+            session=store.create('test','goal')['session_id']
+            store.define(session,json.loads(Path('examples/interface-contract.json').read_text()))
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                main(['show','--session-id',session,'--interactive','--sessions',root])
+            self.assertIn(session,output.getvalue())
+            self.assertEqual(len(store.list()),1)

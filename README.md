@@ -163,3 +163,23 @@ python -m vision_rsi training export --session-id SESSION --output runs/task-con
 会话存于 runs/training-sessions/sessions.sqlite3；define 和每轮模型解析生成新版本，旧版本保留。导出含任务代号、会话、契约版本和内容哈希，供后续 harness 构建使用。validate --result result.json 可验证输出结构。样本校验只验证协议，不读取/解码媒体，不表示模型支持多图或视频。
 
 状态 ready_for_harness 表示当前声明满足协议检查，不等于用户确认语义、真实可实现、已训练或已验收。模型不得自行放宽验收条件，但跨轮语义变更尚需用户检查版本，尚无自动语义差异审核。training run --session-id SESSION 在接口不完整时拒绝执行；完整时明确 blocked，因为通用 harness/训练适配器未接入。旧 training --task examples/toy-task.json 接口保留用于早期能力生命周期测试。
+
+## Windows CLI 试用入口
+
+无需系统 Python 或 PowerShell 脚本权限，在项目根目录使用：
+
+```powershell
+.\vision-rsi.cmd training start --task-id my-vision-task --interactive
+.\vision-rsi.cmd training list
+.\vision-rsi.cmd training show --session-id SESSION --interactive
+```
+
+启动器优先使用 Codex 自带 Python，CLI 默认从当前进程或 Windows 用户 DEEPSEEK_API_KEY 环境变量读取 Key，不打印值。start 默认读取 config.local.json；其它 provider/环境变量需自行按其配置设置。离线 show/list/define/validate 不要求 API Key。界面应用入口 start-agent.cmd 保持原行为。
+
+交互显示摘要，/show 查看当前状态，/contract 展开完整接口，/quit 保存退出；EOF/Ctrl+C 在输入阶段保留已保存会话。接口仍未定义完整时持续保持 clarifying。
+
+```powershell
+.\vision-rsi.cmd training validate --session-id SESSION --manifest examples/multimodal-batch.jsonl
+```
+
+JSONL 每行一个联合样本，逐行检查输入协议并拒绝重复 sample_id，单行错误不会中断后续行。这里是 Training 任务接口的批量校验，还不是批量媒体推理；不会读取或解码媒体文件。测试推理入口暂仍使用旧矩阵示例适配器。

@@ -137,3 +137,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - [ ] 语义差异/验收条件变更审核、自动 harness 生成、媒体解码、训练执行与 RSI。
 
 当前训练任务阶段可以产出接口定义；training run 不会伪造训练，返回缺少适配器的 blocked 状态。
+
+## CLI 试用可用性
+
+- [x] vision-rsi.cmd 命令入口，绕过对系统 Python 和 .ps1 执行权限的依赖。
+- [x] Training 会话列表与交互恢复、摘要视图、完整契约查看、退出保留记录。
+- [x] JSONL 批量样本协议校验、重复 ID 检查、逐行错误报告。
+- [x] 真实启动器验证交互恢复和批量校验；29 项测试通过。本次未额外调用 LLM 或远程训练。
