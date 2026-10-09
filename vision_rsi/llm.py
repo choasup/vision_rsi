@@ -18,6 +18,8 @@ class OpenAICompatibleClient:
             raise ValueError('LLM base_url must use HTTPS')
         payload = {'model': self.config['model'], 'messages': messages,
                    'max_tokens': max_tokens, 'stream': False}
+        if 'thinking' in self.config:
+            payload['thinking'] = {'type': self.config['thinking']}
         request = Request(base + '/chat/completions',
                           data=json.dumps(payload).encode(),
                           headers={'Authorization': 'Bearer ' + key,
