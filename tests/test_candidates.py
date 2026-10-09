@@ -20,6 +20,7 @@ class CandidateTests(unittest.TestCase):
         root=Path(self.temp.name);self.repo=root/'source';self.repo.mkdir()
         git(self.repo,'init');(self.repo/'vision_rsi').mkdir()
         (self.repo/'vision_rsi/research.py').write_text('BASELINE = True\n')
+        (self.repo/'vision_rsi/controller.py').write_text('CONTROLLER = True\n')
         git(self.repo,'add','.');git(self.repo,'-c','user.name=Test','-c','user.email=test@local.invalid','commit','-m','baseline')
         self.store=Candidates(root/'candidates',self.repo);self.addCleanup(self.store.close)
 
@@ -64,3 +65,27 @@ class CandidateTests(unittest.TestCase):
     def test_dirty_main_source_refused(self):
         (self.repo/'vision_rsi/research.py').write_text('changed = True')
         with self.assertRaisesRegex(ValueError,'Commit tracked'):self.store.create(proposal(),{})
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_empty_flash_response_is_saved_without_retry(self,client):
+        client.return_value.complete.return_value={'model':'deepseek-flash','content':'','usage':{'completion_tokens':6000}}
+        config={'model':'deepseek-flash','base_url':'https://fixture.invalid'}
+        for _ in range(2):
+            with self.assertRaisesRegex(ValueError,'no proposal text'):self.store.propose('flash-empty',{},[],config)
+        client.return_value.complete.assert_called_once()
+        self.assertEqual(client.call_args.args[0]['thinking'],'disabled')
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_runtime_check_preserves_untrusted_observation_without_adoption(self,remote):
+        record=self.store.create(proposal(),{'task':'test'})
+        def response(endpoint,request):
+            return {'status':'executed_unverified','source_hashes':request['source_hashes'],
+                    'observation':{'results':[{'adopt_rule_met':True}]},'adopted':False}
+        remote.side_effect=response
+        result=self.store.check(record['candidate_id'],{'workspace':'/workspace'},'vision_rsi.strategy_candidate','choose',[{'rows':[]}])
+        self.assertFalse(result['adopted']);self.assertTrue(Path(result['report_path']).is_file())
+        self.assertFalse(self.store.verify(record)['runtime_verified'])
+        remote.return_value={'status':'executed_unverified','source_hashes':{}}
+        remote.side_effect=None
+        with self.assertRaisesRegex(ValueError,'identity mismatch'):
+            self.store.check(record['candidate_id'],{'workspace':'/workspace'},'vision_rsi.strategy_candidate','choose',[{}])

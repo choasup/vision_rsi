@@ -152,3 +152,15 @@ def serving_step(remote,endpoint,source_path,wall_seconds_budget,chunk_size=10):
     result=subprocess.run(ssh_argv(remote)+[command],input=json.dumps(request),capture_output=True,text=True,timeout=330)
     if result.returncode:raise RuntimeError('Serving evaluation failed: '+result.stderr[-2000:])
     return json.loads(result.stdout)
+
+
+def check_candidate(remote,request):
+    import base64
+    from pathlib import Path
+    source=Path(__file__).with_name('candidate_runtime.py').read_bytes()
+    encoded=base64.b64encode(source).decode()
+    program="import base64; exec(compile(base64.b64decode('"+encoded+"'), '<candidate-check>', 'exec'))"
+    command=shlex.quote(remote.get('python','python3'))+' -c '+shlex.quote(program)
+    result=subprocess.run(ssh_argv(remote)+[command],input=json.dumps(dict(request,workspace=remote['workspace'])),capture_output=True,text=True,timeout=30)
+    if result.returncode:raise RuntimeError('Candidate check failed: '+result.stderr[-2000:])
+    return json.loads(result.stdout)

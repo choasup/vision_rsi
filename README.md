@@ -7,9 +7,13 @@
 .\vision-rsi.cmd candidate propose --session-id SESSION_ID --evidence evidence.json --request-id research-001
 .\vision-rsi.cmd candidate list
 .\vision-rsi.cmd candidate show --candidate-id CANDIDATE_SHA256
+# cases.json为函数关键字参数对象数组；检查结果保存在候选checks目录
+.\vision-rsi.cmd candidate check --candidate-id CANDIDATE_SHA256 --module vision_rsi.strategy_NAME --function propose --cases cases.json
 ```
 
-首次调用前需要提交主仓库已有源码修改。LLM调用先持久化请求，再保存响应；响应不确定时拒绝自动重复请求。候选限制在策略、harness、adapter模块，不能改写验收、调度和预算控制代码。隔离Git仓库并不等于运行安全沙箱；候选运行与同预算保留任务配对验收仍待接入。
+首次调用前需要提交主仓库已有源码修改。LLM调用先持久化请求，再保存响应；响应不确定时拒绝自动重复请求。候选限制在策略、harness、adapter模块，不能改写验收、调度和预算控制代码。
+
+candidate check在远端bubblewrap隔离命名空间中运行纯Python策略：使用系统Python3.12、只读源码和标准库、不挂载用户目录/密钥/GPU、不联网、清空环境，限制12秒墙钟及每进程5秒CPU/512MiB地址空间，最多32进程。它不安装候选依赖，不支持torch训练；缺少隔离条件直接失败。Git隔离不代表执行隔离，执行检查也不代表效果验收；候选返回的adopt_rule_met等字段都是未经信任的观察，控制程序不会据此采用。真正的同预算保留任务配对效果验收仍待接入。
 
 Windows 本地研究控制器，通过 SSH 调度独立 8 卡 H20 服务器；LLM 服务独立且可替换。
 项目目标是通用视觉递归自我改进（RSI）研究 Agent，支持逐步扩展到不同视觉任务、数据集和评测协议。COCO 目标检测 box AP 只是第一个验证实验，不定义 Agent 的能力边界。当前版本只有确定性模拟闭环，**没有真实训练、COCO 指标计算；LLM 客户端已支持真实 API 调用**。
