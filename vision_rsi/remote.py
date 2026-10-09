@@ -81,3 +81,32 @@ def detector_request(remote, action):
                           capture_output=True,text=True,timeout=120)
     if result.returncode: raise RuntimeError('Detector adapter failed: '+result.stderr[-2000:])
     return json.loads(result.stdout)
+
+
+def deploy_training(remote, plan):
+    """Transfer only pinned Python sources, task contract and recipe; no secrets."""
+    import base64
+    import hashlib
+    from pathlib import Path
+    from .runner import digest
+    files={}
+    hashes={}
+    for path in sorted(Path(__file__).parent.glob('*.py')):
+        content=path.read_bytes();name='vision_rsi/'+path.name
+        files[name]=base64.b64encode(content).decode()
+        hashes[name]=hashlib.sha256(content).hexdigest()
+    if {Path(name).name:value for name,value in hashes.items()}!=plan['source_hashes']:
+        raise ValueError('Source changed after Training plan was prepared')
+    identity={'sources':hashes,'recipe':plan['recipe'],'contract':plan['contract']}
+    bundle_id=digest(identity)
+    request={'workspace':remote['workspace'],'bundle_id':bundle_id,'files':files,
+             'recipe':plan['recipe'],'contract':plan['contract']}
+    source=Path(__file__).with_name('deployment.py').read_bytes()
+    encoded=base64.b64encode(source).decode()
+    program="import base64; exec(compile(base64.b64decode('"+encoded+"'), '<training-deploy>', 'exec'))"
+    command=shlex.quote(remote.get('python','python3'))+' -c '+shlex.quote(program)
+    result=subprocess.run(ssh_argv(remote)+[command],input=json.dumps(request),capture_output=True,text=True,timeout=60)
+    if result.returncode: raise RuntimeError('Training deployment failed: '+result.stderr[-2000:])
+    response=json.loads(result.stdout)
+    if response.get('bundle_id')!=bundle_id: raise ValueError('Remote bundle identity mismatch')
+    return response

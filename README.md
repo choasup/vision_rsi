@@ -162,7 +162,7 @@ python -m vision_rsi training export --session-id SESSION --output runs/task-con
 
 会话存于 runs/training-sessions/sessions.sqlite3；define 和每轮模型解析生成新版本，旧版本保留。导出含任务代号、会话、契约版本和内容哈希，供后续 harness 构建使用。validate --result result.json 可验证输出结构。样本校验只验证协议，不读取/解码媒体，不表示模型支持多图或视频。
 
-状态 ready_for_harness 表示当前声明满足协议检查，不等于用户确认语义、真实可实现、已训练或已验收。模型不得自行放宽验收条件，但跨轮语义变更尚需用户检查版本，尚无自动语义差异审核。training run --session-id SESSION 在接口不完整时拒绝执行；完整时明确 blocked，因为通用 harness/训练适配器未接入。旧 training --task examples/toy-task.json 接口保留用于早期能力生命周期测试。
+状态 ready_for_harness 表示当前声明满足协议检查，不等于用户确认语义、真实可实现、已训练或已验收。模型不得自行放宽验收条件，但跨轮语义变更尚需用户检查版本，尚无自动语义差异审核。training run --session-id SESSION 会准备任务计划；执行条件完整时部署固定 COCO adapter 并提交 SSH 作业，否则返回 blocked。通用方法研究和 RSI 尚未接入。旧 training --task examples/toy-task.json 接口保留用于早期能力生命周期测试。
 
 ## Windows CLI 试用入口
 
@@ -255,14 +255,31 @@ python PATH_TO_HARNESS/harness.py validate-output --input result.json
 
 这只是规格示例，不表示已授权或启动训练。GPU 预算必须覆盖卡数×超时，加上 5 秒退出余量；设备索引限定 0..7。CPU 默认不暴露 CUDA，仍限制 300 秒。worker 使用单调时钟控制执行时间，结束时按卡数×实际 worker 时长记账；OS 调度延迟可能产生少量边界误差，并非硬实时计费上限。
 
-Linux flock 租约阻止同一专用工作区内 Agent 作业重复占卡，子进程继承租约文件描述符；这不检查其他工作区或外部程序的 GPU 使用，正式运行前必须重新核查。取消/超时会终止进程组并清理残留子进程。已在真实服务器验证 CPU 正常执行、重复提交、超时、取消和租约冲突/释放，未验证长时间 GPU 任务，也尚未实现多个任务共享总预算的队列准入。
+Linux flock 租约阻止同一专用工作区内 Agent 作业重复占卡，子进程继承租约文件描述符；这不检查其他工作区或外部程序的 GPU 使用，正式运行前必须重新核查。取消/超时会终止进程组并清理残留子进程。已在真实服务器验证 CPU 正常执行、重复提交、超时、取消和租约冲突/释放，未验证长时间 GPU 任务，Training 提交层已加入同一会话下的预算预留和结算；其他底层 job-submit 调用仍是独立预算，不能绕过 Training 入口用于研究任务。
 
 ## 检测训练适配器（开发中）
 
-`training prepare --session-id SESSION --config config.local.json` 将保存的任务契约绑定到首个 COCO baseline 配方，生成不可覆盖的结构化计划；保留原验收阈值，默认选择检测器与优化参数，不要求用户填写架构。该命令只准备计划，不启动训练。当前 `training run` 尚未接入此计划的 SSH 自动部署与提交，仍会明确阻塞。
+`training prepare --session-id SESSION --config config.local.json` 将保存的任务契约绑定到首个 COCO baseline 配方，生成不可覆盖的结构化计划；保留原验收阈值，默认选择检测器与优化参数，不要求用户填写架构。该命令只准备计划，不启动训练。`training run` 已接入此计划的 SSH 自动封装与提交；执行条件不完整时明确阻塞。
 
 实际 GPU 训练入口已实现为 `python -m vision_rsi.coco_train --recipe recipe.json --output /absolute/run-dir`，多卡使用 `python -m torch.distributed.run --standalone --nproc-per-node=8 -m vision_rsi.coco_train ...`。恢复需要显式 `--resume`，并保持相同配方、代码、图像内容和世界大小。配方要求绝对数据/权重路径、权重及 train/val 标注 SHA256；支持 epochs、batch_size_per_gpu、seed、checkpoint_steps、world_size、min_size、max_size、learning_rate、weight_decay 和 acceptance_threshold。模型默认 torchvision Faster R-CNN ResNet50 FPN v2，固定 torch 2.6.0+cu124、torchvision 0.21.0+cu124、pycocotools 2.0.11，无隐式下载。
 
-正式运行读取完整 train2017/val2017，保留 80 类稀疏 ID，拒绝缺失图像、路径逃逸、非有限损失/梯度及配方变化。检查点保存模型、优化器、当前 epoch/样本游标、各 rank RNG；训练完成后生成全量预测和覆盖清单，再执行官方评测。SIGTERM 在步边界尝试保存，硬退出只能恢复到最近已保存步骤；已消耗时间由作业层计账。GPU 总预算的跨候选扣减尚待接入。
+正式运行读取完整 train2017/val2017，保留 80 类稀疏 ID，拒绝缺失图像、路径逃逸、非有限损失/梯度及配方变化。检查点保存模型、优化器、当前 epoch/样本游标、各 rank RNG；训练完成后生成全量预测和覆盖清单，再执行官方评测。SIGTERM 在步边界尝试保存，硬退出只能恢复到最近已保存步骤；已消耗时间由作业层计账。Training 提交层按会话预留跨作业 GPU 总预算，查询终态后结算实际消耗；RSI 调度器仍待接入。
 
 已在 H20 验证单卡与双卡 NCCL/DDP 的小型合成数据训练→检查点→推理→评测，另验证已完成检查点恢复时不重复训练。尚未验证训练中断后的数值一致性、8 卡完整训练或真实 COCO AP。合成 fixture 使用随机初始权重，始终拒绝 COCO 达标验收；正式 Training 计划强制 fixture=false。训练产物尚未自动注册为推理能力。
+
+
+## Training 作业使用
+
+```powershell
+.\vision-rsi.cmd training run --session-id SESSION
+.\vision-rsi.cmd training status --session-id SESSION
+.\vision-rsi.cmd training logs --session-id SESSION
+.\vision-rsi.cmd training cancel --session-id SESSION
+.\vision-rsi.cmd training runs --session-id SESSION
+```
+
+status/logs/cancel 也可使用 `--run-id` 指定历史作业。prepare/run/status 默认显示摘要，`--json` 输出完整记录。`runs/training-runs` 保存会话预算及作业关联，不能删除后继续同一研究，否则会丢失账本。多个本地账本或不同机器仍不能共享这个预算；上线前需统一权威账本。
+
+运行时检查源文件是否仍匹配计划，将源码、契约和配方封装到远端按内容寻址的 releases 目录，复用前及启动前校验哈希。远端必须已有固定 torch/torchvision 和 pycocotools 2.0.11（可安装在专用工作区 runtime-coco-2.0.11）。提交响应不确定时保留预算，重复 run 返回原运行记录，不自动重启；用 status 核对同一 ID。远端 lost 或提交目录不完整需人工诊断，不会自动释放预算后重跑。
+
+远端 completed 仅表示进程正常退出，不能等同达到效果要求。当前尚未自动同步 result/evaluation、注册真实能力或进行后续研究；中断后的 Training resume 入口和预算修订流程也待实现。部署失败且尚未提交作业时结算为零。测试覆盖本地预算预留/结算、重复调用、丢失提交响应、错误目标主机及非法记账；远端验证内容寻址复用、启动前完整性检查和缺配置拒绝。真实 Training CLI 提交仍待数据与预算配置后验证。

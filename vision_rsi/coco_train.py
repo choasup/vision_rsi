@@ -19,6 +19,8 @@ from .runner import atomic_json, digest
 
 
 def validate_recipe(recipe):
+    allowed={'detector','coco_root','weights','weights_sha256','train_annotations_sha256','val_annotations_sha256','epochs','batch_size_per_gpu','seed','checkpoint_steps','world_size','min_size','max_size','learning_rate','weight_decay','fixture','acceptance_threshold'}
+    if not isinstance(recipe,dict) or set(recipe)-allowed: raise ValueError('Unknown training recipe fields')
     if recipe.get('detector')!='torchvision_fasterrcnn_resnet50_fpn_v2':
         raise ValueError('Unsupported frozen baseline detector')
     for key in ('coco_root','weights'):

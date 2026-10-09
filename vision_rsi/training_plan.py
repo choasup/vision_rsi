@@ -31,6 +31,7 @@ def prepare(session,config,root):
     recipe['coco_root']=config.get('remote',{}).get('coco_root') or training.get('coco_root','')
     recipe['acceptance_threshold']=acceptance.get('threshold')
     recipe['fixture']=False  # User tasks can never silently become fixture runs.
+    recipe.pop('timeout_seconds',None)
     try: validate_recipe(recipe)
     except (ValueError,KeyError) as error: blockers.append('训练执行配置待补充: '+str(error))
     world=recipe.get('world_size')
