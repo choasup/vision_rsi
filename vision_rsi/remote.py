@@ -110,3 +110,17 @@ def deploy_training(remote, plan):
     response=json.loads(result.stdout)
     if response.get('bundle_id')!=bundle_id: raise ValueError('Remote bundle identity mismatch')
     return response
+
+
+def collect_training(remote,run_id,output_directory):
+    import base64
+    from pathlib import Path
+    source=Path(__file__).with_name('artifacts.py').read_bytes()
+    encoded=base64.b64encode(source).decode()
+    program="import base64; exec(compile(base64.b64decode('"+encoded+"'), '<training-artifacts>', 'exec'))"
+    command=shlex.quote(remote.get('python','python3'))+' -c '+shlex.quote(program)
+    result=subprocess.run(ssh_argv(remote)+[command],input=json.dumps({'workspace':remote['workspace'],'run_id':run_id,'output_directory':output_directory}),capture_output=True,text=True,timeout=90)
+    if result.returncode: raise RuntimeError('Training collection failed: '+result.stderr[-2000:])
+    response=json.loads(result.stdout)
+    if response.get('run_id')!=run_id: raise ValueError('Collected wrong Training run')
+    return response

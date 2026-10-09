@@ -47,13 +47,19 @@ def execution_summary(result):
         lines.append('需求已保存；执行前需要解决:')
         lines.extend('- '+str(x) for x in immediate[:3])
         if len(blockers)>len(immediate[:3]): lines.append('其他检查项已保存在计划文件中。')
+    verdict=result.get('details',{}).get('acceptance_review')
+    if verdict:
+        lines.append('效果验收: '+str(verdict['status']))
+        if 'box_AP' in verdict: lines.append('box AP: '+str(verdict['box_AP'])+' / 目标: '+str(verdict['threshold']))
+        if verdict.get('reason'): lines.append(verdict['reason'])
+        lines.extend('- '+reason for reason in verdict.get('reasons',[]))
     if result.get('log') is not None: lines.append(result['log'])
     return '\n'.join(lines)
 
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','status','logs','cancel','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','status','logs','cancel','collect','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -71,8 +77,8 @@ def main(argv):
         config=json.loads(Path(args.config).read_text(encoding='utf-8'))
         return store.clarify(session,config['llm'],message)
     try:
-        if args.action in ('status','logs','cancel','runs'):
-            from .training_runs import TrainingRuns,observe
+        if args.action in ('status','logs','cancel','collect','runs'):
+            from .training_runs import TrainingRuns,observe,collect
             runs=TrainingRuns(args.run_store)
             try:
                 if args.action=='runs': result=runs.list(args.session_id)
@@ -83,7 +89,7 @@ def main(argv):
                         if not previous: raise ValueError('No Training runs for this session')
                         run_id=previous[-1]['run_id']
                     config=json.loads(Path(args.config).read_text(encoding='utf-8'))
-                    result=observe(run_id,config['remote'],runs,args.action)
+                    result=collect(run_id,config['remote'],runs) if args.action=='collect' else observe(run_id,config['remote'],runs,args.action)
             finally: runs.close()
             print(json.dumps(result,ensure_ascii=False,indent=2) if args.json or args.action=='runs' else execution_summary(result));return
         if args.action=='list':

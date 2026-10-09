@@ -101,3 +101,29 @@ def observe(run_id,remote,store,action='status'):
         if isinstance(actual,bool) or not isinstance(actual,(int,float)) or not math.isfinite(actual) or actual<0:
             raise ValueError('Invalid remote GPU accounting; reservation retained')
     return store.update(run_id,response['status'],details,actual)
+
+
+def collect(run_id,remote,store):
+    """Reconcile the process, retain the raw receipt, then review task evidence."""
+    from .acceptance import review
+    from .remote import collect_training
+    from .runner import atomic_json
+    record=observe(run_id,remote,store)
+    if record['status']!='completed': raise ValueError('Only completed Training processes can be collected')
+    details=record['details']
+    plan=json.loads(Path(details['plan_path']).read_text(encoding='utf-8'))
+    if digest(plan)!=record['plan_id']: raise ValueError('Local frozen Training plan changed')
+    receipt=collect_training(remote,run_id,details['output_directory'])
+    if receipt['run_id']!=run_id: raise ValueError('Receipt belongs to another run')
+    identity=digest(receipt)
+    folder=store.root/'artifacts'/run_id/identity;folder.mkdir(parents=True,exist_ok=True)
+    destination=folder/'receipt.json'
+    if destination.exists():
+        if json.loads(destination.read_text())!=receipt: raise ValueError('Local receipt identity conflict')
+    else: atomic_json(destination,receipt)
+    try: verdict=review(plan,receipt)
+    except (ValueError,KeyError,TypeError) as error:
+        verdict={'status':'rejected','passed':False,'reason':type(error).__name__+': '+str(error),'capability_registered':False}
+    atomic_json(folder/'review.json',verdict)
+    details['acceptance_review']=verdict;details['receipt_path']=str(destination.resolve())
+    return store.update(run_id,record['status'],details,record['actual_gpu_hours'])

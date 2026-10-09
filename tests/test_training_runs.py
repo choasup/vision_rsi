@@ -62,3 +62,31 @@ class DeploymentValidationTests(unittest.TestCase):
     def test_remote_rejects_path_escape_before_writing(self):
         from vision_rsi.deployment import deploy
         with self.assertRaises(ValueError):deploy({'workspace':'/workspace','files':{'../escape.py':'Zml4dHVyZQ=='}})
+
+class CollectionCoordinatorTests(unittest.TestCase):
+    @patch('vision_rsi.training_runs.job_request')
+    @patch('vision_rsi.remote.collect_training')
+    def test_receipt_persisted_and_fixture_is_not_registered(self,collector,request):
+        import json
+        from pathlib import Path
+        from vision_rsi.runner import digest
+        from vision_rsi.training_runs import collect
+        from test_acceptance import evidence
+        frozen,receipt=evidence(100,True)
+        with tempfile.TemporaryDirectory() as root:
+            store=TrainingRuns(root)
+            try:
+                base=dict(frozen,session_id='session',task_id='task',status='ready_to_submit',scheduler=plan()['scheduler'])
+                base['contract']['budget']={'gpu_hours':.03}
+                path=Path(root)/'plan.json';path.write_text(json.dumps(base))
+                p=dict(base,plan_id=digest(base),plan_path=str(path))
+                record,_=store.reserve(p,REMOTE)
+                details=record['details'];details['output_directory']='/workspace/training/task/'+record['run_id']
+                store.update(record['run_id'],'submitted',details)
+                request.return_value={'status':'completed','gpu_hours':.001}
+                receipt['run_id']=record['run_id'];collector.return_value=receipt
+                result=collect(record['run_id'],REMOTE,store)
+                self.assertEqual(result['details']['acceptance_review']['status'],'not_met')
+                self.assertTrue(Path(result['details']['receipt_path']).exists())
+                self.assertEqual(result['actual_gpu_hours'],.001)
+            finally:store.close()
