@@ -59,7 +59,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','status','logs','cancel','collect','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','status','logs','cancel','collect','resume','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -77,8 +77,8 @@ def main(argv):
         config=json.loads(Path(args.config).read_text(encoding='utf-8'))
         return store.clarify(session,config['llm'],message)
     try:
-        if args.action in ('status','logs','cancel','collect','runs'):
-            from .training_runs import TrainingRuns,observe,collect
+        if args.action in ('status','logs','cancel','collect','resume','runs'):
+            from .training_runs import TrainingRuns,observe,collect,resume
             runs=TrainingRuns(args.run_store)
             try:
                 if args.action=='runs': result=runs.list(args.session_id)
@@ -89,7 +89,9 @@ def main(argv):
                         if not previous: raise ValueError('No Training runs for this session')
                         run_id=previous[-1]['run_id']
                     config=json.loads(Path(args.config).read_text(encoding='utf-8'))
-                    result=collect(run_id,config['remote'],runs) if args.action=='collect' else observe(run_id,config['remote'],runs,args.action)
+                    if args.action=='collect': result=collect(run_id,config['remote'],runs)
+                    elif args.action=='resume': result=resume(run_id,config['remote'],runs)
+                    else: result=observe(run_id,config['remote'],runs,args.action)
             finally: runs.close()
             print(json.dumps(result,ensure_ascii=False,indent=2) if args.json or args.action=='runs' else execution_summary(result));return
         if args.action=='list':

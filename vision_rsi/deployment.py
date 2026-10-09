@@ -54,7 +54,7 @@ def deploy(request):
     try: version=importlib.metadata.version('pycocotools')
     except importlib.metadata.PackageNotFoundError: version=None
     return {'bundle_id':bundle_id,'directory':str(target),'entry':str(target/'train.py'),
-            'recipe':str(target/'recipe.json'),'dependencies_ready':version=='2.0.11','pycocotools_version':version}
+            'recipe':str(target/'recipe.json'),'resume_protocol':2 if b'--checkpoint-sha256' in decoded['vision_rsi/coco_train.py'] else 1,'dependencies_ready':version=='2.0.11','pycocotools_version':version}
 
 
 if __name__=='__main__': print(json.dumps(deploy(json.load(sys.stdin))))

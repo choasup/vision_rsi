@@ -56,3 +56,15 @@ class TrainingPlanTests(unittest.TestCase):
             result=prepare(session,{'training':recipe,'budget_gpu_hours':999},folder)
             self.assertEqual(result['status'],'blocked')
             self.assertIsNone(result['scheduler']['gpu_hours_budget'])
+
+class CheckpointHashTests(unittest.TestCase):
+    def test_changed_checkpoint_rejected_before_training_initialization(self):
+        from unittest.mock import patch
+        from vision_rsi.coco_train import main
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'checkpoint.pt').write_bytes(b'changed')
+            recipe=root/'recipe.json';recipe.write_text('{}')
+            with patch('vision_rsi.coco_train.run') as train:
+                with self.assertRaisesRegex(ValueError,'changed after inspection'):
+                    main(['--recipe',str(recipe),'--output',str(root),'--resume','--checkpoint-sha256','0'*64])
+                train.assert_not_called()

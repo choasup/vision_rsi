@@ -90,3 +90,50 @@ class CollectionCoordinatorTests(unittest.TestCase):
                 self.assertTrue(Path(result['details']['receipt_path']).exists())
                 self.assertEqual(result['actual_gpu_hours'],.001)
             finally:store.close()
+
+class ResumeCoordinatorTests(unittest.TestCase):
+    def setUp(self):
+        import json
+        from pathlib import Path
+        from vision_rsi.runner import digest
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.store=TrainingRuns(self.temp.name);self.addCleanup(self.store.close)
+        base=plan();base.pop('plan_id');base.pop('plan_path')
+        path=Path(self.temp.name)/'plan.json';path.write_text(json.dumps(base))
+        self.plan=dict(base,plan_id=digest(base),plan_path=str(path))
+        record,_=self.store.reserve(self.plan,REMOTE);self.original=record['run_id']
+        details=record['details'];details.update(deployment={'resume_protocol':2},output_directory='/workspace/training/task/'+self.original,
+            spec={'argv':['python3','train.py','--output','/workspace/training/task/'+self.original]})
+        self.store.update(self.original,'cancelled',details,actual=.001)
+    @patch('vision_rsi.remote.collect_training')
+    @patch('vision_rsi.training_runs.job_request')
+    def test_resume_has_stable_id_frozen_checkpoint_and_shared_budget(self,request,inspect):
+        from vision_rsi.training_runs import resume
+        request.side_effect=lambda remote,action,run_id,*args: {'status':'cancelled','gpu_hours':.001} if action=='status' else {'job_id':run_id}
+        inspect.return_value={'checkpoint_sha256':'a'*64,'progress':{'status':'interrupted'}}
+        first=resume(self.original,REMOTE,self.store)
+        second=resume(self.original,REMOTE,self.store)
+        self.assertTrue(second['reused']);self.assertEqual(first['run_id'],second['run_id'])
+        self.assertNotEqual(first['run_id'],self.original)
+        self.assertEqual(first['details']['output_run_id'],self.original)
+        argv=first['details']['spec']['argv']
+        self.assertIn('--resume',argv);self.assertEqual(argv[-2:],['--checkpoint-sha256','a'*64])
+        self.assertEqual(len(self.store.list('session')),2)
+        inspect.return_value['checkpoint_sha256']='b'*64
+        with self.assertRaisesRegex(ValueError,'owns this Training output'):resume(self.original,REMOTE,self.store)
+    @patch('vision_rsi.remote.collect_training')
+    @patch('vision_rsi.training_runs.job_request')
+    def test_active_and_completed_evaluation_cannot_resume(self,request,inspect):
+        from vision_rsi.training_runs import resume
+        request.return_value={'status':'running'}
+        with self.assertRaisesRegex(ValueError,'active'):resume(self.original,REMOTE,self.store)
+        inspect.assert_not_called()
+        request.return_value={'status':'completed','gpu_hours':.001}
+        inspect.return_value={'checkpoint_sha256':'a'*64,'progress':{'status':'evaluated'}}
+        with self.assertRaisesRegex(ValueError,'already evaluated'):resume(self.original,REMOTE,self.store)
+    def test_resume_reservation_is_capped_to_remaining_budget(self):
+        record=self.store.get(self.original)
+        self.store.update(self.original,'cancelled',record['details'],actual=.027)
+        record,created=self.store.reserve(self.plan,REMOTE,attempt='resume',cap_to_remaining=True)
+        self.assertTrue(created);self.assertLess(record['reserved_gpu_hours'],.0031)
+        self.assertLess(record['details']['scheduler']['timeout_seconds'],40)

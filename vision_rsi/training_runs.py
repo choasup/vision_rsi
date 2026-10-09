@@ -34,22 +34,34 @@ class TrainingRuns:
     def update(self,run_id,state,details,actual=None):
         with self.db:self.db.execute('UPDATE runs SET state=?,details=?,actual=? WHERE id=?',(state,json.dumps(details),actual,run_id))
         return self.get(run_id)
-    def reserve(self,plan,remote):
+    def reserve(self,plan,remote,attempt=None,cap_to_remaining=False,active_output=None):
         if plan['status']!='ready_to_submit': raise ValueError('Training plan is blocked')
-        scheduler=plan['scheduler'];total=plan['contract']['budget']['gpu_hours']
-        reserved=len(scheduler['gpu_devices'])*(scheduler['timeout_seconds']+5)/3600
-        if not math.isfinite(reserved) or reserved<=0 or reserved>total: raise ValueError('Invalid Training reservation')
-        run_id='train-'+digest({'session':plan['session_id'],'plan':plan['plan_id'],'remote':remote_identity(remote)})[:32]
+        scheduler=dict(plan['scheduler']);total=plan['contract']['budget']['gpu_hours']
+        identity={'session':plan['session_id'],'plan':plan['plan_id'],'remote':remote_identity(remote)}
+        if attempt is not None: identity['attempt']=attempt
+        run_id='train-'+digest(identity)[:32]
         self.db.execute('BEGIN IMMEDIATE')
         try:
             if self.db.execute('SELECT 1 FROM runs WHERE id=?',(run_id,)).fetchone():
                 self.db.commit();return self.get(run_id),False
+            if active_output:
+                pending=self.db.execute('SELECT details FROM runs WHERE session=? AND actual IS NULL',(plan['session_id'],)).fetchall()
+                if any(json.loads(row[0]).get('output_directory')==active_output for row in pending):
+                    raise ValueError('Another active or uncertain attempt owns this Training output')
             previous=self.db.execute('SELECT gpu_hours FROM budgets WHERE session=?',(plan['session_id'],)).fetchone()
             if previous and previous[0]!=total: raise ValueError('Session GPU budget changed; explicit budget revision support is pending')
             used=self.db.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM runs WHERE session=?',(plan['session_id'],)).fetchone()[0]
+            devices=len(scheduler['gpu_devices'])
+            if cap_to_remaining:
+                if not devices: raise ValueError('GPU devices required for Training resume')
+                scheduler['timeout_seconds']=min(scheduler['timeout_seconds'],math.floor((total-used)*3600/devices)-5)
+            reserved=devices*(scheduler['timeout_seconds']+5)/3600
+            if not math.isfinite(reserved) or reserved<=0 or scheduler['timeout_seconds']<=0 or reserved>total:
+                raise ValueError('Insufficient remaining Training budget')
             if used+reserved>total+1e-12: raise ValueError('Session GPU budget exhausted by completed or reserved runs')
             self.db.execute('INSERT OR IGNORE INTO budgets VALUES (?,?)',(plan['session_id'],total))
-            details={'plan_path':plan['plan_path'],'job_id':run_id,'phase':'reserved'}
+            details={'plan_path':plan['plan_path'],'job_id':run_id,'phase':'reserved','scheduler':scheduler}
+            if active_output: details['output_directory']=active_output
             self.db.execute('INSERT INTO runs VALUES (?,?,?,?,?,NULL,?,?,?)',(run_id,plan['session_id'],plan['plan_id'],json.dumps(remote_identity(remote)),reserved,'reserved',json.dumps(details),time.time()))
             self.db.commit();return self.get(run_id),True
         except Exception:self.db.rollback();raise
@@ -113,7 +125,7 @@ def collect(run_id,remote,store):
     details=record['details']
     plan=json.loads(Path(details['plan_path']).read_text(encoding='utf-8'))
     if digest(plan)!=record['plan_id']: raise ValueError('Local frozen Training plan changed')
-    receipt=collect_training(remote,run_id,details['output_directory'])
+    receipt=collect_training(remote,run_id,details['output_directory'],details.get('output_run_id',run_id))
     if receipt['run_id']!=run_id: raise ValueError('Receipt belongs to another run')
     identity=digest(receipt)
     folder=store.root/'artifacts'/run_id/identity;folder.mkdir(parents=True,exist_ok=True)
@@ -127,3 +139,50 @@ def collect(run_id,remote,store):
     atomic_json(folder/'review.json',verdict)
     details['acceptance_review']=verdict;details['receipt_path']=str(destination.resolve())
     return store.update(run_id,record['status'],details,record['actual_gpu_hours'])
+
+
+
+def resume(run_id,remote,store):
+    from .remote import collect_training
+    from .jobs import validate_spec
+    parent=observe(run_id,remote,store)
+    if parent['status'] not in TERMINAL: raise ValueError('Original Training attempt is active, lost or uncertain; cannot resume')
+    original=parent['details'];deployment=original.get('deployment',{})
+    if deployment.get('resume_protocol',1)<2:
+        raise ValueError('Frozen development bundle lacks checkpoint-hash resume support; no code upgrade performed')
+    base=json.loads(Path(original['plan_path']).read_text(encoding='utf-8'))
+    if digest(base)!=parent['plan_id']: raise ValueError('Frozen Training plan changed')
+    output=original['output_directory'];origin=original.get('output_run_id',run_id)
+    checkpoint=collect_training(remote,run_id,output,origin,action='checkpoint')
+    progress_status=checkpoint['progress'].get('status')
+    if progress_status=='evaluated': raise ValueError('Training already evaluated; use collect instead of resume')
+    if progress_status not in ('training','interrupted','evaluating','interrupted_evaluation'):
+        raise ValueError('Unrecognized checkpoint progress state')
+    checksum=checkpoint['checkpoint_sha256']
+    if not isinstance(checksum,str) or len(checksum)!=64 or any(c not in '0123456789abcdef' for c in checksum):
+        raise ValueError('Invalid resume checkpoint identity')
+    plan=dict(base,plan_id=parent['plan_id'],plan_path=original['plan_path'])
+    record,created=store.reserve(plan,remote,attempt={'parent_run_id':run_id,'checkpoint_sha256':checksum},cap_to_remaining=True,active_output=output)
+    if not created: return dict(record,reused=True)
+    new_id=record['run_id'];details=record['details']
+    try:
+        argv=[value for value in original['spec']['argv']]
+        if '--checkpoint-sha256' in argv:
+            index=argv.index('--checkpoint-sha256');del argv[index:index+2]
+        if '--resume' not in argv: argv.append('--resume')
+        argv+=['--checkpoint-sha256',checksum]
+        spec=dict(details['scheduler'],argv=argv,gpu_hours_budget=record['reserved_gpu_hours'])
+        validate_spec(spec)
+        details.update(parent_run_id=run_id,output_run_id=origin,output_directory=output,
+                       checkpoint_sha256=checksum,deployment=deployment,spec=spec,phase='submitting')
+        store.update(new_id,'submitting',details)
+    except Exception as error:
+        details['error']=type(error).__name__+': '+str(error)
+        store.update(new_id,'resume_preflight_failed',details,actual=0);raise
+    try:
+        response=job_request(remote,'submit',new_id,spec)
+        details.update(submission=response,phase='submitted')
+        return store.update(new_id,'submitted',details)
+    except Exception as error:
+        details['error']=type(error).__name__+': '+str(error)
+        store.update(new_id,'submission_uncertain',details);raise

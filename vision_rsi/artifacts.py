@@ -21,7 +21,15 @@ def collect(request):
     if not re.fullmatch(r'train-[a-f0-9]{32}',run_id): raise ValueError('Invalid Training run ID')
     root=(Path(workspace)/'training').resolve()
     folder=Path(request['output_directory']).resolve()
-    if folder.name!=run_id or not folder.is_relative_to(root): raise ValueError('Output path outside Training workspace')
+    output_run_id=request.get('output_run_id',run_id)
+    if not re.fullmatch(r'train-[a-f0-9]{32}',output_run_id): raise ValueError('Invalid output origin ID')
+    if folder.name!=output_run_id or not folder.is_relative_to(root): raise ValueError('Output path outside Training workspace')
+    if request.get('action')=='checkpoint':
+        checkpoint=folder/'checkpoint.pt';progress=folder/'progress.json'
+        if not checkpoint.is_file() or not checkpoint.resolve().is_relative_to(folder): raise ValueError('Resume checkpoint missing or escaping')
+        if not progress.is_file() or not progress.resolve().is_relative_to(folder) or progress.stat().st_size>2*1024*1024:
+            raise ValueError('Resume progress report missing or invalid')
+        return {'run_id':run_id,'checkpoint_sha256':file_sha(checkpoint),'progress':json.loads(progress.read_text())}
     files={};hashes={}
     for name in ('result.json','evaluation.json','progress.json','checkpoint.pt','predictions.json','coverage.json'):
         path=folder/name

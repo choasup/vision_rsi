@@ -102,11 +102,21 @@ def preflight(recipe):
 
 
 def run(recipe,output,resume=False):
+    # Pinned torchvision ROIAlign has a deterministic Python fallback. Disable
+    # lazy compilation so first-use compilation cannot consume an unbounded
+    # part of an experiment budget. These settings precede CUDA initialization.
+    os.environ['CUBLAS_WORKSPACE_CONFIG']=':4096:8'
+    os.environ['TORCH_COMPILE_DISABLE']='1'
     import torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
     from torch.utils.data import DataLoader,DistributedSampler
     from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2
+    torch.use_deterministic_algorithms(True)
+    torch.backends.cudnn.benchmark=False
+    torch.backends.cudnn.deterministic=True
+    torch.backends.cuda.matmul.allow_tf32=False
+    torch.backends.cudnn.allow_tf32=False
     train,val=preflight(recipe)
     world=int(os.environ.get('WORLD_SIZE','1'));rank=int(os.environ.get('RANK','0'));local=int(os.environ.get('LOCAL_RANK','0'))
     if world!=recipe['world_size']: raise ValueError('Launcher GPU world size differs from frozen recipe')
@@ -135,6 +145,8 @@ def run(recipe,output,resume=False):
         model.load_state_dict(checkpoint['model']);optimizer.load_state_dict(checkpoint['optimizer'])
         epoch_start=checkpoint['epoch'];cursor_start=checkpoint['cursor'];step=checkpoint['step'];restore_rng=checkpoint['rank_rng'][rank]
     wrapped=DistributedDataParallel(model,device_ids=[local]) if world>1 else model
+    if restore_rng is not None:
+        torch.set_rng_state(restore_rng['cpu']);torch.cuda.set_rng_state(restore_rng['cuda'],device);restore_rng=None
     stop=[False]
     signal.signal(signal.SIGTERM,lambda *_:stop.__setitem__(0,True))
     def save_checkpoint(epoch,cursor):
@@ -157,8 +169,6 @@ def run(recipe,output,resume=False):
         wrapped.train()
         for cursor,(images,targets) in enumerate(loader):
             if epoch==epoch_start and cursor<cursor_start: continue
-            if restore_rng is not None:
-                torch.set_rng_state(restore_rng['cpu']);torch.cuda.set_rng_state(restore_rng['cuda'],device);restore_rng=None
             images=[image.to(device) for image in images]
             targets=[{key:value.to(device) for key,value in target.items()} for target in targets]
             loss=sum(wrapped(images,targets).values())
@@ -209,9 +219,14 @@ def run(recipe,output,resume=False):
 def main(argv=None):
     parser=argparse.ArgumentParser(prog='vision-rsi coco-train')
     parser.add_argument('--recipe',required=True);parser.add_argument('--output',required=True)
+    parser.add_argument('--checkpoint-sha256')
     parser.add_argument('--resume',action='store_true');parser.add_argument('--preflight',action='store_true')
     args=parser.parse_args(argv)
     recipe=json.loads(Path(args.recipe).read_text(encoding='utf-8-sig'))
+    if args.checkpoint_sha256:
+        if not args.resume: raise ValueError('Checkpoint hash is only valid with --resume')
+        if file_sha(Path(args.output)/'checkpoint.pt')!=args.checkpoint_sha256:
+            raise ValueError('Resume checkpoint changed after inspection')
     if args.preflight:
         train,val=preflight(recipe);result={'status':'preflight_passed','train_images':len(train),'val_images':len(val),'training_performed':False}
     else:
@@ -222,7 +237,10 @@ def main(argv=None):
             lease=(output/'run.lock').open('a+')
             try: fcntl.flock(lease.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError: raise RuntimeError('Training output is in use by another process')
-        try: result=run(recipe,args.output,args.resume)
+        try:
+            if args.checkpoint_sha256 and file_sha(output/'checkpoint.pt')!=args.checkpoint_sha256:
+                raise ValueError('Resume checkpoint changed while acquiring output lock')
+            result=run(recipe,args.output,args.resume)
         finally:
             if lease: lease.close()
     print(json.dumps(result,indent=2))
