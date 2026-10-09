@@ -1,0 +1,20 @@
+{
+  "task_id": "bright-object",
+  "kind": "toy_threshold_detection",
+  "requirement": "Detect one bright rectangular object on a dark intensity image. CLI integration example only.",
+  "training_data": "toy-data.json",
+  "acceptance": {
+    "metric": "mean_iou",
+    "threshold": 0.9
+  },
+  "search": {
+    "thresholds": [
+      20,
+      100,
+      200
+    ]
+  },
+  "budget": {
+    "max_candidates": 3
+  }
+}

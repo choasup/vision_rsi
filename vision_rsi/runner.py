@@ -68,7 +68,7 @@ def doctor(config):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check', 'job-submit', 'job-status', 'job-logs', 'job-cancel', 'demo', 'research-import', 'research-event', 'research-view', 'research-step', 'serve'])
+    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check', 'job-submit', 'job-status', 'job-logs', 'job-cancel', 'demo', 'research-import', 'research-event', 'research-view', 'research-step', 'serve', 'training', 'test', 'capabilities'])
     parser.add_argument('--config', default='config.example.json')
     parser.add_argument('--run-dir', default='runs/demo')
     parser.add_argument('--job-id', default='cpu-smoke-001')
@@ -77,9 +77,29 @@ def main():
     parser.add_argument('--event-file', help='JSON with key, kind, payload')
     parser.add_argument('--steps', type=int, default=1)
     parser.add_argument('--port', type=int, default=8767)
+    parser.add_argument('--task', help='Training task specification JSON')
+    parser.add_argument('--task-id')
+    parser.add_argument('--input')
+    parser.add_argument('--output')
+    parser.add_argument('--version')
+    parser.add_argument('--registry', default='runs/capabilities')
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text(encoding='utf-8'))
-    if args.command == 'serve':
+    if args.command in ('training', 'test', 'capabilities'):
+        from .capability import Capabilities
+        registry = Capabilities(args.registry)
+        try:
+            if args.command == 'training':
+                result = registry.train(args.task)
+            elif args.command == 'test':
+                result = registry.infer(args.task_id, args.input, args.version)
+                if args.output:
+                    atomic_json(Path(args.output), result)
+            else:
+                result = registry.list()
+        finally:
+            registry.close()
+    elif args.command == 'serve':
         from .app import serve
         serve(config, args.run_dir, str(Path.cwd()), args.port)
         return
