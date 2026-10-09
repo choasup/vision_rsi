@@ -137,3 +137,29 @@ python -m vision_rsi test --task-id bright-object --input examples/toy-input.jso
 示例使用可执行的单亮色目标检测算法，输入是 JSON 灰度矩阵，输出单个 xywh 框；不是合成评分公式，也不是 COCO 模型，极小验证集不构成泛化能力证据。score 固定为 1.0，不是校准置信度。任务需求目前以 JSON 协议输入，尚未自动理解自然语言、生成新 harness 或做 RSI；目前按已实现适配器分派。
 
 `python -m vision_rsi training --task examples/coco-task.json` 会生成 blocked 记录，不会伪造训练或注册已验收检测能力。COCO 真实适配器、自动 harness 调整和 RSI 对照仍待实现。此注册库仅供本地可信产物使用；它不是任意代码沙箱。失败时可查询 capabilities 和 manifest 检查原因。
+
+## Training 任务阶段：接口定义与需求澄清
+
+```powershell
+python -m vision_rsi training start --task-id inspection --interactive --config config.local.json
+python -m vision_rsi training start --task-id inspection --goal "结合多视角图片和视频定位缺陷" --config config.local.json
+python -m vision_rsi training reply --session-id SESSION --message "多图联合处理，视频忽略音频，结果以秒标记时间段" --config config.local.json
+python -m vision_rsi training show --session-id SESSION
+```
+
+`--requirements requirements.md` 可替代 --goal。每轮调用模型并保存原始用户消息、任务契约版本和 token 用量，结果包含 issues 与 open_questions。交互中 /show 查看，/quit 保存退出；退出后用 reply 继续。当前 Key 从进程环境变量读取（可在同一 PowerShell 设置），不写入会话；请求结果不确定时保留 pending 并拒绝重复请求，需检查后处理或新建会话，尚无不确定请求恢复 UI。
+
+接口在训练前定义：命名输入支持 image、image_list、video、text；声明必填性、多图数量与 joint 语义；视频声明 sampling/temporal/audio。输出使用明确的 JSON schema 子集（type/properties/required/items/description/enum/additionalProperties/minimum/maximum）。每个契约必须提供输入输出示例、验收指标/方向/阈值/协议、预算、假设和待澄清问题。模型草案不等于训练能力。
+
+可不调用 API，直接定义和验证接口：
+
+```powershell
+python -m vision_rsi training start --task-id inspection --goal "联合多图和视频缺陷检测" --contract examples/interface-contract.json --offline
+python -m vision_rsi training define --session-id SESSION --contract examples/interface-contract.json
+python -m vision_rsi training validate --session-id SESSION --sample examples/multimodal-sample.json
+python -m vision_rsi training export --session-id SESSION --output runs/task-contract.json
+```
+
+会话存于 runs/training-sessions/sessions.sqlite3；define 和每轮模型解析生成新版本，旧版本保留。导出含任务代号、会话、契约版本和内容哈希，供后续 harness 构建使用。validate --result result.json 可验证输出结构。样本校验只验证协议，不读取/解码媒体，不表示模型支持多图或视频。
+
+状态 ready_for_harness 表示当前声明满足协议检查，不等于用户确认语义、真实可实现、已训练或已验收。模型不得自行放宽验收条件，但跨轮语义变更尚需用户检查版本，尚无自动语义差异审核。training run --session-id SESSION 在接口不完整时拒绝执行；完整时明确 blocked，因为通用 harness/训练适配器未接入。旧 training --task examples/toy-task.json 接口保留用于早期能力生命周期测试。

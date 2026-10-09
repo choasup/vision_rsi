@@ -1,3 +1,8 @@
-from .runner import main
+import sys
 
-main()
+if len(sys.argv) > 2 and sys.argv[1] == 'training' and sys.argv[2] in ('start','reply','show','define','validate','export','run'):
+    from .training_cli import main
+    main(sys.argv[2:])
+else:
+    from .runner import main
+    main()

@@ -1,0 +1,92 @@
+{
+  "goal": "Jointly inspect multiple images and a video for defects.",
+  "inputs": {
+    "views": {
+      "type": "image_list",
+      "required": true,
+      "min_items": 2,
+      "max_items": 4,
+      "semantics": "joint"
+    },
+    "clip": {
+      "type": "video",
+      "required": true,
+      "processing": {
+        "sampling": "2 fps",
+        "temporal": "preserve timestamps and order",
+        "audio": "ignore"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "defects": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "start_seconds": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "label",
+            "start_seconds"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "defects"
+    ],
+    "additionalProperties": false
+  },
+  "acceptance": {
+    "metric": "event_F1",
+    "threshold": 0.8,
+    "direction": "maximize",
+    "evaluation_protocol": "Evaluate once on an independent labelled holdout, match category and temporal IoU >= 0.5."
+  },
+  "budget": {
+    "gpu_hours": 10,
+    "llm_calls": 20
+  },
+  "assumptions": [
+    "Example task only; no training adapter available."
+  ],
+  "open_questions": [],
+  "example_input": {
+    "sample_id": "sample-001",
+    "inputs": {
+      "views": {
+        "type": "image_list",
+        "items": [
+          {
+            "uri": "front.jpg"
+          },
+          {
+            "uri": "side.jpg"
+          }
+        ]
+      },
+      "clip": {
+        "type": "video",
+        "uri": "clip.mp4"
+      }
+    }
+  },
+  "example_output": {
+    "defects": [
+      {
+        "label": "scratch",
+        "start_seconds": 1.2
+      }
+    ]
+  }
+}

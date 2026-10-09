@@ -126,3 +126,14 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - [ ] 未达标原因诊断、模型/方法迭代和 Agent 自身 RSI 对照验证。
 
 本阶段示例是基础算法参数拟合，不是已实现 RSI，不意味着 COCO 能力可用。
+
+## Training 任务阶段接口定义
+
+- [x] start/reply/show/define/validate/export/run CLI；自然语言 Goal 与多轮交互会话。
+- [x] 保存原始用户消息、不可覆盖的契约历史版本、模型 token 用量与待澄清问题。
+- [x] 单图、联合多图、视频、文本字段协议；输出 schema 子集、示例、验收和预算检查。
+- [x] 样本/输出协议校验与带内容哈希的契约导出；未完整定义接口时不进入 run。
+- [x] 真实 DeepSeek 解析多图视频需求，缺少阈值和预算时保持 clarifying（1177 tokens）；27 项测试通过。
+- [ ] 语义差异/验收条件变更审核、自动 harness 生成、媒体解码、训练执行与 RSI。
+
+当前训练任务阶段可以产出接口定义；training run 不会伪造训练，返回缺少适配器的 blocked 状态。
