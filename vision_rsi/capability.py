@@ -112,13 +112,55 @@ class Capabilities:
         request=dict(image_request(plan['contract'],sample_path),**{key:value for key,value in endpoint.items() if key!='remote'})
         probe=infer_training(endpoint['remote'],request,folder/'inference.py')
         self._verify_remote_prediction(endpoint,request,probe)
-        manifest={'task_id':name,'version':version,'status':'validated','spec':{'kind':'coco_detection'},'training_run_id':record['run_id'],'session_id':record['session_id'],
-                  'endpoint':endpoint,'validation':dict(verdict,status='validated_training_checkpoint',capability_registered=True,serving_backend='cpu',serving_accuracy_verified=False),'registration_sample_sha256':probe['image_sha256'],
+        manifest={'task_id':name,'version':version,'status':'pending_serving_validation','spec':{'kind':'coco_detection'},'training_run_id':record['run_id'],'session_id':record['session_id'],
+                  'endpoint':endpoint,'validation':dict(verdict,status='pending_serving_validation',capability_registered=False,serving_backend='cpu',serving_accuracy_verified=False),'registration_sample_sha256':probe['image_sha256'],
                   'limitations':'COCO AP measured by frozen Training evaluation; CPU serving accuracy and latency need deployment validation. Not a guarantee for arbitrary input.',
                   'artifacts':{file:sha(folder/file) for file in ('plan.json','receipt.json','inference.py')}}
         atomic_json(folder/'manifest.json',manifest)
-        with self.db:self.db.execute('INSERT INTO versions(task_id,version,status,manifest_hash) VALUES (?,?,?,?)',(name,version,'validated',sha(folder/'manifest.json')))
+        with self.db:self.db.execute('INSERT INTO versions(task_id,version,status,manifest_hash) VALUES (?,?,?,?)',(name,version,'pending_serving_validation',sha(folder/'manifest.json')))
         return manifest
+
+    def evaluate_serving(self,name,version,wall_seconds_budget,chunk_size=10):
+        from .remote import serving_step
+        name=task_id(name)
+        row=self.db.execute("SELECT manifest_hash FROM versions WHERE task_id=? AND version=? AND status='pending_serving_validation'",(name,version)).fetchone()
+        if not row:raise ValueError('No pending serving candidate')
+        folder=self.root/name/version
+        if sha(folder/'manifest.json')!=row[0]:raise ValueError('Candidate manifest integrity failure')
+        manifest=json.loads((folder/'manifest.json').read_text())
+        if set(manifest['artifacts'])!={'plan.json','receipt.json','inference.py'}:raise ValueError('Candidate artifact set mismatch')
+        for file,expected in manifest['artifacts'].items():
+            if sha(folder/file)!=expected:raise ValueError('Candidate artifact integrity failure')
+        response=serving_step(manifest['endpoint']['remote'],manifest['endpoint'],folder/'inference.py',wall_seconds_budget,chunk_size)
+        if response.get('status')=='evaluated':
+            report_path=folder/'serving-evaluation.json'
+            atomic_json(report_path,response['report'])
+            return self.promote_serving(name,version,report_path)
+        if response.get('status') not in ('pending','budget_exhausted'):raise ValueError('Unexpected serving evaluation response')
+        return dict(response,task_id=name,version=version)
+
+    def promote_serving(self,name,version,report_path):
+        from .serving_acceptance import review_serving
+        name=task_id(name)
+        row=self.db.execute("SELECT manifest_hash FROM versions WHERE task_id=? AND version=? AND status='pending_serving_validation'",(name,version)).fetchone()
+        if not row:raise ValueError('No pending serving candidate')
+        folder=self.root/name/version
+        if sha(folder/'manifest.json')!=row[0]:raise ValueError('Candidate manifest integrity failure')
+        manifest=json.loads((folder/'manifest.json').read_text())
+        for file,expected in manifest['artifacts'].items():
+            if file not in ('plan.json','receipt.json','inference.py') or sha(folder/file)!=expected:raise ValueError('Candidate artifact integrity failure')
+        report_bytes=Path(report_path).read_bytes()
+        report=json.loads(report_bytes.decode('utf-8-sig'))
+        verdict=review_serving(manifest,report)
+        new_version=uuid.uuid4().hex;destination=self.root/name/new_version;destination.mkdir()
+        for file in manifest['artifacts']:(destination/file).write_bytes((folder/file).read_bytes())
+        (destination/'serving-report.json').write_bytes(report_bytes)
+        updated=dict(manifest,version=new_version,parent_version=version,status='validated',validation=verdict,
+                     limitations='Serving AP is measured on the frozen COCO validation set; arbitrary-input quality is not guaranteed.')
+        updated['artifacts']=dict(manifest['artifacts'],**{'serving-report.json':sha(destination/'serving-report.json')})
+        atomic_json(destination/'manifest.json',updated)
+        with self.db:self.db.execute('INSERT INTO versions(task_id,version,status,manifest_hash) VALUES (?,?,?,?)',(name,new_version,'validated',sha(destination/'manifest.json')))
+        return updated
 
     @staticmethod
     def _verify_remote_prediction(endpoint,request,response):
@@ -133,12 +175,15 @@ class Capabilities:
 
     def resolve_version(self, name, version=None):
         name=task_id(name)
-        if version:
-            row=self.db.execute("SELECT version FROM versions WHERE task_id=? AND version=? AND status='validated'",(name,version)).fetchone()
-        else:
-            row=self.db.execute("SELECT version FROM versions WHERE task_id=? AND status='validated' ORDER BY created DESC LIMIT 1",(name,)).fetchone()
-        if not row: raise ValueError('No validated capability for task/version')
-        return row[0]
+        rows=self.db.execute("SELECT version,manifest_hash FROM versions WHERE task_id=? AND status='validated' ORDER BY created DESC",(name,)).fetchall()
+        for candidate,expected in rows:
+            if version and candidate!=version:continue
+            path=self.root/name/candidate/'manifest.json'
+            if sha(path)!=expected:raise ValueError('Manifest integrity failure')
+            manifest=json.loads(path.read_text())
+            if manifest['spec']['kind']=='coco_detection' and manifest.get('validation',{}).get('serving_accuracy_verified') is not True:continue
+            return candidate
+        raise ValueError('No validated capability for task/version; serving validation may be pending')
 
     def input_fingerprint(self,name,input_path,version=None):
         name=task_id(name);version=self.resolve_version(name,version)
@@ -153,15 +198,12 @@ class Capabilities:
 
     def infer(self, name, input_path, version=None,expected_input_fingerprint=None,sample_id=None):
         name=task_id(name)
-        if version:
-            row=self.db.execute("SELECT version,manifest_hash FROM versions WHERE task_id=? AND version=? AND status='validated'",(name,version)).fetchone()
-        else:
-            row=self.db.execute("SELECT version,manifest_hash FROM versions WHERE task_id=? AND status='validated' ORDER BY created DESC LIMIT 1",(name,)).fetchone()
-        if not row: raise ValueError('No validated capability for task/version; run training and inspect acceptance first')
+        version=self.resolve_version(name,version)
+        row=self.db.execute("SELECT version,manifest_hash FROM versions WHERE task_id=? AND version=? AND status='validated'",(name,version)).fetchone()
         version,expected=row; folder=self.root/name/version
         if sha(folder/'manifest.json')!=expected: raise ValueError('Manifest integrity failure')
         manifest=json.loads((folder/'manifest.json').read_text())
-        allowed=('plan.json','receipt.json','inference.py') if manifest['spec']['kind']=='coco_detection' else ('model.json','harness.py')
+        allowed=('plan.json','receipt.json','inference.py','serving-report.json') if manifest['spec']['kind']=='coco_detection' else ('model.json','harness.py')
         if set(manifest['artifacts'])!=set(allowed):raise ValueError('Capability artifact set mismatch')
         for file,expected_hash in manifest['artifacts'].items():
             if file not in allowed or sha(folder/file)!=expected_hash: raise ValueError('Artifact integrity failure')

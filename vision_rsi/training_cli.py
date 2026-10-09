@@ -59,7 +59,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','status','logs','cancel','collect','resume','register','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -69,6 +69,9 @@ def main(argv):
     parser.add_argument('--config',default='config.local.json')
     parser.add_argument('--json',action='store_true',help='Emit full structured records')
     parser.add_argument('--registry',default='runs/capabilities')
+    parser.add_argument('--version')
+    parser.add_argument('--wall-seconds-budget',type=float)
+    parser.add_argument('--chunk-size',type=int,default=10)
     parser.add_argument('--run-id');parser.add_argument('--run-store',default='runs/training-runs')
     args=parser.parse_args(argv)
     if args.interactive and args.action not in ('start','show','reply','define'):
@@ -78,6 +81,14 @@ def main(argv):
         config=json.loads(Path(args.config).read_text(encoding='utf-8'))
         return store.clarify(session,config['llm'],message)
     try:
+        if args.action=='serving-evaluate':
+            if not args.task_id or not args.version or args.wall_seconds_budget is None:
+                parser.error('serving-evaluate requires --task-id, --version and --wall-seconds-budget')
+            from .capability import Capabilities
+            registry=Capabilities(args.registry)
+            try:result=registry.evaluate_serving(args.task_id,args.version,args.wall_seconds_budget,args.chunk_size)
+            finally:registry.close()
+            print(json.dumps(result,ensure_ascii=False,indent=2));return
         if args.action in ('status','logs','cancel','collect','resume','register','runs'):
             from .training_runs import TrainingRuns,observe,collect,resume
             runs=TrainingRuns(args.run_store)

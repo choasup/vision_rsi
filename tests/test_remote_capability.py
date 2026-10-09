@@ -32,9 +32,43 @@ class RemoteCapabilityTests(unittest.TestCase):
         return {'sample_id':request['sample']['sample_id'],'output':{'detections':[]},'device':'cpu',
                 'image_sha256':hashlib.sha256(base64.b64decode(request['image_base64'])).hexdigest(),
                 'checkpoint_sha256':request['checkpoint_sha256'],'training_identity_hash':request['training_identity_hash']}
+    def registered_fixture(self):
+        # Synthetic metadata and mocked transport exercise lifecycle only.
+        candidate=self.registry.register_training(self.record,self.sample)
+        self.assertEqual(candidate['status'],'pending_serving_validation')
+        with self.assertRaises(ValueError):self.registry.resolve_version('coco-task')
+        endpoint=candidate['endpoint']
+        report={'backend':'cpu','protocol':'pycocotools.COCOeval/bbox/defaults','metric_scale':'0..100','pycocotools_version':'2.0.11',
+                'checkpoint_sha256':endpoint['checkpoint_sha256'],'training_identity_hash':endpoint['training_identity_hash'],
+                'inference_adapter_sha256':candidate['artifacts']['inference.py'],'annotation_sha256':endpoint['recipe']['val_annotations_sha256'],
+                'fixture':False,'image_count':5000,'coverage_complete':True,'metrics':{'box_AP':65},'predictions_sha256':'d'*64,'coverage_sha256':'e'*64}
+        path=self.root/'unit-serving-report.json';path.write_text(json.dumps(report))
+        return self.registry.promote_serving('coco-task',candidate['version'],path)
+
+    @patch('vision_rsi.remote.infer_training',side_effect=response)
+    def test_serving_failure_keeps_candidate_unavailable(self,infer):
+        candidate=self.registry.register_training(self.record,self.sample)
+        with patch('vision_rsi.remote.serving_step',return_value={'status':'pending','processed_images':10}):
+            result=self.registry.evaluate_serving('coco-task',candidate['version'],120,1)
+        self.assertEqual(result['status'],'pending')
+        with self.assertRaises(ValueError):self.registry.resolve_version('coco-task')
+        with patch('vision_rsi.remote.serving_step',return_value={'status':'evaluated','report':{'fixture':True}}):
+            with self.assertRaises(ValueError):self.registry.evaluate_serving('coco-task',candidate['version'],120,1)
+        with self.assertRaises(ValueError):self.registry.resolve_version('coco-task')
+
+    @patch('vision_rsi.remote.infer_training',side_effect=response)
+    def test_serving_threshold_fixture_and_identity_are_enforced(self,infer):
+        validated=self.registered_fixture()
+        report=json.loads((self.root/'unit-serving-report.json').read_text())
+        from vision_rsi.serving_acceptance import review_serving
+        import copy
+        for key,value in [('fixture',True),('image_count',2),('backend','cuda'),('checkpoint_sha256','0'*64),('metrics',{'box_AP':59}),('metrics',{'box_AP':float('nan')})]:
+            changed=copy.deepcopy(report);changed[key]=value
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):review_serving(validated,changed)
+
     @patch('vision_rsi.remote.infer_training',side_effect=response)
     def test_register_then_test_uses_pinned_adapter_and_media(self,infer):
-        manifest=self.registry.register_training(self.record,self.sample)
+        manifest=self.registered_fixture()
         self.assertEqual(manifest['status'],'validated')
         result=self.registry.infer('coco-task',self.sample)
         self.assertEqual(result['output'],{'detections':[]});self.assertEqual(infer.call_count,2)
@@ -64,7 +98,7 @@ class RemoteCapabilityTests(unittest.TestCase):
     @patch('vision_rsi.remote.infer_training',side_effect=response)
     def test_batch_images_preserve_ids_and_detect_changed_pixels(self,infer):
         from vision_rsi.batch import batch,input_rows
-        self.registry.register_training(self.record,self.sample)
+        self.registered_fixture()
         images=self.root/'images';images.mkdir();image=images/'photo.jpg';image.write_bytes(b'first-image')
         rows=input_rows(input_dir=images)
         output=self.root/'batch-output'

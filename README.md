@@ -320,7 +320,9 @@ collect 先核对原远端作业已正常退出并结算预算，再在服务器
 ```powershell
 # 仅已完成并达到原任务验收目标的真实训练可注册；sample用于探测实际推理接口
 .\vision-rsi.cmd training register --run-id RUN_ID --sample examples\your-input.json
-# 注册成功后按任务代号调用，可以直接传图片，也可以传契约样本JSON
+# register返回pending版本；以下命令分段评测实际CPU后端，重复执行可恢复
+.\vision-rsi.cmd training serving-evaluate --task-id TASK_ID --version PENDING_VERSION --wall-seconds-budget 3600 --chunk-size 10
+# 完整5000张验证且达到原目标后生成validated新版本，再按任务代号调用
 .\vision-rsi.cmd test --task-id TASK_ID --input C:\images\photo.jpg --output runs\prediction.json
 .\vision-rsi.cmd test --task-id TASK_ID --input-dir C:\images --output-dir runs\image-batch
 .\vision-rsi.cmd test --task-id TASK_ID --input-dir C:\images --output-dir runs\image-batch --resume
@@ -330,4 +332,4 @@ register会重核原计划、收据和验收结果，并以实际本地图像探
 
 COCO适配器目前在SSH服务器使用CPU推理（4线程），最多20MiB图片、40百万像素，进程硬时限60秒。读取本地图片字节后传输，支持相对路径及本地file URI；不能用此入口读取网站或文件共享。联合多图、视频、动画需要对应任务适配器，会明确拒绝。单图任务可直接传图片路径，Agent根据命名输入构造样本；批量目录读取JSON及常见图片文件，样本ID在结果中保留。恢复校验JSON及引用图片内容，换图不能复用旧成功结果。
 
-注册目前验证的是**训练检查点的COCO指标和一次CPU接口探针**，`validation.serving_accuracy_verified=false`明确保留后端验证缺项：尚未完成CPU后端完整验证集AP/性能测试，不能据此宣称上线或保证推理效果达标。真实部署前须验证服务后端的完整任务效果。实际H20测试只使用合成检查点，图片字节、源码/检查点身份及输出契约校验通过，预测为空；这不是检测质量证据。
+register只创建pending_serving_validation候选，Test拒绝使用。serving-evaluate复用该候选固定的实际CPU推理适配器，按图保存结果、支持重复调用恢复、使用显式CPU墙钟预算。完整5000张COCO验证、原始验收阈值、数据/模型/适配器身份全部通过后，才生成新的validated版本；fixture或低分不会放行。预算在首次评测冻结，重复调用需保持相同值。性能SLA与真实COCO效果仍待验证。实际H20测试只使用合成检查点，图片字节、源码/检查点身份及输出契约校验通过，预测为空；这不是检测质量证据。

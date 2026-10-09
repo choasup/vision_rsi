@@ -136,3 +136,19 @@ def infer_training(remote,request,source_path):
     result=subprocess.run(ssh_argv(remote)+[command],input=json.dumps(dict(request,workspace=remote['workspace'])),capture_output=True,text=True,timeout=90)
     if result.returncode:raise RuntimeError('Remote inference failed: '+result.stderr[-2000:])
     return json.loads(result.stdout)
+
+
+def serving_step(remote,endpoint,source_path,wall_seconds_budget,chunk_size=10):
+    import base64,hashlib
+    from pathlib import Path
+    driver=Path(__file__).with_name('serving.py').read_bytes()
+    adapter=Path(source_path).read_bytes()
+    request={'workspace':remote['workspace'],'endpoint':{key:value for key,value in endpoint.items() if key!='remote'},
+             'adapter_source_base64':base64.b64encode(adapter).decode(),'inference_adapter_sha256':hashlib.sha256(adapter).hexdigest(),
+             'wall_seconds_budget':wall_seconds_budget,'chunk_size':chunk_size}
+    encoded=base64.b64encode(driver).decode()
+    program="import base64; exec(compile(base64.b64decode('"+encoded+"'), '<serving-evaluation>', 'exec'))"
+    command=shlex.quote(remote.get('python','python3'))+' -c '+shlex.quote(program)
+    result=subprocess.run(ssh_argv(remote)+[command],input=json.dumps(request),capture_output=True,text=True,timeout=330)
+    if result.returncode:raise RuntimeError('Serving evaluation failed: '+result.stderr[-2000:])
+    return json.loads(result.stdout)
