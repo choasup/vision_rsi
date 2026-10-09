@@ -52,3 +52,12 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 运行模拟策略对照：`python -m vision_rsi compare --run-dir runs/comparison`。
 对照使用固定的 3 个种子，每种策略每种子 4 个模拟 GPU 小时；产物为 comparison.json。
 当前对照器是独立 fixture，没有真实训练、LLM 规划或中途恢复；原 run 命令仍保留其恢复验证。
+
+## 远端验证进展（2026-10-09）
+
+- SSH 非交互认证和已信任主机密钥通过；8 张 H20 可访问。
+- 按用户授权停止现有 GPU 推理服务及子进程，SIGTERM 正常退出；复查每卡仅约 3 MiB 占用。未删除模型或数据。
+- 实测 PyTorch 2.6.0+cu124、torchvision 0.21.0+cu124、CUDA 12.4，8 卡逐卡 256×256 矩阵运算均通过。尚未验证 NCCL 多卡通信。
+- pycocotools 未安装；COCO 路径与首轮训练预算待确认，未启动检测训练。
+- 根文件系统剩余约 9 GB；数据挂载盘有空间，后续环境和输出应置于专用项目目录。
+- remote-check 已实现并实测；持久任务提交、取消、预算核算仍待实现。

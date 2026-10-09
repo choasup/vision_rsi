@@ -68,12 +68,18 @@ def doctor(config):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare'])
+    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check'])
     parser.add_argument('--config', default='config.example.json')
     parser.add_argument('--run-dir', default='runs/demo')
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text(encoding='utf-8'))
-    if args.command == 'compare':
+    if args.command == 'remote-check':
+        from .remote import probe
+        result = probe(config['remote'])
+        directory = Path(args.run_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        atomic_json(directory / 'remote-environment.json', result)
+    elif args.command == 'compare':
         from .research import compare
         result = compare()
         directory = Path(args.run_dir)
