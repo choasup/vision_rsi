@@ -68,12 +68,22 @@ def doctor(config):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check'])
+    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check', 'job-submit', 'job-status', 'job-logs', 'job-cancel'])
     parser.add_argument('--config', default='config.example.json')
     parser.add_argument('--run-dir', default='runs/demo')
+    parser.add_argument('--job-id', default='cpu-smoke-001')
+    parser.add_argument('--job-spec', help='JSON file with argv and timeout_seconds (CPU only)')
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text(encoding='utf-8'))
-    if args.command == 'remote-check':
+    if args.command.startswith('job-'):
+        from .remote import job_request
+        spec = None
+        if args.command == 'job-submit':
+            spec = json.loads(Path(args.job_spec).read_text(encoding='utf-8')) if args.job_spec else {
+                'argv': [config['remote'].get('python', 'python3'), '-c', 'import time; print("CPU smoke started", flush=True); time.sleep(2); print("CPU smoke completed")'],
+                'timeout_seconds': 15}
+        result = job_request(config['remote'], args.command.removeprefix('job-'), args.job_id, spec)
+    elif args.command == 'remote-check':
         from .remote import probe
         result = probe(config['remote'])
         directory = Path(args.run_dir)

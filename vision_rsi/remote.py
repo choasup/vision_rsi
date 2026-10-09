@@ -49,3 +49,21 @@ def probe(remote):
     if result.returncode:
         raise RuntimeError('SSH probe failed: ' + result.stderr[-2000:])
     return json.loads(result.stdout)
+
+
+def job_request(remote, action, job_id, spec=None):
+    from pathlib import Path
+    import base64
+    source = Path(__file__).with_name('jobs.py').read_text(encoding='utf-8-sig')
+    request = {'workspace': remote.get('workspace', ''), 'action': action, 'job_id': job_id}
+    if spec is not None:
+        request.update(spec=spec, worker_source=source)
+    # Keep all request data on stdin; only the fixed program is encoded in the command.
+    encoded = base64.b64encode(source.encode()).decode()
+    program = "import base64; exec(compile(base64.b64decode('" + encoded + "'), '<remote-jobs>', 'exec'))"
+    executable = shlex.quote(remote.get('python', 'python3'))
+    result = subprocess.run(ssh_argv(remote) + [executable + ' -c ' + shlex.quote(program)],
+                            input=json.dumps(request), capture_output=True, text=True, timeout=30)
+    if result.returncode:
+        raise RuntimeError('Remote job request failed: ' + result.stderr[-2000:])
+    return json.loads(result.stdout)
