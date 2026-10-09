@@ -1,7 +1,7 @@
-# COCO RSI Agent
+# Vision RSI Agent
 
 Windows 本地研究控制器，通过 SSH 调度独立 8 卡 H20 服务器；LLM 服务独立且可替换。
-当前目标暂定 COCO 目标检测 box AP。当前版本只有确定性模拟闭环，**没有真实训练、COCO 指标计算或 LLM API 调用**。
+项目目标是通用视觉递归自我改进（RSI）研究 Agent，支持逐步扩展到不同视觉任务、数据集和评测协议。COCO 目标检测 box AP 只是第一个验证实验，不定义 Agent 的能力边界。当前版本只有确定性模拟闭环，**没有真实训练、COCO 指标计算或 LLM API 调用**。
 
 ## 本地运行
 
@@ -9,9 +9,9 @@ Windows 本地研究控制器，通过 SSH 调度独立 8 卡 H20 服务器；LL
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m coco_rsi doctor
-python -m coco_rsi run --run-dir runs/demo
-python -m coco_rsi run --run-dir runs/demo
+python -m vision_rsi doctor
+python -m vision_rsi run --run-dir runs/demo
+python -m vision_rsi run --run-dir runs/demo
 ```
 
 第二次运行恢复相同结果，不重复消耗模拟预算。更改配置或提交版本后使用新 run-dir。
@@ -24,6 +24,10 @@ python -m coco_rsi run --run-dir runs/demo
 API Key 仅从 DEEPSEEK_API_KEY 环境变量读取，doctor 只报告是否存在，绝不打印值。
 不将密钥放入配置、Git 或聊天。远程执行和 OpenAI-compatible HTTP 适配器留待接入；当前真实模式主动报错。
 检测器、预训练权重、数据划分尚未选定，不推断 DeepSeek Flash 的准确模型名或服务地址。
+
+## 项目范围
+
+通用核心负责实验规划、候选追踪、预算、调度、恢复、记忆和策略改进。具体视觉任务通过任务适配器提供数据、训练配方、评测指标和错误分析；首个适配器计划用于 COCO 检测，当前模拟指标仍是该实验的占位数据。后续任务无需以 COCO 或 box AP 为前提。
 
 ## 研究约束
 

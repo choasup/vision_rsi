@@ -3,14 +3,14 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from coco_rsi.runner import run
+from vision_rsi.runner import run
 
 
 class RunnerTests(unittest.TestCase):
     def setUp(self):
         self.config = json.loads(Path('config.example.json').read_text())
 
-    @patch('coco_rsi.runner.revision', return_value='fixture-revision')
+    @patch('vision_rsi.runner.revision', return_value='fixture-revision')
     def test_budget_resume_and_provenance(self, _):
         with tempfile.TemporaryDirectory() as folder:
             self.config['budget_gpu_hours'] = 2.5
@@ -21,7 +21,7 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 run(self.config, folder)
 
-    @patch('coco_rsi.runner.revision', return_value='fixture-revision')
+    @patch('vision_rsi.runner.revision', return_value='fixture-revision')
     def test_zero_budget_and_real_execution_rejected(self, _):
         with tempfile.TemporaryDirectory() as folder:
             self.config['budget_gpu_hours'] = 0
