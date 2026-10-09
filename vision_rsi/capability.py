@@ -86,6 +86,15 @@ class Capabilities:
             manifest['reason']=type(error).__name__+': '+str(error)
             return finish('failed')
 
+    def resolve_version(self, name, version=None):
+        name=task_id(name)
+        if version:
+            row=self.db.execute("SELECT version FROM versions WHERE task_id=? AND version=? AND status='validated'",(name,version)).fetchone()
+        else:
+            row=self.db.execute("SELECT version FROM versions WHERE task_id=? AND status='validated' ORDER BY created DESC LIMIT 1",(name,)).fetchone()
+        if not row: raise ValueError('No validated capability for task/version')
+        return row[0]
+
     def infer(self, name, input_path, version=None):
         name=task_id(name)
         if version:
@@ -98,5 +107,8 @@ class Capabilities:
         manifest=json.loads((folder/'manifest.json').read_text())
         for file,expected_hash in manifest['artifacts'].items():
             if file not in ('model.json','harness.py') or sha(folder/file)!=expected_hash: raise ValueError('Artifact integrity failure')
-        output=subprocess.check_output([sys.executable,str(folder/'harness.py'),str(folder/'model.json'),str(Path(input_path).resolve())],text=True,timeout=30)
+        process=subprocess.run([sys.executable,str(folder/'harness.py'),str(folder/'model.json'),str(Path(input_path).resolve())],capture_output=True,text=True,timeout=30)
+        if process.returncode:
+            raise ValueError('Inference adapter failed: '+(process.stderr.strip().splitlines() or ['exit '+str(process.returncode)])[-1])
+        output=process.stdout
         return {'task_id':name,'version':version,'kind':manifest['spec']['kind'],'output':json.loads(output),'acceptance':manifest['validation']}

@@ -219,3 +219,18 @@ python PATH_TO_HARNESS/harness.py validate-output --input result.json
 该适配器是接线基线候选，不是面向 AP60 的最终方法选择。API 参考：https://docs.pytorch.org/vision/0.13/models/generated/torchvision.models.detection.fasterrcnn_resnet50_fpn_v2.html 。COCO 的 80 类使用 1..90 内的离散 ID，输出从 xyxy 转换为 xywh 并过滤背景与无效类别，不能将“80 类”等同为 ID 连续 1..80。
 
 完整 COCO 训练仍缺数据路径、预训练权重、真实执行预算和评测适配器；随机输入 smoke 通过不会解除这些阻塞。
+
+## 批量推理与安装验证
+
+当前能力执行示例仍是 toy 强度矩阵检测，用于验证生命周期，不代表 COCO 效果。先执行上面的 toy training 命令注册能力，再运行：
+
+```powershell
+.\vision-rsi.cmd test --task-id bright-object --input-dir examples\batch-inputs --output-dir runs\batch-demo
+.\vision-rsi.cmd test --task-id bright-object --input-dir examples\batch-inputs --output-dir runs\batch-demo --resume
+```
+
+`--input-dir` 读取目录中的 JSON 输入文件，每个文件是一条独立样本。目录需自行创建并放入符合该能力接口的输入，例如复制 `examples/toy-input.json`。也可使用 `--manifest` 指定 JSONL 文件，每行 `{"sample_id":"one","input":"toy-input.json"}`；input 路径相对于清单。此执行清单与 `training validate --manifest` 的多模态协议样本清单不同；联合多图和视频尚未接入真实推理适配器。
+
+执行固定一个已验收能力版本，逐项保存结果及错误。恢复时校验输入和成功输出哈希，跳过成功项；输入变更或能力版本变化会拒绝混用。可用 `--version` 显式指定原版本。强制终止后若留下 `batch.lock`，确认原进程已退出再移除该锁；正常异常会自动释放锁。尚未提供自动回收孤儿锁。
+
+项目可用 `python -m pip install .` 安装，入口为 `vision-rsi`。当前 0.1.0.dev1 为开发版本。已验证 wheel 构建、隔离目录安装、从仓库外调用模块、40 项自动测试及 toy CLI 批处理恢复；完整上线门槛见 RELEASE.md。

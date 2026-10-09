@@ -1,8 +1,4 @@
-import sys
+from .cli import main
 
-if len(sys.argv) > 2 and sys.argv[1] == 'training' and sys.argv[2] in ('--help','-h','start','reply','show','list','build','diagnose','define','validate','export','run'):
-    from .training_cli import main
-    main(sys.argv[2:])
-else:
-    from .runner import main
+if __name__ == '__main__':
     main()

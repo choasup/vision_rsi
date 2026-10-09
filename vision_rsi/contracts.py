@@ -49,6 +49,9 @@ def issues(contract):
     schema=contract.get('output_schema')
     if not isinstance(schema,dict) or schema.get('type')!='object' or not isinstance(schema.get('properties'),dict) or not schema['properties']:
         errors.append('需定义 object output_schema 及 properties')
+    else:
+        try: validate_schema_definition(schema)
+        except ValueError as error: errors.append('输出接口无效: '+str(error))
     acceptance=contract.get('acceptance',{})
     if not isinstance(acceptance,dict) or any(not isinstance(acceptance.get(k),str) or not acceptance[k].strip() for k in ('metric','evaluation_protocol')):
         errors.append('缺少验收指标或评测协议')
@@ -62,15 +65,48 @@ def issues(contract):
     if not isinstance(contract.get('open_questions'),list): errors.append('需记录 open_questions 列表')
     elif contract['open_questions']: errors.extend('待澄清: '+str(q) for q in contract['open_questions'])
     if 'example_input' not in contract or 'example_output' not in contract: errors.append('需提供输入/输出示例')
-    elif not errors:
+    else:
         try:
             validate_sample(contract,contract['example_input'])
             validate_schema(contract['output_schema'],contract['example_output'])
-        except ValueError as error: errors.append('示例不符合接口: '+str(error))
+        except (ValueError, KeyError, TypeError, AttributeError) as error: errors.append('示例不符合接口: '+str(error))
     return errors
 
 
+def validate_schema_definition(schema, path='output'):
+    allowed={'type','properties','required','items','description','enum','additionalProperties','minimum','maximum'}
+    if not isinstance(schema,dict) or set(schema)-allowed:
+        raise ValueError(path+': unsupported schema keyword')
+    kind=schema.get('type')
+    if kind not in ('object','array','string','boolean','number','integer','null'):
+        raise ValueError(path+': unknown schema type')
+    if 'enum' in schema and (not isinstance(schema['enum'],list) or not schema['enum']):
+        raise ValueError(path+': enum must be a nonempty list')
+    if kind=='object':
+        props=schema.get('properties',{})
+        required=schema.get('required',[])
+        if not isinstance(props,dict) or any(not isinstance(k,str) for k in props):
+            raise ValueError(path+': invalid properties')
+        if not isinstance(required,list) or any(not isinstance(k,str) or k not in props for k in required):
+            raise ValueError(path+': invalid required fields')
+        if 'additionalProperties' in schema and not isinstance(schema['additionalProperties'],bool):
+            raise ValueError(path+': additionalProperties must be boolean')
+        for name,child in props.items(): validate_schema_definition(child,path+'.'+name)
+    elif 'properties' in schema or 'required' in schema or 'additionalProperties' in schema:
+        raise ValueError(path+': object constraints on another type')
+    if kind=='array': validate_schema_definition(schema.get('items'),path+'[]')
+    elif 'items' in schema: raise ValueError(path+': items requires array')
+    for key in ('minimum','maximum'):
+        if key in schema:
+            bound=schema[key]
+            if kind not in ('number','integer') or isinstance(bound,bool) or not isinstance(bound,(int,float)) or not math.isfinite(bound):
+                raise ValueError(path+': invalid numeric bounds')
+    if schema.get('minimum',-math.inf)>schema.get('maximum',math.inf):
+        raise ValueError(path+': reversed bounds')
+
+
 def validate_schema(schema,value,path='output'):
+    validate_schema_definition(schema,path)
     # Supported schema subset, deliberately rejects unsupported constraints.
     allowed={'type','properties','required','items','description','enum','additionalProperties','minimum','maximum'}
     if not isinstance(schema,dict) or set(schema)-allowed: raise ValueError(path+': unsupported schema keyword')

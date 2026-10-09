@@ -94,3 +94,21 @@ class ClarificationRegressionTests(unittest.TestCase):
             with store.db() as db:
                 raw=json.loads(db.execute('SELECT versions FROM sessions WHERE id=?',(session,)).fetchone()[0])
             self.assertIn('contract',raw[0]['contract'])
+
+class SchemaSafetyTests(unittest.TestCase):
+    def test_unused_output_fields_are_validated(self):
+        contract=json.loads(Path('examples/interface-contract.json').read_text())
+        contract['output_schema']['properties']['unused']={'type':'array','items':{'type':'mystery'}}
+        self.assertTrue(any('unknown schema type' in x for x in issues(contract)))
+
+    def test_missing_budget_does_not_hide_invalid_example(self):
+        contract=json.loads(Path('examples/interface-contract.json').read_text())
+        contract['budget']={}
+        contract['example_input']={'sample_id':'bad','inputs':{}}
+        errors=issues(contract)
+        self.assertTrue(any('预算' in x for x in errors))
+        self.assertTrue(any('示例不符合接口' in x for x in errors))
+
+    def test_malformed_bounds_raise_value_error(self):
+        with self.assertRaises(ValueError):
+            validate_schema({'type':'number','minimum':'zero'},1)

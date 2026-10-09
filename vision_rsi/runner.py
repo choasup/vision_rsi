@@ -81,10 +81,14 @@ def main():
     parser.add_argument('--task-id')
     parser.add_argument('--input')
     parser.add_argument('--output')
+    parser.add_argument('--input-dir')
+    parser.add_argument('--manifest')
+    parser.add_argument('--output-dir')
+    parser.add_argument('--resume', action='store_true')
     parser.add_argument('--version')
     parser.add_argument('--registry', default='runs/capabilities')
     args = parser.parse_args()
-    config = json.loads(Path(args.config).read_text(encoding='utf-8'))
+    config = {} if args.command in ('training','test','capabilities') else json.loads(Path(args.config).read_text(encoding='utf-8'))
     if args.command in ('training', 'test', 'capabilities'):
         from .capability import Capabilities
         registry = Capabilities(args.registry)
@@ -92,7 +96,14 @@ def main():
             if args.command == 'training':
                 result = registry.train(args.task)
             elif args.command == 'test':
-                result = registry.infer(args.task_id, args.input, args.version)
+                if sum(bool(x) for x in (args.input,args.input_dir,args.manifest)) != 1:
+                    parser.error('test requires exactly one of --input, --input-dir, --manifest')
+                if args.input_dir or args.manifest:
+                    from .batch import batch, input_rows
+                    if not args.output_dir: parser.error('batch inference requires --output-dir')
+                    result = batch(registry,args.task_id,input_rows(args.manifest,args.input_dir),args.output_dir,args.version,args.resume)
+                else:
+                    result = registry.infer(args.task_id, args.input, args.version)
                 if args.output:
                     atomic_json(Path(args.output), result)
             else:

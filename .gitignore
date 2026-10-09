@@ -24,3 +24,7 @@ id_ed25519*
 config.local.json
 
 event.local.json
+
+*.egg-info/
+build/
+dist/
