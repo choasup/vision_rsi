@@ -67,3 +67,17 @@ def job_request(remote, action, job_id, spec=None):
     if result.returncode:
         raise RuntimeError('Remote job request failed: ' + result.stderr[-2000:])
     return json.loads(result.stdout)
+
+
+def detector_request(remote, action):
+    from pathlib import Path
+    import base64
+    if action not in ('smoke','dataset-check'): raise ValueError('Unknown detector action')
+    source=Path(__file__).with_name('detector.py').read_text(encoding='utf-8-sig')
+    encoded=base64.b64encode(source.encode()).decode()
+    program="import base64; exec(compile(base64.b64decode('"+encoded+"'), '<detector-adapter>', 'exec'))"
+    command=shlex.quote(remote.get('python','python3'))+' -c '+shlex.quote(program)
+    result=subprocess.run(ssh_argv(remote)+[command],input=json.dumps({'action':action,'coco_root':remote.get('coco_root','')}),
+                          capture_output=True,text=True,timeout=120)
+    if result.returncode: raise RuntimeError('Detector adapter failed: '+result.stderr[-2000:])
+    return json.loads(result.stdout)

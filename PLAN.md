@@ -152,3 +152,11 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 ## 契约绑定接口 Harness
 
 新增 training build，按任务代号、契约版本与内容哈希生成独立输入/输出校验程序；现有用户 COCO 会话生成并 check 成功。重复构建复用，文件变更拒绝覆盖。未接模型时 infer 明确 blocked，未注册已验收能力。32 项测试通过。下一步仍是真实检测训练/推理适配器及训练执行预算接入。
+
+## 真实检测器自主联调
+
+- 新增 detector 适配器与 training diagnose：远端真实 GPU 前向/反向/一次更新/推理。
+- 首次 CUDA peak memory reset 在初始化前失败，调整初始化顺序后实测通过。
+- H20 smoke 实测约 1.29 秒 GPU 区间、峰值约 520 MB；使用随机图像与随机权重，不是 COCO 训练/评测。
+- 现有用户会话新增契约 v4，修正 COCO 离散类别 ID，AP>=60 要求不变，保留旧版本。
+- 34 项测试通过。COCO 数据路径、真实训练预算、预训练权重和完整评测/训练适配器仍待接入。

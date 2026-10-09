@@ -205,3 +205,17 @@ python PATH_TO_HARNESS/harness.py validate-output --input result.json
 ```
 
 重复构建相同任务/契约版本会验证后复用，不覆盖产物。接口构建允许资源预算尚未确定，但清单保留执行缺口；不代表已允许或已完成训练。infer --input sample.json 在校验协议后返回 blocked（退出码 2），直到真实模型适配器接入。当前没有训练入口或预测能力注册。文件哈希用于本地完整性检查，不提供对恶意修改 manifest 的防篡改保护。
+
+## 自主联调：真实检测 GPU 路径
+
+```powershell
+.\vision-rsi.cmd training diagnose --session-id SESSION --config config.local.json
+```
+
+只读检查 COCO 根目录配置，然后通过 SSH 在 GPU 0 运行 torchvision Faster R-CNN ResNet50 FPN v2 的真实前向/反向、一个 SGD step 和推理。模型和图像均随机初始化，使用 64×64 的两个合成输入，不下载权重，不使用 COCO 数据，不计算 AP，不注册已验收能力。单步训练只用于执行链路自测，不能算作任务训练完成。不会使用现有 mock GPU 预算作为真实训练授权。
+
+诊断报告包含运行环境、loss、GPU 区间耗时、显存峰值、模型输出、契约版本、源码哈希与数据缺口，保存在 runs/training-sessions/diagnosis-SESSION.json（最新快照）。SSH 硬超时 120 秒，目前未接持久 GPU 任务管理；不要把此命令用于长期训练。
+
+该适配器是接线基线候选，不是面向 AP60 的最终方法选择。API 参考：https://docs.pytorch.org/vision/0.13/models/generated/torchvision.models.detection.fasterrcnn_resnet50_fpn_v2.html 。COCO 的 80 类使用 1..90 内的离散 ID，输出从 xyxy 转换为 xywh 并过滤背景与无效类别，不能将“80 类”等同为 ID 连续 1..80。
+
+完整 COCO 训练仍缺数据路径、预训练权重、真实执行预算和评测适配器；随机输入 smoke 通过不会解除这些阻塞。
