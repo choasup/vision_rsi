@@ -6,6 +6,15 @@
   "detector": "UNSELECTED",
   "pretrained_weights": "UNCONFIGURED",
   "dataset": "COCO val2017 (local validation only)",
-  "llm": {"provider": "openai-compatible", "base_url": "", "model": "", "api_key_env": "DEEPSEEK_API_KEY"},
-  "remote": {"ssh_host": "", "workspace": "", "coco_root": ""}
+  "llm": {
+    "provider": "openai-compatible",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "api_key_env": "DEEPSEEK_API_KEY"
+  },
+  "remote": {
+    "ssh_host": "",
+    "workspace": "",
+    "coco_root": ""
+  }
 }

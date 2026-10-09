@@ -18,7 +18,7 @@
 
 ## 2：LLM 与内层实验闭环
 
-- [ ] 明确 DeepSeek Flash 准确模型 ID、Base URL；实现可替换的 provider 协议。
+- [x] 确认官方 deepseek-flash 和 Base URL；实现可替换 OpenAI-compatible 客户端，真实最小调用通过。
 - [ ] API key 环境变量、超时、重试、token 成本和预算；先只读规划，再候选代码修改。
 - [ ] 候选使用 Git 提交、结构化假设、父实验、配方、资源和评测产物校验和。
 - [ ] 候选在隔离目录检查后训练；验证集错误分析；失败候选也记录成本。
@@ -33,7 +33,7 @@
 ## 待用户配置
 
 SSH 主机别名、远端工作目录、COCO 与权重路径、准确模型 ID、Base URL、初始 GPU 小时预算。
-API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。当前未连接远程或外部 API。
+API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小真实调用已通过；尚未连接远程训练。
 
 ## 4：跨视觉任务扩展
 

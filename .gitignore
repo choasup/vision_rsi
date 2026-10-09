@@ -20,3 +20,5 @@ checkpoints/
 id_rsa*
 id_ed25519*
 *.log
+
+config.local.json
