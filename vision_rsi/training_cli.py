@@ -34,7 +34,7 @@ def summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','list','build','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -70,6 +70,10 @@ def main(argv):
                 destination=Path(args.sessions)/('diagnosis-'+session+'.json')
                 atomic_json(destination,result)
                 result['report']=str(destination.resolve())
+            elif args.action=='prepare':
+                from .training_plan import prepare
+                config=json.loads(Path(args.config).read_text(encoding='utf-8'))
+                result=prepare(result,config,args.output or 'runs/training-plans')
             elif args.action=='build':
                 from .harness import build
                 result=build(result,args.output or 'runs/harnesses')

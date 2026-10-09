@@ -256,3 +256,13 @@ python PATH_TO_HARNESS/harness.py validate-output --input result.json
 这只是规格示例，不表示已授权或启动训练。GPU 预算必须覆盖卡数×超时，加上 5 秒退出余量；设备索引限定 0..7。CPU 默认不暴露 CUDA，仍限制 300 秒。worker 使用单调时钟控制执行时间，结束时按卡数×实际 worker 时长记账；OS 调度延迟可能产生少量边界误差，并非硬实时计费上限。
 
 Linux flock 租约阻止同一专用工作区内 Agent 作业重复占卡，子进程继承租约文件描述符；这不检查其他工作区或外部程序的 GPU 使用，正式运行前必须重新核查。取消/超时会终止进程组并清理残留子进程。已在真实服务器验证 CPU 正常执行、重复提交、超时、取消和租约冲突/释放，未验证长时间 GPU 任务，也尚未实现多个任务共享总预算的队列准入。
+
+## 检测训练适配器（开发中）
+
+`training prepare --session-id SESSION --config config.local.json` 将保存的任务契约绑定到首个 COCO baseline 配方，生成不可覆盖的结构化计划；保留原验收阈值，默认选择检测器与优化参数，不要求用户填写架构。该命令只准备计划，不启动训练。当前 `training run` 尚未接入此计划的 SSH 自动部署与提交，仍会明确阻塞。
+
+实际 GPU 训练入口已实现为 `python -m vision_rsi.coco_train --recipe recipe.json --output /absolute/run-dir`，多卡使用 `python -m torch.distributed.run --standalone --nproc-per-node=8 -m vision_rsi.coco_train ...`。恢复需要显式 `--resume`，并保持相同配方、代码、图像内容和世界大小。配方要求绝对数据/权重路径、权重及 train/val 标注 SHA256；支持 epochs、batch_size_per_gpu、seed、checkpoint_steps、world_size、min_size、max_size、learning_rate、weight_decay 和 acceptance_threshold。模型默认 torchvision Faster R-CNN ResNet50 FPN v2，固定 torch 2.6.0+cu124、torchvision 0.21.0+cu124、pycocotools 2.0.11，无隐式下载。
+
+正式运行读取完整 train2017/val2017，保留 80 类稀疏 ID，拒绝缺失图像、路径逃逸、非有限损失/梯度及配方变化。检查点保存模型、优化器、当前 epoch/样本游标、各 rank RNG；训练完成后生成全量预测和覆盖清单，再执行官方评测。SIGTERM 在步边界尝试保存，硬退出只能恢复到最近已保存步骤；已消耗时间由作业层计账。GPU 总预算的跨候选扣减尚待接入。
+
+已在 H20 验证单卡与双卡 NCCL/DDP 的小型合成数据训练→检查点→推理→评测，另验证已完成检查点恢复时不重复训练。尚未验证训练中断后的数值一致性、8 卡完整训练或真实 COCO AP。合成 fixture 使用随机初始权重，始终拒绝 COCO 达标验收；正式 Training 计划强制 fixture=false。训练产物尚未自动注册为推理能力。

@@ -160,3 +160,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - H20 smoke 实测约 1.29 秒 GPU 区间、峰值约 520 MB；使用随机图像与随机权重，不是 COCO 训练/评测。
 - 现有用户会话新增契约 v4，修正 COCO 离散类别 ID，AP>=60 要求不变，保留旧版本。
 - 34 项测试通过。COCO 数据路径、真实训练预算、预训练权重和完整评测/训练适配器仍待接入。
+
+## 训练执行层进展（2026-10-09）
+
+- 新增 pinned torchvision COCO adapter：真实图片/标注读取、1..8 rank DDP、步骤检查点、优化器与各rank RNG恢复、全量推理和官方评测。
+- 在H20验证单卡及双卡合成fixture完整执行；单卡已完成检查点恢复不重复步骤。fixture非COCO效果证据，验收状态始终false。
+- 真实任务新增 training prepare：保存契约/配方/源代码哈希、保留AP>=60并区分真实GPU预算与mock预算。
+- 仍待：Training run自动部署/提交、跨候选总预算、真实数据/预训练权重、训练中断数值验证、8卡长程、能力注册、方法研究及自身RSI。
