@@ -68,12 +68,19 @@ def doctor(config):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['run', 'doctor', 'llm-check'])
+    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare'])
     parser.add_argument('--config', default='config.example.json')
     parser.add_argument('--run-dir', default='runs/demo')
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text(encoding='utf-8'))
-    if args.command == 'llm-check':
+    if args.command == 'compare':
+        from .research import compare
+        result = compare()
+        directory = Path(args.run_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        result['git_revision'] = revision()
+        atomic_json(directory / 'comparison.json', result)
+    elif args.command == 'llm-check':
         from .llm import OpenAICompatibleClient
         result = OpenAICompatibleClient(config['llm']).complete(
             [{'role': 'user', 'content': 'Reply with OK only.'}], max_tokens=128)
