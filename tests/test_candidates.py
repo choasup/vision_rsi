@@ -89,3 +89,16 @@ class CandidateTests(unittest.TestCase):
         remote.side_effect=None
         with self.assertRaisesRegex(ValueError,'identity mismatch'):
             self.store.check(record['candidate_id'],{'workspace':'/workspace'},'vision_rsi.strategy_candidate','choose',[{}])
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_strategy_protocol_rejects_completed_action_despite_self_claim(self,remote):
+        record=self.store.create(proposal(),{})
+        def response(endpoint,request):
+            return {'status':'executed_unverified','source_hashes':request['source_hashes'],
+                    'observation':{'results':[{'action_id':'old','rationale':'I claim success','adopt_rule_met':True}]},'adopted':False}
+        remote.side_effect=response
+        cases=[{'history':[{'id':'old','status':'completed'}],
+                'actions':[{'id':'old','estimated_cost':1,'expected_gain':2,'uncertainty':0}],'budget':2}]
+        result=self.store.check_strategy(record['candidate_id'],{'workspace':'/workspace'},'vision_rsi.strategy_candidate',cases)
+        self.assertEqual(result['status'],'protocol_failed');self.assertFalse(result['adopted'])
+        self.assertIn('already attempted',result['protocol_failures'][0]['error'])

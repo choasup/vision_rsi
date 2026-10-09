@@ -1,6 +1,6 @@
 # Vision RSI Agent
 
-研究候选入口：`vision-rsi candidate`。它将策略/harness源码改动保存到独立Git仓库，保留原任务契约和证据指纹，不改动当前工作区。候选目前只做语法检查，不执行、不自动采用，不能作为RSI效果提升证据。
+研究候选入口：`vision-rsi candidate`。它将策略/harness源码改动保存到独立Git仓库，保留原任务契约和证据指纹，不改动当前工作区。创建候选只做语法检查；显式check使用远端CPU隔离执行，均不自动采用，不能作为RSI效果提升证据。
 
 ```powershell
 # evidence.json为本次研究观察；request-id保持不变可复用已保存的模型响应
@@ -9,11 +9,14 @@
 .\vision-rsi.cmd candidate show --candidate-id CANDIDATE_SHA256
 # cases.json为函数关键字参数对象数组；检查结果保存在候选checks目录
 .\vision-rsi.cmd candidate check --candidate-id CANDIDATE_SHA256 --module vision_rsi.strategy_NAME --function propose --cases cases.json
+.\vision-rsi.cmd candidate strategy-check --candidate-id CANDIDATE_SHA256 --module vision_rsi.strategy_NAME --cases cases.json
 ```
 
 首次调用前需要提交主仓库已有源码修改。LLM调用先持久化请求，再保存响应；响应不确定时拒绝自动重复请求。候选限制在策略、harness、adapter模块，不能改写验收、调度和预算控制代码。
 
 candidate check在远端bubblewrap隔离命名空间中运行纯Python策略：使用系统Python3.12、只读源码和标准库、不挂载用户目录/密钥/GPU、不联网、清空环境，限制12秒墙钟及每进程5秒CPU/512MiB地址空间，最多32进程。它不安装候选依赖，不支持torch训练；缺少隔离条件直接失败。Git隔离不代表执行隔离，执行检查也不代表效果验收；候选返回的adopt_rule_met等字段都是未经信任的观察，控制程序不会据此采用。真正的同预算保留任务配对效果验收仍待接入。
+
+strategy-check额外执行固定协议检查。每个case包含history、actions和budget；动作包含id、estimated_cost、expected_gain和uncertainty。动作成本须有正数预留，不能选择预算外、不可用或history中已尝试的ID；重试需新的明确尝试ID。策略返回action_id和rationale；无可执行动作时action_id为null。协议通过也不等于策略更有效。
 
 Windows 本地研究控制器，通过 SSH 调度独立 8 卡 H20 服务器；LLM 服务独立且可替换。
 项目目标是通用视觉递归自我改进（RSI）研究 Agent，支持逐步扩展到不同视觉任务、数据集和评测协议。COCO 目标检测 box AP 只是第一个验证实验，不定义 Agent 的能力边界。当前版本只有确定性模拟闭环，**没有真实训练、COCO 指标计算；LLM 客户端已支持真实 API 调用**。
