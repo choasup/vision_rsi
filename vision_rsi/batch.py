@@ -30,7 +30,8 @@ def input_rows(manifest=None, input_dir=None):
     else:
         folder=Path(input_dir).resolve()
         if not folder.is_dir(): raise ValueError('Input directory does not exist')
-        rows=[{'sample_id':p.name,'input':str(p.resolve())} for p in sorted(folder.glob('*.json')) if p.is_file()]
+        extensions={'.json','.jpg','.jpeg','.png','.bmp','.webp','.tif','.tiff','.gif'}
+        rows=[{'sample_id':p.name,'input':str(p.resolve())} for p in sorted(folder.iterdir()) if p.is_file() and p.suffix.lower() in extensions]
     if not rows: raise ValueError('No batch samples')
     if len({r['sample_id'] for r in rows})!=len(rows): raise ValueError('Duplicate sample_id; refusing ambiguous batch')
     return rows
@@ -51,8 +52,8 @@ def batch(registry, task_id, rows, output_dir, version=None, resume=False):
         else: state={'identity':identity,'items':{}}
         for row in rows:
             key=row['sample_id']; error=None
-            try: content_hash=digest_bytes(Path(row['input']).read_bytes()) if 'input' in row else digest_bytes(row['source'].encode())
-            except OSError as exc: content_hash=None;error=str(exc)
+            try: content_hash=(registry.input_fingerprint(task_id,row['input'],version) if hasattr(registry,'input_fingerprint') else digest_bytes(Path(row['input']).read_bytes())) if 'input' in row else digest_bytes(row['source'].encode())
+            except (OSError,ValueError,KeyError,TypeError) as exc: content_hash=None;error=str(exc)
             old=state['items'].get(key)
             if old and old['input_sha256']!=content_hash: raise ValueError('Sample content changed: '+key)
             output_path=folder/(digest_bytes(key.encode())[:32]+'.json')
@@ -64,7 +65,7 @@ def batch(registry, task_id, rows, output_dir, version=None, resume=False):
             try:
                 if 'invalid' in row: raise ValueError(row['invalid'])
                 if error: raise OSError(error)
-                output=registry.infer(task_id,row['input'],version)
+                output=registry.infer(task_id,row['input'],version,expected_input_fingerprint=content_hash,sample_id=key) if hasattr(registry,'input_fingerprint') else registry.infer(task_id,row['input'],version)
                 result.update(status='succeeded',output=output['output'],acceptance=output['acceptance'])
             except (ValueError,OSError,KeyError,TypeError,RuntimeError,subprocess.SubprocessError) as exc:
                 result['error']={'type':type(exc).__name__,'message':str(exc)[:2000]}

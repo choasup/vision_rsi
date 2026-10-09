@@ -265,7 +265,7 @@ Linux flock 租约阻止同一专用工作区内 Agent 作业重复占卡，子�
 
 正式运行读取完整 train2017/val2017，保留 80 类稀疏 ID，拒绝缺失图像、路径逃逸、非有限损失/梯度及配方变化。检查点保存模型、优化器、当前 epoch/样本游标、各 rank RNG；训练完成后生成全量预测和覆盖清单，再执行官方评测。SIGTERM 在步边界尝试保存，硬退出只能恢复到最近已保存步骤；已消耗时间由作业层计账。Training 提交层按会话预留跨作业 GPU 总预算，查询终态后结算实际消耗；RSI 调度器仍待接入。
 
-已在 H20 验证单卡与双卡 NCCL/DDP 的小型合成数据训练→检查点→推理→评测，另验证已完成检查点恢复时不重复训练。已补充单卡合成数据中断恢复的8步数值对照；仍未验证8卡完整训练或真实COCO AP。合成 fixture 使用随机初始权重，始终拒绝 COCO 达标验收；正式 Training 计划强制 fixture=false。训练产物尚未自动注册为推理能力。
+已在 H20 验证单卡与双卡 NCCL/DDP 的小型合成数据训练→检查点→推理→评测，另验证已完成检查点恢复时不重复训练。已补充单卡合成数据中断恢复的8步数值对照；仍未验证8卡完整训练或真实COCO AP。合成 fixture 使用随机初始权重，始终拒绝 COCO 达标验收；正式 Training 计划强制 fixture=false。已接入显式训练验收注册入口；现有fixture未注册为能力。
 
 
 ## Training 作业使用
@@ -282,7 +282,7 @@ status/logs/cancel 也可使用 `--run-id` 指定历史作业。prepare/run/stat
 
 运行时检查源文件是否仍匹配计划，将源码、契约和配方封装到远端按内容寻址的 releases 目录，复用前及启动前校验哈希。远端必须已有固定 torch/torchvision 和 pycocotools 2.0.11（可安装在专用工作区 runtime-coco-2.0.11）。提交响应不确定时保留预算，重复 run 返回原运行记录，不自动重启；用 status 核对同一 ID。远端 lost 或提交目录不完整需人工诊断，不会自动释放预算后重跑。
 
-远端 completed 仅表示进程正常退出，不能等同达到效果要求。training collect 已接入 result/evaluation 收据同步和验收检查；真实能力注册、后续研究及预算修订流程仍待实现；Training resume 已接入，见后文。部署失败且尚未提交作业时结算为零。测试覆盖本地预算预留/结算、重复调用、丢失提交响应、错误目标主机及非法记账；远端验证内容寻址复用、启动前完整性检查和缺配置拒绝。真实 Training CLI 提交仍待数据与预算配置后验证。
+远端 completed 仅表示进程正常退出，不能等同达到效果要求。training collect 已接入 result/evaluation 收据同步和验收检查；真实能力注册入口已接入，当前无真实达标模型；后续研究及预算修订流程仍待实现。Training resume 已接入，见后文。部署失败且尚未提交作业时结算为零。测试覆盖本地预算预留/结算、重复调用、丢失提交响应、错误目标主机及非法记账；远端验证内容寻址复用、启动前完整性检查和缺配置拒绝。真实 Training CLI 提交仍待数据与预算配置后验证。
 
 
 ## 训练结果收集和验收
@@ -313,3 +313,21 @@ collect 先核对原远端作业已正常退出并结算预算，再在服务器
 模型加载前核查检查点哈希，恢复优化器、数据游标和各rank随机状态。开发早期不支持哈希恢复协议的冻结bundle会明确拒绝，不会偷偷替换其代码。硬中断仍只能恢复最近持久化步骤；丢失步骤的算力消耗保留在账本中。
 
 基线启用确定性算法、固定cuBLAS工作区并关闭TF32/非确定性cuDNN选择，torchvision的确定性ROIAlign使用未编译的Python路径以控制编译开销。实现依赖已固定的torch/torchvision版本，可能降低吞吐。仅随机种子不保证复现，参见[PyTorch复现性说明](https://docs.pytorch.org/docs/stable/notes/randomness.html)。在H20单卡合成数据上，真实作业取消后通过Training恢复继续到第8步，与不中断参考的模型参数完全一致（最大差异0），优化器状态也通过比较；这不证明跨硬件、多卡长程或真实COCO效果。
+
+
+## 注册检测能力与实际图片推理
+
+```powershell
+# 仅已完成并达到原任务验收目标的真实训练可注册；sample用于探测实际推理接口
+.\vision-rsi.cmd training register --run-id RUN_ID --sample examples\your-input.json
+# 注册成功后按任务代号调用，可以直接传图片，也可以传契约样本JSON
+.\vision-rsi.cmd test --task-id TASK_ID --input C:\images\photo.jpg --output runs\prediction.json
+.\vision-rsi.cmd test --task-id TASK_ID --input-dir C:\images --output-dir runs\image-batch
+.\vision-rsi.cmd test --task-id TASK_ID --input-dir C:\images --output-dir runs\image-batch --resume
+```
+
+register会重核原计划、收据和验收结果，并以实际本地图像探测远端推理。能力版本固定训练检查点、源码依赖、契约、收据和独立推理适配器；注册过程不保存API Key。未达标/fixture及错误图像或模型身份响应均不能注册。当前没有任何真实COCO达标能力，不能直接执行上述TASK_ID示例；正向注册生命周期测试使用mock收据/传输，仅用于逻辑验证。
+
+COCO适配器目前在SSH服务器使用CPU推理（4线程），最多20MiB图片、40百万像素，进程硬时限60秒。读取本地图片字节后传输，支持相对路径及本地file URI；不能用此入口读取网站或文件共享。联合多图、视频、动画需要对应任务适配器，会明确拒绝。单图任务可直接传图片路径，Agent根据命名输入构造样本；批量目录读取JSON及常见图片文件，样本ID在结果中保留。恢复校验JSON及引用图片内容，换图不能复用旧成功结果。
+
+注册目前验证的是**训练检查点的COCO指标和一次CPU接口探针**，`validation.serving_accuracy_verified=false`明确保留后端验证缺项：尚未完成CPU后端完整验证集AP/性能测试，不能据此宣称上线或保证推理效果达标。真实部署前须验证服务后端的完整任务效果。实际H20测试只使用合成检查点，图片字节、源码/检查点身份及输出契约校验通过，预测为空；这不是检测质量证据。

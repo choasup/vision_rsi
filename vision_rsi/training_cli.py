@@ -38,7 +38,7 @@ def execution_summary(result):
             'submission_uncertain':'提交响应不确定，请查询原作业','completed':'远端进程已结束；需检查评测结果',
             'running':'远端作业运行中','cancelled':'已取消','timed_out':'已超时','failed':'执行失败'}
     lines=['状态: '+labels.get(result.get('status'),str(result.get('status')))]
-    for key,label in [('task_id','任务'),('session_id','会话'),('run_id','运行'),('plan_path','计划文件')]:
+    for key,label in [('task_id','任务'),('session_id','会话'),('run_id','运行'),('version','能力版本'),('plan_path','计划文件')]:
         if result.get(key): lines.append(label+': '+str(result[key]))
     if result.get('actual_gpu_hours') is not None: lines.append('实际 GPU 小时: '+str(result['actual_gpu_hours']))
     blockers=result.get('blockers') or []
@@ -59,7 +59,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','status','logs','cancel','collect','resume','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','status','logs','cancel','collect','resume','register','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -68,6 +68,7 @@ def main(argv):
     parser.add_argument('--sessions',default='runs/training-sessions')
     parser.add_argument('--config',default='config.local.json')
     parser.add_argument('--json',action='store_true',help='Emit full structured records')
+    parser.add_argument('--registry',default='runs/capabilities')
     parser.add_argument('--run-id');parser.add_argument('--run-store',default='runs/training-runs')
     args=parser.parse_args(argv)
     if args.interactive and args.action not in ('start','show','reply','define'):
@@ -77,7 +78,7 @@ def main(argv):
         config=json.loads(Path(args.config).read_text(encoding='utf-8'))
         return store.clarify(session,config['llm'],message)
     try:
-        if args.action in ('status','logs','cancel','collect','resume','runs'):
+        if args.action in ('status','logs','cancel','collect','resume','register','runs'):
             from .training_runs import TrainingRuns,observe,collect,resume
             runs=TrainingRuns(args.run_store)
             try:
@@ -91,6 +92,12 @@ def main(argv):
                     config=json.loads(Path(args.config).read_text(encoding='utf-8'))
                     if args.action=='collect': result=collect(run_id,config['remote'],runs)
                     elif args.action=='resume': result=resume(run_id,config['remote'],runs)
+                    elif args.action=='register':
+                        from .capability import Capabilities
+                        record=collect(run_id,config['remote'],runs)
+                        registry=Capabilities(args.registry)
+                        try: result=registry.register_training(record,args.sample)
+                        finally: registry.close()
                     else: result=observe(run_id,config['remote'],runs,args.action)
             finally: runs.close()
             print(json.dumps(result,ensure_ascii=False,indent=2) if args.json or args.action=='runs' else execution_summary(result));return

@@ -86,6 +86,51 @@ class Capabilities:
             manifest['reason']=type(error).__name__+': '+str(error)
             return finish('failed')
 
+    def register_training(self,record,sample_path):
+        from .acceptance import review
+        from .media import image_request
+        from .remote import infer_training
+        from .runner import digest
+        if not sample_path:raise ValueError('A local contract sample is required to verify the inference adapter')
+        if record['status']!='completed': raise ValueError('Training process must be completed before registration')
+        details=record['details']
+        plan=json.loads(Path(details['plan_path']).read_text(encoding='utf-8'))
+        if digest(plan)!=record['plan_id']: raise ValueError('Frozen Training plan changed')
+        receipt=json.loads(Path(details['receipt_path']).read_text(encoding='utf-8'))
+        if receipt['run_id']!=record['run_id']: raise ValueError('Training receipt belongs to another run')
+        verdict=review(plan,receipt)
+        if not verdict['passed']: raise ValueError('Training acceptance not met; no capability registered: '+'; '.join(verdict['reasons']))
+        import base64
+        result=json.loads(base64.b64decode(receipt['reports']['result.json']['base64']))
+        name=task_id(plan['task_id']);version=uuid.uuid4().hex
+        folder=self.root/name/version;folder.mkdir(parents=True)
+        atomic_json(folder/'plan.json',plan);atomic_json(folder/'receipt.json',receipt)
+        (folder/'inference.py').write_bytes(Path(__file__).with_name('coco_infer.py').read_bytes())
+        endpoint={'remote':record['remote'],'bundle_directory':details['deployment']['directory'],
+                  'checkpoint':details['output_directory']+'/checkpoint.pt','checkpoint_sha256':verdict['checkpoint_sha256'],
+                  'training_identity_hash':result['identity_hash'],'source_hashes':plan['source_hashes'],'recipe':plan['recipe'],'contract':plan['contract']}
+        request=dict(image_request(plan['contract'],sample_path),**{key:value for key,value in endpoint.items() if key!='remote'})
+        probe=infer_training(endpoint['remote'],request,folder/'inference.py')
+        self._verify_remote_prediction(endpoint,request,probe)
+        manifest={'task_id':name,'version':version,'status':'validated','spec':{'kind':'coco_detection'},'training_run_id':record['run_id'],'session_id':record['session_id'],
+                  'endpoint':endpoint,'validation':dict(verdict,status='validated_training_checkpoint',capability_registered=True,serving_backend='cpu',serving_accuracy_verified=False),'registration_sample_sha256':probe['image_sha256'],
+                  'limitations':'COCO AP measured by frozen Training evaluation; CPU serving accuracy and latency need deployment validation. Not a guarantee for arbitrary input.',
+                  'artifacts':{file:sha(folder/file) for file in ('plan.json','receipt.json','inference.py')}}
+        atomic_json(folder/'manifest.json',manifest)
+        with self.db:self.db.execute('INSERT INTO versions(task_id,version,status,manifest_hash) VALUES (?,?,?,?)',(name,version,'validated',sha(folder/'manifest.json')))
+        return manifest
+
+    @staticmethod
+    def _verify_remote_prediction(endpoint,request,response):
+        import base64
+        from .contracts import validate_schema
+        if response.get('sample_id')!=request['sample']['sample_id'] or response.get('checkpoint_sha256')!=endpoint['checkpoint_sha256'] or response.get('training_identity_hash')!=endpoint['training_identity_hash']:
+            raise ValueError('Inference response does not match registered sample/model')
+        if response.get('image_sha256')!=hashlib.sha256(base64.b64decode(request['image_base64'])).hexdigest():
+            raise ValueError('Inference response image bytes differ')
+        if response.get('device')!='cpu':raise ValueError('Unexpected inference serving backend')
+        validate_schema(endpoint['contract']['output_schema'],response['output'])
+
     def resolve_version(self, name, version=None):
         name=task_id(name)
         if version:
@@ -95,7 +140,18 @@ class Capabilities:
         if not row: raise ValueError('No validated capability for task/version')
         return row[0]
 
-    def infer(self, name, input_path, version=None):
+    def input_fingerprint(self,name,input_path,version=None):
+        name=task_id(name);version=self.resolve_version(name,version)
+        expected=self.db.execute("SELECT manifest_hash FROM versions WHERE task_id=? AND version=?",(name,version)).fetchone()[0]
+        path=self.root/name/version/'manifest.json'
+        if sha(path)!=expected:raise ValueError('Manifest integrity failure')
+        manifest=json.loads(path.read_text())
+        if manifest['spec']['kind']=='coco_detection':
+            from .media import image_request
+            return image_request(manifest['endpoint']['contract'],input_path)['input_fingerprint']
+        return sha(input_path)
+
+    def infer(self, name, input_path, version=None,expected_input_fingerprint=None,sample_id=None):
         name=task_id(name)
         if version:
             row=self.db.execute("SELECT version,manifest_hash FROM versions WHERE task_id=? AND version=? AND status='validated'",(name,version)).fetchone()
@@ -105,8 +161,22 @@ class Capabilities:
         version,expected=row; folder=self.root/name/version
         if sha(folder/'manifest.json')!=expected: raise ValueError('Manifest integrity failure')
         manifest=json.loads((folder/'manifest.json').read_text())
+        allowed=('plan.json','receipt.json','inference.py') if manifest['spec']['kind']=='coco_detection' else ('model.json','harness.py')
+        if set(manifest['artifacts'])!=set(allowed):raise ValueError('Capability artifact set mismatch')
         for file,expected_hash in manifest['artifacts'].items():
-            if file not in ('model.json','harness.py') or sha(folder/file)!=expected_hash: raise ValueError('Artifact integrity failure')
+            if file not in allowed or sha(folder/file)!=expected_hash: raise ValueError('Artifact integrity failure')
+        if manifest['spec']['kind']=='coco_detection':
+            from .media import image_request
+            from .remote import infer_training
+            endpoint=manifest['endpoint']
+            request=dict(image_request(endpoint['contract'],input_path),**{key:value for key,value in endpoint.items() if key!='remote'})
+            if expected_input_fingerprint and request['input_fingerprint']!=expected_input_fingerprint:
+                raise ValueError('Input media changed after batch snapshot')
+            if sample_id is not None: request['sample']['sample_id']=sample_id
+            response=infer_training(endpoint['remote'],request,folder/'inference.py')
+            self._verify_remote_prediction(endpoint,request,response)
+            return {'task_id':name,'version':version,'kind':'coco_detection','output':response['output'],'acceptance':manifest['validation'],'sample_id':response['sample_id'],'device':response['device']}
+        if expected_input_fingerprint and sha(input_path)!=expected_input_fingerprint:raise ValueError('Input changed after batch snapshot')
         process=subprocess.run([sys.executable,str(folder/'harness.py'),str(folder/'model.json'),str(Path(input_path).resolve())],capture_output=True,text=True,timeout=30)
         if process.returncode:
             raise ValueError('Inference adapter failed: '+(process.stderr.strip().splitlines() or ['exit '+str(process.returncode)])[-1])

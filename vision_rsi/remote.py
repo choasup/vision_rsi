@@ -124,3 +124,15 @@ def collect_training(remote,run_id,output_directory,output_run_id=None,action="c
     response=json.loads(result.stdout)
     if response.get('run_id')!=run_id: raise ValueError('Collected wrong Training run')
     return response
+
+
+def infer_training(remote,request,source_path):
+    import base64
+    from pathlib import Path
+    source=Path(source_path).read_bytes()
+    encoded=base64.b64encode(source).decode()
+    program="import base64; exec(compile(base64.b64decode('"+encoded+"'), '<registered-inference>', 'exec'))"
+    command=shlex.quote(remote.get('python','python3'))+' -c '+shlex.quote(program)
+    result=subprocess.run(ssh_argv(remote)+[command],input=json.dumps(dict(request,workspace=remote['workspace'])),capture_output=True,text=True,timeout=90)
+    if result.returncode:raise RuntimeError('Remote inference failed: '+result.stderr[-2000:])
+    return json.loads(result.stdout)
