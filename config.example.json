@@ -1,0 +1,11 @@
+{
+  "mode": "mock",
+  "seed": 42,
+  "budget_gpu_hours": 4,
+  "max_experiments": 3,
+  "detector": "UNSELECTED",
+  "pretrained_weights": "UNCONFIGURED",
+  "dataset": "COCO val2017 (local validation only)",
+  "llm": {"provider": "openai-compatible", "base_url": "", "model": "", "api_key_env": "DEEPSEEK_API_KEY"},
+  "remote": {"ssh_host": "", "workspace": "", "coco_root": ""}
+}
