@@ -68,14 +68,17 @@ def doctor(config):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check', 'job-submit', 'job-status', 'job-logs', 'job-cancel'])
+    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check', 'job-submit', 'job-status', 'job-logs', 'job-cancel', 'demo'])
     parser.add_argument('--config', default='config.example.json')
     parser.add_argument('--run-dir', default='runs/demo')
     parser.add_argument('--job-id', default='cpu-smoke-001')
     parser.add_argument('--job-spec', help='JSON file with argv and timeout_seconds (CPU only)')
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text(encoding='utf-8'))
-    if args.command.startswith('job-'):
+    if args.command == 'demo':
+        from .demo import demo
+        result = demo(config, args.run_dir)
+    elif args.command.startswith('job-'):
         from .remote import job_request
         spec = None
         if args.command == 'job-submit':
