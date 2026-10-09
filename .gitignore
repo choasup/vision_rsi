@@ -22,3 +22,5 @@ id_ed25519*
 *.log
 
 config.local.json
+
+event.local.json

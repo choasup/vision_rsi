@@ -68,14 +68,26 @@ def doctor(config):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check', 'job-submit', 'job-status', 'job-logs', 'job-cancel', 'demo'])
+    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check', 'job-submit', 'job-status', 'job-logs', 'job-cancel', 'demo', 'research-import', 'research-event', 'research-view'])
     parser.add_argument('--config', default='config.example.json')
     parser.add_argument('--run-dir', default='runs/demo')
     parser.add_argument('--job-id', default='cpu-smoke-001')
     parser.add_argument('--job-spec', help='JSON file with argv and timeout_seconds (CPU only)')
+    parser.add_argument('--source', help='Demo state JSON to import')
+    parser.add_argument('--event-file', help='JSON with key, kind, payload')
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text(encoding='utf-8'))
-    if args.command == 'demo':
+    if args.command.startswith('research-'):
+        from .ledger import Ledger, import_demo
+        from .observatory import dashboard
+        ledger = Ledger(args.run_dir)
+        if args.command == 'research-import':
+            import_demo(ledger, args.source)
+        elif args.command == 'research-event':
+            event = json.loads(Path(args.event_file).read_text(encoding='utf-8'))
+            ledger.append(event['key'], event['kind'], event['payload'])
+        result = {'dashboard': dashboard(ledger), 'events': len(ledger.events())}
+    elif args.command == 'demo':
         from .demo import demo
         result = demo(config, args.run_dir)
     elif args.command.startswith('job-'):
