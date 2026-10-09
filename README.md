@@ -110,7 +110,7 @@ python -m vision_rsi research-step --config config.local.json --run-dir runs/obs
 
 ## Agent 应用入口（推荐）
 
-在项目目录运行 `powershell -File .\start-agent.ps1`，随后打开 http://127.0.0.1:8767/ 。也可运行：
+在项目目录运行 `.\start-agent.cmd`，随后打开 http://127.0.0.1:8767/ 。也可运行：
 
 ```powershell
 python -m vision_rsi serve --config config.local.json --run-dir runs/app --port 8767
@@ -120,4 +120,6 @@ python -m vision_rsi serve --config config.local.json --run-dir runs/app --port 
 
 状态 round_finished 表示当前只读能力范围或规划请求额度耗尽，不代表研究目标完成。当前最多 6 次真实规划，支持检查固定源码摘录、SSH 环境及未验证的模型综合解读。尚不支持训练、任意文件研究、文献检索、代码修改、自我修改验证或长期无人值守。暂停在行动边界生效，不能即时中止正在进行的 API 或 SSH 请求。
 
-任务保存在 runs/app/tasks.sqlite3，每任务的证据库位于对应 ID 子目录。界面只向本地 loopback 地址提供服务，API 使用随机本地令牌并校验 Host/Origin；不支持远程访问、多实例服务或生产级用户认证。start-agent.ps1 从当前进程或 Windows 用户环境变量读取 Key，不写入文件。运行应用需要有效的本地配置和 API Key；提交任务会产生真实 API 用量。
+任务保存在 runs/app/tasks.sqlite3，每任务的证据库位于对应 ID 子目录。界面只向本地 loopback 地址提供服务，API 使用随机本地令牌并校验 Host/Origin；不支持远程访问、多实例服务或生产级用户认证。启动器从当前进程或 Windows 用户环境变量读取 Key，不写入文件。运行应用需要有效的本地配置和 API Key；提交任务会产生真实 API 用量。
+
+如果 PowerShell 报禁止运行脚本，直接执行 ` .\start-agent.cmd`。该入口不依赖 .ps1 执行权限，不更改执行策略；` .\start-agent.cmd --check` 只检查本地配置与环境变量，不请求 API。已运行时会显示现有应用地址。
