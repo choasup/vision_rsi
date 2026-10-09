@@ -3,7 +3,10 @@ import sys
 
 
 def main():
-    if len(sys.argv)>1 and sys.argv[1]=='coco-train':
+    if len(sys.argv)>1 and sys.argv[1]=='candidate':
+        from .candidates import main as candidate_main
+        candidate_main(sys.argv[2:])
+    elif len(sys.argv)>1 and sys.argv[1]=='coco-train':
         from .coco_train import main as train_main
         train_main(sys.argv[2:])
     elif len(sys.argv)>1 and sys.argv[1]=='evaluate-coco':

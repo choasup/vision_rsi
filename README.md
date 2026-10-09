@@ -1,5 +1,16 @@
 # Vision RSI Agent
 
+研究候选入口：`vision-rsi candidate`。它将策略/harness源码改动保存到独立Git仓库，保留原任务契约和证据指纹，不改动当前工作区。候选目前只做语法检查，不执行、不自动采用，不能作为RSI效果提升证据。
+
+```powershell
+# evidence.json为本次研究观察；request-id保持不变可复用已保存的模型响应
+.\vision-rsi.cmd candidate propose --session-id SESSION_ID --evidence evidence.json --request-id research-001
+.\vision-rsi.cmd candidate list
+.\vision-rsi.cmd candidate show --candidate-id CANDIDATE_SHA256
+```
+
+首次调用前需要提交主仓库已有源码修改。LLM调用先持久化请求，再保存响应；响应不确定时拒绝自动重复请求。候选限制在策略、harness、adapter模块，不能改写验收、调度和预算控制代码。隔离Git仓库并不等于运行安全沙箱；候选运行与同预算保留任务配对验收仍待接入。
+
 Windows 本地研究控制器，通过 SSH 调度独立 8 卡 H20 服务器；LLM 服务独立且可替换。
 项目目标是通用视觉递归自我改进（RSI）研究 Agent，支持逐步扩展到不同视觉任务、数据集和评测协议。COCO 目标检测 box AP 只是第一个验证实验，不定义 Agent 的能力边界。当前版本只有确定性模拟闭环，**没有真实训练、COCO 指标计算；LLM 客户端已支持真实 API 调用**。
 
