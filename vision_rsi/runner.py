@@ -72,7 +72,7 @@ def main():
     parser.add_argument('--config', default='config.example.json')
     parser.add_argument('--run-dir', default='runs/demo')
     parser.add_argument('--job-id', default='cpu-smoke-001')
-    parser.add_argument('--job-spec', help='JSON file with argv and timeout_seconds (CPU only)')
+    parser.add_argument('--job-spec', help='JSON job spec: argv, timeout_seconds; GPU requires gpu_devices and gpu_hours_budget')
     parser.add_argument('--source', help='Demo state JSON to import')
     parser.add_argument('--event-file', help='JSON with key, kind, payload')
     parser.add_argument('--steps', type=int, default=1)

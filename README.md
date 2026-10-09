@@ -234,3 +234,25 @@ python PATH_TO_HARNESS/harness.py validate-output --input result.json
 执行固定一个已验收能力版本，逐项保存结果及错误。恢复时校验输入和成功输出哈希，跳过成功项；输入变更或能力版本变化会拒绝混用。可用 `--version` 显式指定原版本。强制终止后若留下 `batch.lock`，确认原进程已退出再移除该锁；正常异常会自动释放锁。尚未提供自动回收孤儿锁。
 
 项目可用 `python -m pip install .` 安装，入口为 `vision-rsi`。当前 0.1.0.dev1 为开发版本。已验证 wheel 构建、隔离目录安装、从仓库外调用模块、40 项自动测试及 toy CLI 批处理恢复；完整上线门槛见 RELEASE.md。
+
+## COCO 官方评测入口
+
+安装可选依赖 `python -m pip install ".[coco]"`，再执行：
+
+```powershell
+.\vision-rsi.cmd evaluate-coco --annotations PATH\instances_val2017.json --predictions runs\predictions.json --coverage runs\processed-image-ids.json --annotation-sha256 FROZEN_DATASET_HASH --threshold 60 --output runs\coco-evaluation.json
+```
+
+预测遵循 COCO `image_id/category_id/bbox(xywh)/score` 格式；coverage 是推理实际处理完的全部图像 ID 列表，包括零检测的图像。漏跑图像直接拒绝评测。评测固定官方 COCOeval bbox 默认参数，AP 输出按 0..100。冻结标注哈希、5000 张图和 COCO 80 类属于验收必要条件，标注哈希来源仍需独立确认。小型测试数据可验证评测器，但不能通过 COCO 能力验收。当前评测结果尚未连入自动训练与能力注册。
+
+## 预算约束的远端作业
+
+`job-submit --config config.local.json --job-id TASK --job-spec SPEC.json` 现在支持 GPU 规格：
+
+```json
+{"argv":["python3","/absolute/path/to/train.py"],"timeout_seconds":3600,"gpu_devices":[0,1,2,3,4,5,6,7],"gpu_hours_budget":8.1}
+```
+
+这只是规格示例，不表示已授权或启动训练。GPU 预算必须覆盖卡数×超时，加上 5 秒退出余量；设备索引限定 0..7。CPU 默认不暴露 CUDA，仍限制 300 秒。worker 使用单调时钟控制执行时间，结束时按卡数×实际 worker 时长记账；OS 调度延迟可能产生少量边界误差，并非硬实时计费上限。
+
+Linux flock 租约阻止同一专用工作区内 Agent 作业重复占卡，子进程继承租约文件描述符；这不检查其他工作区或外部程序的 GPU 使用，正式运行前必须重新核查。取消/超时会终止进程组并清理残留子进程。已在真实服务器验证 CPU 正常执行、重复提交、超时、取消和租约冲突/释放，未验证长时间 GPU 任务，也尚未实现多个任务共享总预算的队列准入。

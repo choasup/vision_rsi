@@ -4,6 +4,6 @@
   "requirement": "COCO detection; requires real training adapter",
   "acceptance": {
     "metric": "box_AP",
-    "threshold": 50
+    "threshold": 60
   }
 }

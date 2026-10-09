@@ -9,6 +9,9 @@ description = "Contract-driven visual research and capability agent"
 requires-python = ">=3.10"
 dependencies = []
 
+[project.optional-dependencies]
+coco = ["pycocotools==2.0.11"]
+
 [project.scripts]
 vision-rsi = "vision_rsi.cli:main"
 

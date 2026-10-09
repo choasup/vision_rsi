@@ -1,6 +1,7 @@
-"""Durable CPU job protocol, also executed on the Linux remote host."""
+"""Durable budgeted CPU/GPU job protocol, also executed on the Linux remote host."""
 import hashlib
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -34,41 +35,106 @@ def process_identity(pid):
         return None
 
 
+def validate_spec(spec):
+    if not isinstance(spec,dict) or not isinstance(spec.get('argv'),list) or not spec['argv'] or not all(isinstance(x,str) and x and '\x00' not in x for x in spec['argv']):
+        raise ValueError('argv must be a nonempty list of strings')
+    timeout=spec.get('timeout_seconds')
+    if isinstance(timeout,bool) or not isinstance(timeout,(int,float)) or not math.isfinite(timeout) or timeout<=0:
+        raise ValueError('Finite positive timeout required')
+    devices=spec.get('gpu_devices',[])
+    if not isinstance(devices,list) or len(devices)>8 or any(isinstance(x,bool) or not isinstance(x,int) or not 0<=x<8 for x in devices) or len(devices)!=len(set(devices)):
+        raise ValueError('gpu_devices must be unique H20 device indices 0..7')
+    if devices:
+        budget=spec.get('gpu_hours_budget')
+        if isinstance(budget,bool) or not isinstance(budget,(int,float)) or not math.isfinite(budget) or budget<=0 or budget+1e-12<len(devices)*(timeout+5)/3600:
+            raise ValueError('Explicit GPU budget must cover reserved GPUs times timeout plus 5s shutdown reserve')
+        if timeout>30*24*3600: raise ValueError('GPU timeout exceeds 30 days')
+    elif timeout>300:
+        raise ValueError('CPU smoke jobs require timeout in (0, 300]')
+    return devices
+
+
+def reserve_devices(folder, devices):
+    # flock leases survive worker death while inherited descriptors are held by
+    # the launched process. Scope is this dedicated workspace, not host-global.
+    import fcntl
+    leases=[]
+    root=folder.parent.parent/'gpu-leases';root.mkdir(exist_ok=True)
+    try:
+        for device in sorted(devices):
+            lease=(root/f'gpu-{device}.lock').open('a+')
+            leases.append(lease)
+            try: fcntl.flock(lease.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except BlockingIOError: raise RuntimeError('GPU device already reserved by an Agent job: '+str(device))
+        return leases
+    except Exception:
+        for lease in leases: lease.close()
+        raise
+
+
+def terminate_group(process):
+    try: os.killpg(process.pid,signal.SIGTERM)
+    except ProcessLookupError:
+        process.wait()
+        return
+    deadline=time.monotonic()+3
+    while time.monotonic()<deadline:
+        process.poll()  # Reap the leader so it cannot keep the group alive as zombie.
+        try: os.killpg(process.pid,0)
+        except ProcessLookupError: break
+        time.sleep(.05)
+    else:
+        try: os.killpg(process.pid,signal.SIGKILL)
+        except ProcessLookupError: pass
+    process.wait()
+
+
 def worker(folder):
     folder = Path(folder)
     spec = json.loads((folder / 'spec.json').read_text())
+    devices=validate_spec(spec)
+    worker_start=time.monotonic()
     state = {'status': 'running', 'started_at': time.time(), 'worker_pid': os.getpid(),
-             'synthetic': False, 'gpu_count': 0, 'process_identity': process_identity(os.getpid())}
+             'synthetic': False, 'gpu_count': len(devices), 'gpu_devices': devices, 'process_identity': process_identity(os.getpid())}
+    state['spec_hash']=hashlib.sha256(json.dumps(spec,sort_keys=True).encode()).hexdigest()
+    state['worker_source_sha256']=hashlib.sha256((folder/'worker.py').read_bytes()).hexdigest()
     save(folder / 'state.json', state)
     process = None
+    leases=[]
+    stop_requested=[False]
+    signal.signal(signal.SIGTERM,lambda *_:stop_requested.__setitem__(0,True))
     try:
+        if devices: leases=reserve_devices(folder,devices)
         with (folder / 'output.log').open('ab', buffering=0) as log:
-            environment = dict(os.environ, CUDA_VISIBLE_DEVICES='')
+            environment = dict(os.environ, CUDA_VISIBLE_DEVICES=','.join(map(str,devices)))
             process = subprocess.Popen(spec['argv'], cwd=folder, stdout=log,
-                                       stderr=subprocess.STDOUT, start_new_session=True, env=environment)
+                                       stderr=subprocess.STDOUT, start_new_session=True, env=environment,
+                                       pass_fds=tuple(lease.fileno() for lease in leases))
+            state.update(child_pid=process.pid,child_identity=process_identity(process.pid))
+            save(folder/'state.json',state)
             start = time.monotonic()
             reason = None
             while process.poll() is None:
-                if (folder / 'cancel.request').exists():
+                if stop_requested[0] or (folder / 'cancel.request').exists():
                     reason = 'cancelled'
-                elif time.monotonic() - start >= spec['timeout_seconds']:
+                elif time.monotonic() - start >= spec['timeout_seconds'] or (devices and time.monotonic()-worker_start >= spec['gpu_hours_budget']*3600/len(devices)-3):
                     reason = 'timed_out'
                 if reason:
-                    os.killpg(process.pid, signal.SIGTERM)
-                    try: process.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        process.wait()
+                    terminate_group(process)
                     break
                 time.sleep(0.1)
             state.update(status=reason or ('completed' if process.returncode == 0 else 'failed'),
                          returncode=process.returncode)
     except Exception as error:
-        state.update(status='failed', error=type(error).__name__)
+        state.update(status='failed', error=type(error).__name__+': '+str(error))
     finally:
+        # End remaining ranks/children even if the launcher exited first.
+        if process is not None: terminate_group(process)
+        for lease in leases: lease.close()
         state['finished_at'] = time.time()
-        state['elapsed_seconds'] = state['finished_at'] - state['started_at']
-        state['gpu_hours'] = 0
+        state['elapsed_seconds'] = time.monotonic()-worker_start
+        state['gpu_hours'] = len(devices)*state['elapsed_seconds']/3600
+        state['gpu_hours_accounting']='reserved device count times worker wall time, including startup/cleanup'
         save(folder / 'state.json', state)
 
 
@@ -78,12 +144,7 @@ def dispatch(request):
     action = request['action']
     if action == 'submit':
         spec = request['spec']
-        if (not isinstance(spec['argv'], list) or not spec['argv'] or
-                not all(isinstance(x, str) and x for x in spec['argv'])):
-            raise ValueError('argv must be a nonempty list of strings')
-        timeout = spec['timeout_seconds']
-        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 300:
-            raise ValueError('CPU smoke jobs require timeout in (0, 300]')
+        validate_spec(spec)
         identity = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
         try:
             folder.mkdir(parents=True, exist_ok=False)

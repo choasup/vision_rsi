@@ -43,3 +43,19 @@ class JobsTests(unittest.TestCase):
             request['action'] = 'status'
             with patch('vision_rsi.jobs.process_identity', return_value={'start_ticks': 'new'}):
                 self.assertEqual(dispatch(request)['status'], 'lost')
+
+class GpuJobAdmissionTests(unittest.TestCase):
+    def test_explicit_budget_and_device_validation(self):
+        from vision_rsi.jobs import validate_spec
+        spec={'argv':['python3','train.py'],'timeout_seconds':3600,'gpu_devices':list(range(8)),'gpu_hours_budget':8.1}
+        self.assertEqual(validate_spec(spec),list(range(8)))
+        for patch_values in [{'gpu_hours_budget':8},{'gpu_hours_budget':float('nan')},{'gpu_devices':[0,0]},
+                             {'gpu_devices':[True]},{'gpu_devices':[8]},{'timeout_seconds':float('inf')}]:
+            with self.assertRaises(ValueError):validate_spec(dict(spec,**patch_values))
+        del spec['gpu_hours_budget']
+        with self.assertRaises(ValueError):validate_spec(spec)
+
+    def test_cpu_does_not_accidentally_gain_gpu_or_long_runtime(self):
+        from vision_rsi.jobs import validate_spec
+        self.assertEqual(validate_spec({'argv':['python3'],'timeout_seconds':5}),[])
+        with self.assertRaises(ValueError):validate_spec({'argv':['python3'],'timeout_seconds':3600})
