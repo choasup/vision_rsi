@@ -189,3 +189,19 @@ JSONL 每行一个联合样本，逐行检查输入协议并拒绝重复 sample_
 任务定义和执行准备分开显示：task_defined 表示目标、输入输出和验收定义已明确，仍可能缺少资源预算或待核查事项；不是已批准训练，也不能绕过 run 的完整性校验。终端不再要求用户填写 goal/schema 等内部字段，只展示已理解需求和关键缺口。模型负责选择技术细节并记录假设。
 
 修复模型返回 {contract: {...}} 时丢失目标的问题：新响应自动解包；旧会话显示时兼容嵌套结构，保留原始数据库记录。解析失败时保留上一版需求，不清空任务。恢复已有终端会话需退出当前旧进程，再用 training show --session-id SESSION --interactive 进入。
+
+## 从 Training 契约生成接口 Harness
+
+```powershell
+.\vision-rsi.cmd training build --session-id SESSION
+```
+
+生成位置为 runs/harnesses/TASK-vVERSION-HASH，内含 contract.json、manifest.json、独立 interface_runtime.py 和 harness.py。不依赖项目包导入即可校验接口示例：
+
+```powershell
+python PATH_TO_HARNESS/harness.py check
+python PATH_TO_HARNESS/harness.py validate-input --input sample.json
+python PATH_TO_HARNESS/harness.py validate-output --input result.json
+```
+
+重复构建相同任务/契约版本会验证后复用，不覆盖产物。接口构建允许资源预算尚未确定，但清单保留执行缺口；不代表已允许或已完成训练。infer --input sample.json 在校验协议后返回 blocked（退出码 2），直到真实模型适配器接入。当前没有训练入口或预测能力注册。文件哈希用于本地完整性检查，不提供对恶意修改 manifest 的防篡改保护。

@@ -34,7 +34,7 @@ def summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','list','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','list','build','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -62,7 +62,10 @@ def main(argv):
         else:
             session=args.session_id
             result=store.show(session)
-            if args.action=='reply':
+            if args.action=='build':
+                from .harness import build
+                result=build(result,args.output or 'runs/harnesses')
+            elif args.action=='reply':
                 if not args.message: raise ValueError('--message required')
                 result=clarify(session,args.message)
             elif args.action=='define': result=store.define(session,json.loads(Path(args.contract).read_text(encoding='utf-8')))
