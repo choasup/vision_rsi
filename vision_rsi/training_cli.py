@@ -8,15 +8,27 @@ from .contracts import Sessions, validate_sample, validate_schema, validate_mani
 
 
 def summary(result):
-    lines=['任务: '+result['task_id'], '会话: '+result['session_id'], '阶段: '+result['status']]
-    if not result['versions']: return '\n'.join(lines+['尚未定义接口，请补充需求。'])
+    labels={'clarifying':'需要补充关键信息','task_defined':'任务已明确；执行条件待补充','ready_for_harness':'接口检查通过'}
+    lines=['任务: '+result['task_id'], '会话: '+result['session_id'], '状态: '+labels.get(result['status'],result['status'])]
+    if not result['versions']: return '\n'.join(lines+['请描述你要完成的任务。'])
     latest=result['versions'][-1];contract=latest['contract']
-    lines+=['接口版本: '+str(latest['version']), '目标: '+str(contract.get('goal','待定义'))]
-    for name,field in contract.get('inputs',{}).items():
-        lines.append('输入 '+name+': '+str(field.get('type'))+' / '+('必填' if field.get('required') else '可选'))
-    lines.append('输出字段: '+', '.join(contract.get('output_schema',{}).get('properties',{})))
-    if latest['issues']: lines+=['待澄清/修正:']+['- '+x for x in latest['issues']]
-    else: lines.append('接口检查通过，可导出。训练适配器尚待接入。')
+    lines+=['已理解: '+str(contract.get('goal','正在整理你的需求'))]
+    inputs=contract.get('inputs') or {}
+    if inputs: lines.append('输入: '+', '.join(name+' ('+str(field.get('type'))+')' for name,field in inputs.items() if isinstance(field,dict)))
+    props=(contract.get('output_schema') or {}).get('properties') or {}
+    if props: lines.append('输出: '+', '.join(props))
+    acceptance=contract.get('acceptance') or {}
+    if acceptance.get('threshold') is not None:
+        lines.append('效果目标: '+str(acceptance.get('metric'))+' '+('≥' if acceptance.get('direction')=='maximize' else '≤')+' '+str(acceptance['threshold']))
+    if result['status']=='task_defined':
+        lines.append('需求已保存，无需重复说明。Agent 会选择模型和训练方法。')
+        if not contract.get('budget'): lines.append('执行前待补充: 最多允许多少 GPU 小时（8 卡运行 1 小时 = 8 GPU 小时）。')
+        else: lines.append('执行前会核查剩余问题；/contract 可查看完整定义。')
+    elif latest['issues']:
+        questions=contract.get('open_questions') or []
+        if questions: lines+=['需要你补充:']+['- '+str(q) for q in questions[:2]]
+        else: lines.append('接口整理尚有问题，已保留你的描述；无需填写内部 schema 字段。')
+    else: lines.append('任务接口已保存。训练执行器尚未接入。')
     return '\n'.join(lines)
 
 

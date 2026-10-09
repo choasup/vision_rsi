@@ -13,6 +13,21 @@ from .llm import OpenAICompatibleClient
 TYPES = {'image', 'image_list', 'video', 'text'}
 
 
+def normalize_contract(value):
+    """Accept the common model envelope without discarding the actual contract."""
+    for _ in range(5):
+        if isinstance(value,dict) and isinstance(value.get('contract'),dict) and 'goal' not in value:
+            value=value['contract']
+        else: break
+    return value
+
+
+def definition_status(contract, errors):
+    if not errors: return 'ready_for_harness'
+    essential=[e for e in errors if not e.startswith('待澄清:') and '预算' not in e]
+    return 'task_defined' if not essential else 'clarifying'
+
+
 def issues(contract):
     errors=[]
     if not isinstance(contract,dict): return ['contract 必须为对象']
@@ -95,7 +110,7 @@ def validate_sample(contract,sample):
             if not isinstance(items,list) or kind=='image_list' and not field['min_items']<=len(items)<=field['max_items']: raise ValueError(name+': invalid item count')
             for item in items:
                 uri=item.get('uri') if isinstance(item,dict) else None
-                if not isinstance(uri,str) or not uri or '://' in uri: raise ValueError(name+': local file uri required')
+                if not isinstance(uri,str) or not uri or '://' in uri and not uri.startswith('file:///'): raise ValueError(name+': local file uri required')
     return {'valid':True,'media_decoded':False,'note':'协议校验，不代表文件可读取或模型具备对应能力。'}
 
 
@@ -125,9 +140,18 @@ class Sessions:
     def show(self,session):
         with self.db() as db: row=db.execute('SELECT * FROM sessions WHERE id=?',(session,)).fetchone()
         if not row: raise ValueError('Unknown session')
-        versions=json.loads(row[3]); latest=versions[-1] if versions else None
-        return {'session_id':row[0],'task_id':row[1],'turns':json.loads(row[2]),'versions':versions,'pending_request':bool(row[4]),'status':'ready_for_harness' if latest and not latest['issues'] else 'clarifying'}
+        versions=json.loads(row[3])
+        for version in versions:
+            original=version['contract']
+            normalized=normalize_contract(original)
+            if normalized != original:
+                version['raw_contract']=original
+                version['contract']=normalized
+                version['issues']=issues(normalized)
+        latest=versions[-1] if versions else None
+        return {'session_id':row[0],'task_id':row[1],'turns':json.loads(row[2]),'versions':versions,'pending_request':bool(row[4]),'status':definition_status(latest['contract'],latest['issues']) if latest else 'clarifying'}
     def define(self,session,contract,origin='user'):
+        contract=normalize_contract(contract)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row=db.execute('SELECT versions,pending FROM sessions WHERE id=?',(session,)).fetchone()
@@ -145,12 +169,14 @@ class Sessions:
             turns=json.loads(row[0]);versions=json.loads(row[1])
             if message: turns.append({'role':'user','content':message})
             db.execute('UPDATE sessions SET turns=?,pending=1 WHERE id=?',(json.dumps(turns,ensure_ascii=False),session))
-        prompt={'instruction':'Define a vision training task interface by clarifying user requirements. Use the language of the user for explanations and questions. Ask at most five critical questions per turn, record secondary choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output. Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':turns,'previous_contract':versions[-1]['contract'] if versions else None}
+        prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask at most five critical questions per turn, record secondary choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output. Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
         response=OpenAICompatibleClient(dict(config,**({'thinking':'disabled'} if config.get('model')=='deepseek-flash' else {}))).complete([{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=3072)
         text=response['content'].strip()
         if text.startswith('```'): text=text.split('\n',1)[1].rsplit('```',1)[0]
-        try: contract=json.loads(text); errors=issues(contract)
-        except (ValueError,TypeError,KeyError,AttributeError) as error: contract={};errors=['解析失败: '+type(error).__name__]
+        try: contract=normalize_contract(json.loads(text)); errors=issues(contract)
+        except (ValueError,TypeError,KeyError,AttributeError) as error:
+            contract=normalize_contract(versions[-1]['contract']) if versions else {}
+            errors=issues(contract)+['解析失败: '+type(error).__name__+'；已保留上一版需求']
         with self.db() as db:
             versions.append({'version':len(versions)+1,'origin':'llm_draft','contract':contract,'issues':errors,'usage':response.get('usage',{})})
             turns.append({'role':'assistant','content':json.dumps({'contract':contract,'issues':errors},ensure_ascii=False)})

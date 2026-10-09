@@ -60,3 +60,37 @@ class ManifestTests(unittest.TestCase):
                 main(['show','--session-id',session,'--interactive','--sessions',root])
             self.assertIn(session,output.getvalue())
             self.assertEqual(len(store.list()),1)
+
+class ClarificationRegressionTests(unittest.TestCase):
+    @patch('vision_rsi.contracts.OpenAICompatibleClient')
+    def test_wrapped_response_preserves_task_and_budget_is_execution_gap(self,client):
+        from vision_rsi.training_cli import summary
+        contract=json.loads(Path('examples/interface-contract.json').read_text())
+        contract['budget']=None
+        contract['open_questions']=['How many GPU hours?']
+        with tempfile.TemporaryDirectory() as root:
+            store=Sessions(root)
+            session=store.create('detection','detect objects')['session_id']
+            client.return_value.complete.return_value={'content':json.dumps({'contract':contract,'issues':[]})}
+            result=store.clarify(session,{'model':'fixture'})
+            self.assertEqual(result['status'],'task_defined')
+            self.assertEqual(result['versions'][-1]['contract']['goal'],contract['goal'])
+            self.assertNotIn('缺少 goal',summary(result))
+            self.assertIn('无需重复说明',summary(result))
+            client.return_value.complete.return_value={'content':'invalid response'}
+            result=store.clarify(session,{'model':'fixture'},'goal is clear')
+            self.assertEqual(result['versions'][-1]['contract']['goal'],contract['goal'])
+
+    def test_legacy_nested_session_is_readable_without_overwriting_history(self):
+        with tempfile.TemporaryDirectory() as root:
+            store=Sessions(root)
+            session=store.create('legacy','goal')['session_id']
+            contract=json.loads(Path('examples/interface-contract.json').read_text())
+            with store.db() as db:
+                db.execute('UPDATE sessions SET versions=? WHERE id=?',(json.dumps([{'version':1,'contract':{'contract':contract},'issues':['missing goal']}]),session))
+            result=store.show(session)
+            self.assertEqual(result['status'],'ready_for_harness')
+            self.assertIn('raw_contract',result['versions'][0])
+            with store.db() as db:
+                raw=json.loads(db.execute('SELECT versions FROM sessions WHERE id=?',(session,)).fetchone()[0])
+            self.assertIn('contract',raw[0]['contract'])

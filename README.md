@@ -183,3 +183,9 @@ python -m vision_rsi training export --session-id SESSION --output runs/task-con
 ```
 
 JSONL 每行一个联合样本，逐行检查输入协议并拒绝重复 sample_id，单行错误不会中断后续行。这里是 Training 任务接口的批量校验，还不是批量媒体推理；不会读取或解码媒体文件。测试推理入口暂仍使用旧矩阵示例适配器。
+
+## 澄清交互修正
+
+任务定义和执行准备分开显示：task_defined 表示目标、输入输出和验收定义已明确，仍可能缺少资源预算或待核查事项；不是已批准训练，也不能绕过 run 的完整性校验。终端不再要求用户填写 goal/schema 等内部字段，只展示已理解需求和关键缺口。模型负责选择技术细节并记录假设。
+
+修复模型返回 {contract: {...}} 时丢失目标的问题：新响应自动解包；旧会话显示时兼容嵌套结构，保留原始数据库记录。解析失败时保留上一版需求，不清空任务。恢复已有终端会话需退出当前旧进程，再用 training show --session-id SESSION --interactive 进入。
