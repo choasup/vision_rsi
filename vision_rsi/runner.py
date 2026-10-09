@@ -68,7 +68,7 @@ def doctor(config):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check', 'job-submit', 'job-status', 'job-logs', 'job-cancel', 'demo', 'research-import', 'research-event', 'research-view', 'research-step'])
+    parser.add_argument('command', choices=['run', 'doctor', 'llm-check', 'compare', 'remote-check', 'job-submit', 'job-status', 'job-logs', 'job-cancel', 'demo', 'research-import', 'research-event', 'research-view', 'research-step', 'serve'])
     parser.add_argument('--config', default='config.example.json')
     parser.add_argument('--run-dir', default='runs/demo')
     parser.add_argument('--job-id', default='cpu-smoke-001')
@@ -76,9 +76,14 @@ def main():
     parser.add_argument('--source', help='Demo state JSON to import')
     parser.add_argument('--event-file', help='JSON with key, kind, payload')
     parser.add_argument('--steps', type=int, default=1)
+    parser.add_argument('--port', type=int, default=8767)
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text(encoding='utf-8'))
-    if args.command == 'research-step':
+    if args.command == 'serve':
+        from .app import serve
+        serve(config, args.run_dir, str(Path.cwd()), args.port)
+        return
+    elif args.command == 'research-step':
         from .controller import research_step
         result = research_step(config, args.run_dir, args.steps)
     elif args.command.startswith('research-'):
