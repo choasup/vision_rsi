@@ -1,4 +1,6 @@
 import copy
+from contextlib import closing, redirect_stdout
+import io
 import json
 from pathlib import Path
 import sqlite3
@@ -69,6 +71,43 @@ class CampaignAuditTests(unittest.TestCase):
         result=self.audit();self.assertTrue(result['llm_usage_complete']);self.assertEqual(result['known_llm_tokens'],8)
         db.execute('UPDATE requests SET state=?,response=NULL',('reserved',));db.commit();db.close()
         result=self.audit();self.assertFalse(result['llm_usage_complete']);self.assertFalse(result['evidence_complete_for_review'])
+
+    def test_unsent_attempt_and_successful_explicit_retry_have_separate_costs(self):
+        self.state['history'].append(self.row('propose_experiment',{'status':'proposal_rejected'}));self.save()
+        folder=self.folder/'experiments';folder.mkdir()
+        with closing(sqlite3.connect(folder/'requests.sqlite3')) as db, db:
+            db.execute('CREATE TABLE requests(id TEXT,state TEXT,response TEXT)')
+            db.execute('INSERT INTO requests VALUES (?,?,NULL)',('first','not_dispatched'))
+            db.execute('INSERT INTO requests VALUES (?,?,?)',('explicit-retry','responded',json.dumps({'usage':{'prompt_tokens':5,'completion_tokens':3,'total_tokens':8}})))
+        result=self.audit()
+        self.assertTrue(result['llm_usage_complete'])
+        self.assertEqual(result['llm_request_count'],2)
+        self.assertEqual(result['llm_not_dispatched_count'],1)
+        self.assertEqual(result['llm_admitted_or_uncertain_count'],1)
+        self.assertEqual(result['known_llm_tokens'],8)
+        from vision_rsi.training_cli import main
+        output=io.StringIO()
+        with redirect_stdout(output):
+            main(['audit','--session-id','session','--campaign-id',self.cid,
+                  '--sessions',str(self.root/'sessions.sqlite3'),'--campaign-store',str(self.root/'campaigns'),
+                  '--run-store',str(self.ledger)])
+        self.assertIn('联网前拒绝 1',output.getvalue())
+        self.assertIn('已准入或结果未知 1',output.getvalue())
+        with closing(sqlite3.connect(folder/'requests.sqlite3')) as db, db:
+            db.execute('UPDATE requests SET state=?,response=NULL WHERE id=?',('reserved','explicit-retry'))
+        result=self.audit()
+        self.assertFalse(result['llm_usage_complete'])
+        self.assertEqual(result['llm_not_dispatched_count'],1)
+
+    def test_unsent_with_response_is_inconsistent_and_not_zero_cost(self):
+        folder=self.folder/'experiments';folder.mkdir()
+        with closing(sqlite3.connect(folder/'requests.sqlite3')) as db, db:
+            db.execute('CREATE TABLE requests(id TEXT,state TEXT,response TEXT)')
+            db.execute('INSERT INTO requests VALUES (?,?,?)',('inconsistent','not_dispatched','{}'))
+        result=self.audit()
+        self.assertFalse(result['llm_usage_complete'])
+        self.assertEqual(result['llm_not_dispatched_count'],0)
+        self.assertEqual(result['llm_admitted_or_uncertain_count'],1)
 
     def test_readonly_ledger_rejects_writes_and_does_not_create_missing_db(self):
         folder=self.root/'actual-ledger';writer=TrainingRuns(folder);writer.close()

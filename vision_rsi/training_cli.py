@@ -179,6 +179,7 @@ def main(argv):
             else:
                 print('Campaign: '+result['campaign_id'])
                 print('GPU小时: 已结算 '+str(result['settled_gpu_hours'])+'，仍预留 '+str(result['held_gpu_hours']))
+                print('LLM提案尝试: '+str(result['llm_request_count'])+'，联网前拒绝 '+str(result['llm_not_dispatched_count'])+'，已准入或结果未知 '+str(result['llm_admitted_or_uncertain_count']))
                 print('LLM tokens: 已知 '+str(result['known_llm_tokens'])+'，记录完整 '+str(result['llm_usage_complete']))
                 print('已核验真实box AP: '+str(result['best_verified_real_box_AP']))
                 print('策略决策轨迹核验: '+str(result['policy_trace']['verified']))

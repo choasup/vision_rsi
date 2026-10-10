@@ -79,7 +79,7 @@ def audit(session_id,campaign_id,root='runs/campaigns',run_store='runs/training-
         else:timing_complete=False
     if not timing_complete:missing.append('Action wall-time evidence incomplete; interrupted/legacy time is not zero')
     if state.get('intent'):missing.append('Unresolved controller action remains')
-    token_total=0;token_complete=True;api_requests=0
+    token_total=0;token_complete=True;api_requests=0;not_dispatched=0;admitted_requests=0
     api_path=path.parent/'experiments/requests.sqlite3'
     expected_requests=sum(1 for row in state['history'] if row['action']['kind']=='propose_experiment' and row.get('result',{}).get('status')!='budget_exhausted')
     if api_path.is_file():
@@ -88,13 +88,17 @@ def audit(session_id,campaign_id,root='runs/campaigns',run_store='runs/training-
         finally:db.close()
         api_requests=len(requests)
         for request_id,status,response in requests:
+            if status=='not_dispatched' and response is None:
+                not_dispatched+=1
+                continue
+            admitted_requests+=1
             if status!='responded' or response is None:token_complete=False;continue
             value=json.loads(response);usage=value.get('usage') or {}
             numbers=[usage.get(key) for key in ('prompt_tokens','completion_tokens','total_tokens')]
             if any(isinstance(number,bool) or not isinstance(number,int) or number<0 for number in numbers) or numbers[0]+numbers[1]!=numbers[2]:
                 token_complete=False
             else:token_total+=numbers[2]
-    if api_requests!=expected_requests:token_complete=False
+    if admitted_requests!=expected_requests:token_complete=False
     if not token_complete:missing.append('LLM usage missing or uncertain; unreported tokens are not zero')
     try:policy_trace=verify_trace(state)
     except (ValueError,TypeError,KeyError,OSError,subprocess.SubprocessError) as error:
@@ -107,6 +111,7 @@ def audit(session_id,campaign_id,root='runs/campaigns',run_store='runs/training-
             'authorized_gpu_hours':budget,'settled_gpu_hours':actual,'held_gpu_hours':reserved,'gpu_accounting_settled':settled,
             'observed_action_wall_seconds':elapsed,'action_timing_complete':timing_complete,
             'known_llm_tokens':token_total,'llm_usage_complete':token_complete,'llm_request_count':api_requests,
+            'llm_not_dispatched_count':not_dispatched,'llm_admitted_or_uncertain_count':admitted_requests,
             'llm_cost_scope':'Campaign experiment proposals only; task clarification and candidate-generation setup excluded',
             'measurements':measurements,'best_verified_real_box_AP':max(scores) if scores else None,
             'policy_trace':policy_trace,
