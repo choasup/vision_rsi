@@ -12,9 +12,12 @@ from urllib.error import URLError
 def task_cli_paths(arguments,caller):
     """Explicit local task paths belong to the caller; defaults belong to the app."""
     if not arguments:return []
+    if arguments[0]=='workspace-init' and not any(arg.partition('=')[0]=='--directory' for arg in arguments[1:]):
+        return list(arguments)+['--directory',str(caller.resolve())]
     task_paths={'--config','--sessions','--run-store','--campaign-store','--registry','--candidate-store','--research-root','--repository',
            '--contract','--sample','--result','--output','--manifest','--input','--input-dir','--output-dir','--task'}
     paths={'training':task_paths,'test':task_paths,
+           'workspace-init':{'--directory'},
            'evaluate-events':{'--ground-truth','--predictions','--contract','--output'},
            'experiment-request':{'--store'}}.get(arguments[0])
     if paths is None:return list(arguments)

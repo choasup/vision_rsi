@@ -41,7 +41,7 @@ def main():
         commands = [['--help'], ['training', 'memory', '--help'], ['test', '--help'],
                     ['training', 'readiness', '--help'], ['evaluate-events', '--help'],
                     ['experiment-request', '--help'], ['training','research-status','--help'],
-                    ['training','research-watch','--help']]
+                    ['training','research-watch','--help'],['workspace-init','--help']]
         for command in commands:
             result = subprocess.run([sys.executable, '-X', 'utf8', '-m', 'vision_rsi']+command,
                                     capture_output=True, text=True, encoding='utf-8', timeout=30)
@@ -54,7 +54,7 @@ def main():
                  'test_filesystem', 'test_experiments', 'test_executable_harness', 'test_not_dispatched',
                  'test_task_adapters', 'test_task_readiness', 'test_event_eval',
                  'test_coco_train', 'test_training_preflight', 'test_batch', 'test_experiment_observe',
-                 'test_study_resources', 'test_cli_help', 'test_harness', 'test_controller','test_task_research','test_release_status','test_planning_budget','test_research_watch','test_research_training','test_research_process_recovery']
+                 'test_study_resources', 'test_cli_help', 'test_harness', 'test_controller','test_task_research','test_release_status','test_planning_budget','test_research_watch','test_research_training','test_research_process_recovery','test_workspace_init']
         suite = unittest.defaultTestLoader.loadTestsFromNames(names)
         with (output/'installed-tests.log').open('w', encoding='utf-8') as log:
             result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)
