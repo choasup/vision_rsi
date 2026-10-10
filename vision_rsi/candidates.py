@@ -122,7 +122,6 @@ class Candidates:
             if row[1]!='responded':raise RuntimeError('Uncertain API request; not retried automatically')
             response=json.loads(row[2])
         else:
-            with self.db:self.db.execute('INSERT INTO requests VALUES (?,?,?,NULL)',(request_id,json.dumps(identity),'reserved'))
             source=git(self.repository,'show',base+':vision_rsi/controller.py')
             prompt={'task_contract':contract,'observations':evidence,'baseline_source':source,
                     'schema':{'hypothesis':'falsifiable research hypothesis','expected_improvement':'measurable research efficiency benefit',
@@ -151,7 +150,10 @@ class Candidates:
             if len(json.dumps(prompt))>100000:raise ValueError('Research context exceeds bounded prompt size')
             client_config=dict(llm)
             if client_config.get('model')=='deepseek-flash':client_config.setdefault('thinking','disabled')
-            response=OpenAICompatibleClient(client_config).complete([{'role':'system','content':instruction},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=6000)
+            client=OpenAICompatibleClient(client_config)
+            client.validate_config()
+            with self.db:self.db.execute('INSERT INTO requests VALUES (?,?,?,NULL)',(request_id,json.dumps(identity),'reserved'))
+            response=client.complete([{'role':'system','content':instruction},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=6000)
             with self.db:self.db.execute('UPDATE requests SET state=?,response=? WHERE id=?',('responded',json.dumps(response),request_id))
         content=response['content'].strip()
         if not content:raise ValueError('LLM returned no proposal text; response retained, no automatic retry. Use a new request ID after correcting model configuration.')

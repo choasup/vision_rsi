@@ -224,6 +224,8 @@ class Sessions:
             row=db.execute('SELECT turns,versions,pending FROM sessions WHERE id=?',(session,)).fetchone()
             if not row: raise ValueError('Unknown session')
             if row[2]: raise RuntimeError('Previous API outcome uncertain; no automatic retry')
+            client=OpenAICompatibleClient(dict(config,**({'thinking':'disabled'} if config.get('model')=='deepseek-flash' else {})))
+            client.validate_config()
             turns=json.loads(row[0]);versions=json.loads(row[1])
             if message: turns.append({'role':'user','content':message})
             db.execute('UPDATE sessions SET turns=?,pending=1 WHERE id=?',(json.dumps(turns,ensure_ascii=False),session))
@@ -235,7 +237,6 @@ class Sessions:
         prompt['format_rules']='output_schema MUST have type=object and nonempty properties; place detection lists inside a detections property, never at the root. assumptions and open_questions MUST be lists of strings, never dictionaries. Video processing sampling, temporal, audio MUST each be nonempty strings; use audio="ignore" for no audio, never false. Missing budget is null, never invented. Examples must satisfy the exact interface. Batch means multiple samples, not image_list. Do not ask for batch size limits, model confidence filters, optimizer or architectural choices unless explicitly constrained by the user; record implementation defaults in assumptions. The inputs section describes INFERENCE-time per-sample inputs only. Training/validation/held-out datasets, annotation files, budgets, weights and evaluation protocols are training resources, NEVER required inference input fields unless the user explicitly requests them as per-sample inputs. Select conventional box coordinates as an assumption, never ask about JSON field names or coordinate syntax. Ask only unresolved task semantics (such as defect class taxonomy or event matching needed to define a metric), not internal representation choices. Resolve schema formatting internally; never ask the user to write JSON schemas.'
         from .detector import COCO_IDS
         prompt['available_adapter_defaults']={'coco_detection':{'use_only_if_matching_user_task':True,'inputs':{'image':{'type':'image','required':True}},'acceptance_metric':'box_AP','metric_units':'0..100','output':'object with detections array; each item has category_id (integer), bbox (4 numbers, COCO xywh pixels), score (0..1)','category_ids':list(COCO_IDS),'note':'80 COCO categories use sparse IDs in 1..90, NOT contiguous 1..80. These are optional implementation defaults, never override an explicit user interface. No claim of training, quality or other task adapter availability.'}}
-        client=OpenAICompatibleClient(dict(config,**({'thinking':'disabled'} if config.get('model')=='deepseek-flash' else {})))
         messages=[{'role':'system','content':'You define a visual Agent task interface from the user conversation. Follow these format and scope rules exactly: '+prompt['format_rules']},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}]
         responses=[];response_ids=[];first_draft=None
         for attempt in range(2):

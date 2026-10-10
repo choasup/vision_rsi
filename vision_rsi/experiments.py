@@ -65,7 +65,6 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None):
             if row[1]!='responded':raise RuntimeError('Uncertain experiment API response; no automatic retry')
             response=json.loads(row[2])
         else:
-            with db:db.execute('INSERT INTO requests VALUES (?,?,?,NULL)',(request_id,json.dumps(context),'reserved'))
             prompt={'contract':parent['contract'],'frozen_recipe':parent['recipe'],'measured_acceptance':verdict,
                     'remaining_gpu_hours':remaining,'mutable_fields':sorted(MUTABLE),
                     'schema':{'hypothesis':'falsifiable explanation','reasoning':'cite measured evidence and uncertainty',
@@ -82,7 +81,10 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None):
                          'A brief is not proof of instability, class errors or improved quality.')
             settings=dict(llm)
             if settings.get('model')=='deepseek-flash':settings.setdefault('thinking','disabled')
-            response=OpenAICompatibleClient(settings).complete([{'role':'system','content':instruction},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=2048)
+            client=OpenAICompatibleClient(settings)
+            client.validate_config()
+            with db:db.execute('INSERT INTO requests VALUES (?,?,?,NULL)',(request_id,json.dumps(context),'reserved'))
+            response=client.complete([{'role':'system','content':instruction},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=2048)
             with db:db.execute('UPDATE requests SET state=?,response=? WHERE id=?',('responded',json.dumps(response),request_id))
         folder=root/request_id;folder.mkdir(exist_ok=True);atomic_json(folder/'response.json',response)
         saved=folder/'experiment.json'

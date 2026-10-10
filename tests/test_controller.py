@@ -6,6 +6,13 @@ from vision_rsi.ledger import Ledger
 
 
 class ControllerTests(unittest.TestCase):
+    def test_missing_key_does_not_leave_uncertain_planning_event(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict('os.environ',{'VISION_RSI_UNSET':''}), patch('vision_rsi.llm.urlopen') as http:
+            ledger=Ledger(folder);ledger.append('goal','objective',{'summary':'goal'})
+            config={'llm':{'model':'deepseek-flash','base_url':'https://example.invalid','api_key_env':'VISION_RSI_UNSET'},'remote':{}}
+            with self.assertRaises(ValueError):research_step(config,folder)
+            self.assertEqual(len(ledger.events()),1)
+            http.assert_not_called()
     def test_no_arbitrary_tool_or_unknown_evidence(self):
         plan = {'tool':'shell','summary':'s','question':'q','expected_evidence':'e','refs':[]}
         import json

@@ -7,6 +7,14 @@ from vision_rsi.contracts import Sessions,issues,validate_sample,validate_schema
 
 class ContractTests(unittest.TestCase):
     def setUp(self): self.contract=json.loads(Path('examples/interface-contract.json').read_text())
+    def test_missing_key_does_not_leave_pending_clarification(self):
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ',{'VISION_RSI_UNSET':''}), patch('vision_rsi.llm.urlopen') as http:
+            store=Sessions(root);session=store.create('inspection','goal')['session_id']
+            config={'model':'deepseek-flash','base_url':'https://example.invalid','api_key_env':'VISION_RSI_UNSET'}
+            with self.assertRaises(ValueError):store.clarify(session,config,'additional requirement')
+            self.assertFalse(store.show(session)['pending_request'])
+            with store.db() as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM clarification_requests').fetchone()[0],0)
+            http.assert_not_called()
     def test_joint_video_and_output_contract(self):
         self.assertEqual(issues(self.contract),[])
         self.assertTrue(validate_sample(self.contract,self.contract['example_input'])['valid'])

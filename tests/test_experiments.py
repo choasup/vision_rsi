@@ -1,6 +1,8 @@
 import base64
 import copy
 import json
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 import tempfile
 import unittest
@@ -35,6 +37,15 @@ class ExperimentTests(unittest.TestCase):
                      'details':{'plan_path':str(path),'receipt_path':str(rp),'deployment':{'directory':'/workspace/releases/frozen'}}}
         self.runs=MagicMock();self.runs.remaining.return_value=.5
         self.llm={'model':'fixture','base_url':'https://fixture.invalid'}
+
+    def test_missing_key_does_not_reserve_method_request(self):
+        with patch.dict('os.environ',{'VISION_RSI_UNSET':''}), patch('vision_rsi.llm.urlopen') as http:
+            config=dict(self.llm,api_key_env='VISION_RSI_UNSET')
+            folder=self.root/'preflight-research'
+            with self.assertRaises(ValueError):propose_next(self.record,self.runs,config,folder,'preflight-missing')
+            with closing(sqlite3.connect(folder/'requests.sqlite3')) as db:
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM requests').fetchone()[0],0)
+            http.assert_not_called()
 
     def test_method_change_keeps_data_model_threshold_sources_and_budget_frozen(self):
         original=copy.deepcopy(self.parent)

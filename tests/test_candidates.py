@@ -208,6 +208,13 @@ class CandidateTests(unittest.TestCase):
         git(self.repo,'add','.');git(self.repo,'-c','user.name=Test','-c','user.email=test@local.invalid','commit','-m','baseline')
         self.store=Candidates(root/'candidates',self.repo);self.addCleanup(self.store.close)
 
+    def test_missing_key_does_not_reserve_strategy_request(self):
+        with patch.dict('os.environ',{'VISION_RSI_UNSET':''}), patch('vision_rsi.llm.urlopen') as http:
+            config={'model':'deepseek-flash','base_url':'https://example.invalid','api_key_env':'VISION_RSI_UNSET'}
+            with self.assertRaises(ValueError):self.store.propose('preflight-missing',{},[],config)
+            self.assertIsNone(self.store.db.execute('SELECT id FROM requests WHERE id=?',('preflight-missing',)).fetchone())
+            http.assert_not_called()
+
     def test_git_isolation_idempotence_and_tamper(self):
         original=git(self.repo,'rev-parse','HEAD')
         record=self.store.create(proposal(),{'task':'test'})
