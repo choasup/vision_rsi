@@ -425,3 +425,8 @@
 - 7项controller测试通过（2.246秒），含真实临时Git仓库：tracked .env内容不读取，未提交源码变化保持同HEAD但内容SHA变化且clean=false，超1MiB源码跳过；既有崩溃恢复仍通过。
 - 提交2b8b1abb808bc1236ac02f01c714e5d3391e152c后实际检查本仓库成功：170 tracked files，HEAD未变、前后clean=true，17源码因边界未收入片段。证据runs/repository-observation-current.json；不是全仓库内容完整性或运行正确性证明。
 - 无API/SSH/GPU/训练，安装包未重建，真实训练和完整上线门槛仍未完成。
+## 通用研究规划未发送请求恢复（2026-10-10）
+
+- research_step捕获客户端明确LLMNotDispatched，持久记录planning_not_dispatched及原request_key后重新抛出；本次不自动重试。下一次显式推进忽略该已知未发送请求的不确定阻塞，并使用新ID；其它异常或旧无回执请求保持不确定、禁止自动重发。
+- 15项controller/not_dispatched测试通过（2.929秒）：先未发送再显式推进可完成，连续6次明确未发送仍累计规划尝试，第7次推进不调用客户端，既有不确定请求停止规则仍通过。
+- 仅mock客户端/只读工具，无实际API/SSH/GPU。规划上限是此研究账本既有6次尝试，不是账户费用或全项目Token保证；安装包尚未更新，完整上线目标仍未完成。

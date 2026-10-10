@@ -9,6 +9,41 @@ from vision_rsi.ledger import Ledger
 
 
 class ControllerTests(unittest.TestCase):
+    @patch('vision_rsi.controller.execute',return_value={'fixture':True})
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    def test_known_not_dispatched_allows_explicit_new_request_without_resetting_limit(self,client,execute):
+        from vision_rsi.llm import LLMNotDispatched
+        with tempfile.TemporaryDirectory() as folder:
+            ledger=Ledger(folder);ledger.append('goal','objective',{'summary':'goal'})
+            client.return_value.complete.side_effect=LLMNotDispatched('local fixture refusal')
+            config={'llm':{'model':'fixture'},'remote':{}}
+            for _ in range(6):
+                with self.assertRaises(LLMNotDispatched):research_step(config,folder)
+            events=ledger.events()
+            requests=[e for e in events if e['payload'].get('record_type')=='planning_request']
+            refused=[e for e in events if e['payload'].get('record_type')=='planning_not_dispatched']
+            self.assertEqual(len(requests),6);self.assertEqual(len(refused),6)
+            self.assertEqual({e['key'] for e in requests},{e['payload']['request_key'] for e in refused})
+            research_step(config,folder)
+            self.assertEqual(client.return_value.complete.call_count,6)
+            execute.assert_not_called()
+
+    @patch('vision_rsi.controller.execute',return_value={'fixture':True})
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    def test_explicit_retry_after_not_dispatched_can_complete(self,client,execute):
+        from vision_rsi.llm import LLMNotDispatched
+        with tempfile.TemporaryDirectory() as folder:
+            ledger=Ledger(folder);ledger.append('goal','objective',{'summary':'goal'})
+            config={'llm':{'model':'fixture'},'remote':{}}
+            client.return_value.complete.side_effect=LLMNotDispatched('fixture')
+            with self.assertRaises(LLMNotDispatched):research_step(config,folder)
+            client.return_value.complete.side_effect=None
+            client.return_value.complete.return_value={'content':'{"tool":"inspect_repository","summary":"inspect","question":"q","expected_evidence":"e","refs":["goal"]}'}
+            research_step(config,folder)
+            self.assertEqual(client.return_value.complete.call_count,2)
+            execute.assert_called_once()
+            self.assertEqual(ledger.events()[-1]['kind'],'result')
+
     def test_repository_observation_hashes_dirty_source_without_reading_secrets(self):
         import hashlib
         from vision_rsi.controller import execute
