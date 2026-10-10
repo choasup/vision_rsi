@@ -97,3 +97,11 @@
 - `doctor` 不再固定报告真实训练未实现；明确当前固定COCO适配器和有限配方实验范围，并分别报告本地配置检查、任务预算未核查、API/远端未实测和效果/发布未验证。
 - 使用实际LLM配置校验器检查HTTPS、模型、当前进程Key及账本路径/调用上限；校验不创建账本、不进行API/SSH调用。缺失/畸形配置不会误报就绪，Key只返回存在布尔值。
 - 实际模块与Windows启动器分别验证：模块进程当前无Key，启动器从已设置的Windows用户环境加载后配置检查就绪；原配置文件不变。证据：`runs/resource-bootstrap/doctor-live-local.json`。不将配置就绪当作训练授权或上线通过。
+
+
+## 最新工具安装交付复验（2026-10-10，2a822a7）
+
+- 将包含策略记忆检索、实际进程退出恢复校验和新doctor的当前源码构建为wheel，在新的Windows CPython3.12虚拟环境按哈希锁离线安装；`pip check`通过。
+- 仓库外临时目录使用真正site-packages包完成68项相关回归，全部通过；所有包内Python/HTML文件与源码逐项SHA256一致。wheel SHA256：`ffa3c51a720b8310003991f6e9759490c3987b6d389fb293309e2d14e6fef374`。证据：`runs/release-current-doctor/installed-evidence.json`及`installed-tests.log`。
+- Windows启动器实际重新prepare原任务my-vision-task；计划ea7cdefa9b22e9e0e38aa3d33340f55cbc3d931ef10a81f87921c6726bbffa59仍因真实GPU预算未设置而blocked，未开始训练，GPU预算及超时保持null。记录：`runs/resource-bootstrap/current-task-prepare.json`。
+- 此项只补齐当前源码的本机安装与入口验证；不是新Windows机器、其它平台、真实模型达标、完整多资源预算或RSI研究效率通过。
