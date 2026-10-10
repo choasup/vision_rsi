@@ -947,3 +947,11 @@ python -m vision_rsi training release-status --session-id SESSION --json
 ```
 
 登记核对已确认任务合同与包合同，并保存不可覆盖的版本工件。同一会话、合同版本和包重复登记复用版本；需求请求未完成、合同不同或已保存工件被修改会拒绝。状态为 `pending_independent_validation`，只能追踪交付，不能通过 `test` 调用。独立质量及服务验收的通用提升流程仍待实现。
+
+验收前可检查同一候选包的开发执行与拟验收执行是否复用输入：
+
+```powershell
+.\vision-rsi.cmd input-overlap --development dev-execution.json --acceptance heldout-execution.json
+```
+
+`--development` 可重复指定（最多 128 条）。新执行记录包含实际媒体 SHA256、去除路径及样本 ID 的内容指纹；多图中任一媒体复用也会报重叠。纯文本支持内容比较；仅 URI 的媒体执行和缺少指纹的旧记录无法作为分离证据。命令只读取所提供记录，不调用 API 或远程服务，也不授予验收资格。无重叠不证明开发历史完整、数据独立、模型质量或生产可用；SHA256 校验用于发现修改，不构成签名认证。

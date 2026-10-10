@@ -118,9 +118,12 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_director
             cases.append(case)
             encode_cases(identity['module'],identity['function'],cases)
     encode_cases(identity['module'],identity['function'],cases)
+    from .input_provenance import manifest
+    input_manifest=manifest(contract,cases)
     request={'files':bundle['files'],'source_hashes':identity['source_hashes'],
              'module':identity['module'],'function':identity['function'],'cases':cases}
     binding={'bundle_id':bundle['bundle_id'],'request_sha256':digest(request),'input_sha256':digest(cases),'remote':remote,
+             'provenance_sha256':hashlib.sha256(Path(__file__).with_name('input_provenance.py').read_bytes()).hexdigest(),
              'executor_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
              'validator_sha256':hashlib.sha256(Path(__file__).with_name('contracts.py').read_bytes()).hexdigest()}
     folder=Path(output).resolve()/digest(binding);folder.mkdir(parents=True,exist_ok=True);path=folder/'execution.json'
@@ -144,7 +147,7 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_director
         if response.get('status')!='executed_unverified' or not isinstance(results,list) or len(results)!=len(samples):
             raise ValueError('Bundle runtime did not produce one output per input')
         for result in results:validate_schema(contract['output_schema'],result)
-        record.update(status='development_execution_completed',outputs=results,limits=limits,
+        record.update(status='development_execution_completed',outputs=results,limits=limits,input_manifest=input_manifest,
                       response_sha256=digest(response),execution_path=str(path))
         record['record_sha256']=digest(record)
         atomic_json(path,record);return record

@@ -108,6 +108,9 @@ class AdapterEvaluationTests(unittest.TestCase):
         first=run(bundle['path'],[sample],{},self.root/'executions',media_directory=self.root)
         packet=remote.call_args.args[1]['cases'][0]['media']
         self.assertEqual(len(packet['assets']),3)
+        self.assertEqual(first['input_manifest'][0]['media_sha256'],[asset['sha256'] for asset in packet['assets']])
+        self.assertTrue(first['input_manifest'][0]['media_coverage_complete'])
+        self.assertEqual(run(bundle['path'],[sample],{},self.root/'executions',media_directory=self.root),first)
         self.assertFalse(packet['media_decoded'])
         for asset in packet['assets']:
             uri=sample['inputs'][asset['field']]
@@ -116,6 +119,7 @@ class AdapterEvaluationTests(unittest.TestCase):
         changed=self.root/sample['inputs']['views']['items'][0]['uri'];changed.write_bytes(b'new bytes')
         second=run(bundle['path'],[sample],{},self.root/'executions',media_directory=self.root)
         self.assertNotEqual(first['binding']['request_sha256'],second['binding']['request_sha256'])
+        self.assertNotEqual(first['input_manifest'][0]['input_content_sha256'],second['input_manifest'][0]['input_content_sha256'])
         self.assertEqual(remote.call_count,2)
         changed.write_bytes(b'x'*(512*1024+1))
         with self.assertRaises(ValueError):run(bundle['path'],[sample],{},self.root/'executions',media_directory=self.root)

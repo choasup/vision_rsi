@@ -23,7 +23,7 @@ adaptation and video training are incomplete; current real training uses the COC
 Legacy run/demo/compare commands use synthetic fixtures and do not establish RSI quality.''')
     parser.add_argument('command',nargs='?',choices=[
         'workspace-init','training','test','capabilities','doctor','llm-usage','experiment-request',
-        'candidate','candidate-run','candidate-evaluate','study','evaluate-coco','evaluate-events','resources','resources-train',
+        'candidate','candidate-run','candidate-evaluate','input-overlap','study','evaluate-coco','evaluate-events','resources','resources-train',
         'resources-equivalence','baseline-evaluate','baseline-watch','baseline-status','baseline-audit',
         'remote-check','llm-check','coco-train','serve','job-submit','job-status','job-logs','job-cancel',
         'run','demo','compare','research-import','research-event','research-view','research-step'])
@@ -39,6 +39,9 @@ def main():
     if sys.argv[1]=='candidate-run':
         from .candidate_bundle import main as bundle_main
         return bundle_main(sys.argv[2:])
+    if sys.argv[1]=='input-overlap':
+        from .input_provenance import main as overlap_main
+        return overlap_main(sys.argv[2:])
     if sys.argv[1]=='candidate-evaluate':
         from .bundle_evaluation import main as evaluate_main
         return evaluate_main(sys.argv[2:])
