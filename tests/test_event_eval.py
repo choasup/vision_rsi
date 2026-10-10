@@ -5,8 +5,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from vision_rsi.event_eval import PROTOCOL, evaluate, matched_count
+from vision_rsi.event_eval import PROTOCOL, evaluate, matched_count, read_document
 
 
 def event(start, end, label='action'):
@@ -14,6 +15,29 @@ def event(start, end, label='action'):
 
 
 class EventEvaluationTests(unittest.TestCase):
+    def test_bounded_json_rejects_duplicates_nonfinite_depth_and_size(self):
+        path=self.root/'bounded.json'
+        for raw,fragment in [(b'{"labels":[],"labels":[]}', 'Duplicate'),
+                             (b'{"value":NaN}','Nonfinite'),
+                             (b'['*66+b'0'+b']'*66,'nesting')]:
+            path.write_bytes(raw)
+            with self.assertRaisesRegex(ValueError,fragment):read_document(path,1024)
+        path.write_bytes(b'[] ')
+        with self.assertRaisesRegex(ValueError,'byte limit'):read_document(path,2)
+        path.write_bytes(b'[]')
+        self.assertEqual(read_document(path,2),(b'[]',[]))
+
+    def test_workload_limits_reject_before_matching(self):
+        gt=self.write('gt.json',[event(0,1),event(1,2)])
+        pred=self.write('pred.json',[event(0,1),event(1,2)])
+        with patch('vision_rsi.event_eval.matched_count') as matching:
+            with patch('vision_rsi.event_eval.MAX_COMPARISON_PAIRS',3):
+                with self.assertRaisesRegex(ValueError,'workload'):evaluate(gt,pred)
+            with patch('vision_rsi.event_eval.MAX_TOTAL_EVENTS',1):
+                with self.assertRaisesRegex(ValueError,'Event count'):evaluate(gt,pred)
+            matching.assert_not_called()
+        self.assertEqual(evaluate(gt,pred)['comparison_pairs'],4)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

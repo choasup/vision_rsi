@@ -9,6 +9,36 @@ from pathlib import Path
 from .runner import atomic_json
 
 PROTOCOL = 'vision-rsi/event_micro_f1/v1'
+JSON_FILE_BYTES = 16 * 1024 * 1024
+CONTRACT_FILE_BYTES = 4 * 1024 * 1024
+MAX_COMPARISON_PAIRS = 1000000
+MAX_TOTAL_EVENTS = 100000
+
+
+def read_document(path, limit):
+    with Path(path).open('rb') as stream:
+        raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError('Event evaluation JSON exceeds byte limit')
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:raise ValueError('Duplicate JSON field')
+            result[key] = value
+        return result
+    def constant(_):
+        raise ValueError('Nonfinite JSON constant')
+    try:
+        document = json.loads(raw, object_pairs_hook=unique, parse_constant=constant)
+    except RecursionError as error:
+        raise ValueError('JSON nesting exceeds supported depth') from error
+    stack = [(document, 0)]
+    while stack:
+        value, depth = stack.pop()
+        if depth > 64:raise ValueError('JSON nesting exceeds 64 levels')
+        if isinstance(value, dict):stack.extend((item, depth + 1) for item in value.values())
+        elif isinstance(value, list):stack.extend((item, depth + 1) for item in value)
+    return raw, document
 
 
 def number(value, low, high):
@@ -88,8 +118,7 @@ def evaluate(ground_truth, predictions, iou_threshold=None, threshold=None, cont
     contract = None
     if contract_path is not None:
         from .contracts import validate_schema_definition
-        raw_contract = Path(contract_path).read_bytes()
-        contract = json.loads(raw_contract)
+        raw_contract, contract = read_document(contract_path, CONTRACT_FILE_BYTES)
         acceptance = contract.get('acceptance') if isinstance(contract, dict) else None
         if (not isinstance(acceptance, dict) or acceptance.get('metric') != 'event_micro_f1'
                 or acceptance.get('direction') != 'maximize'
@@ -112,19 +141,24 @@ def evaluate(ground_truth, predictions, iou_threshold=None, threshold=None, cont
     threshold = 0.9 if threshold is None else threshold
     if not number(iou_threshold, 0, 1) or iou_threshold == 0 or not number(threshold, 0, 1):
         raise ValueError('Require 0 < IoU <= 1 and 0 <= F1 threshold <= 1')
-    raw_gt, raw_pred = Path(ground_truth).read_bytes(), Path(predictions).read_bytes()
-    gt_doc, pred_doc = json.loads(raw_gt), json.loads(raw_pred)
+    raw_gt, gt_doc = read_document(ground_truth, JSON_FILE_BYTES)
+    raw_pred, pred_doc = read_document(predictions, JSON_FILE_BYTES)
     labels = gt_doc.get('labels') if isinstance(gt_doc, dict) else None
-    if (not isinstance(labels, list) or not labels or
+    if (not isinstance(labels, list) or not 1 <= len(labels) <= 1000 or
             any(not isinstance(x, str) or not x.strip() for x in labels) or len(set(labels)) != len(labels)):
         raise ValueError('Require a unique nonempty label vocabulary')
     gt, pred = samples(gt_doc, labels), samples(pred_doc, labels)
+    if sum(map(len, gt.values())) > MAX_TOTAL_EVENTS or sum(map(len, pred.values())) > MAX_TOTAL_EVENTS:
+        raise ValueError('Event count exceeds evaluation limit')
+    if set(gt) != set(pred):
+        raise ValueError('Prediction sample coverage must match exactly')
+    comparisons = sum(len(gt[key]) * len(pred[key]) for key in gt)
+    if comparisons > MAX_COMPARISON_PAIRS:
+        raise ValueError('Event matching workload exceeds comparison pair limit')
     if contract is not None:
         from .contracts import validate_schema
         for events in pred.values():
             validate_schema(contract['output_schema'], {'events': events})
-    if set(gt) != set(pred):
-        raise ValueError('Prediction sample coverage must match exactly')
     positives = sum(map(len, gt.values()))
     if positives == 0:
         raise ValueError('Ground truth must contain at least one event')
@@ -138,6 +172,7 @@ def evaluate(ground_truth, predictions, iou_threshold=None, threshold=None, cont
             'precision': precision, 'recall': recall, 'event_micro_f1': f1,
             'metric_threshold_met': f1 >= threshold, 'capability_registered': False,
             'provenance_verified': False, 'contract_bound': contract is not None,
+            'comparison_pairs': comparisons,
             'contract_sha256': contract_hash,
             'ground_truth_sha256': hashlib.sha256(raw_gt).hexdigest(),
             'predictions_sha256': hashlib.sha256(raw_pred).hexdigest()}
