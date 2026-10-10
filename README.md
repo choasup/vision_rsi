@@ -104,7 +104,9 @@ python -m vision_rsi run --run-dir runs/demo
 ## 配置与秘密
 
 复制 config.example.json 到本地配置文件并填写 SSH 主机别名、远端目录、COCO 路径、准确模型 ID 和 Base URL。示例默认使用官方 `deepseek-flash` 与 `https://api.deepseek.com`。
-API Key 仅从 DEEPSEEK_API_KEY 环境变量读取，doctor 只报告是否存在，绝不打印值。
+API Key 仅从 DEEPSEEK_API_KEY 环境变量读取，doctor 只报告是否存在，绝不打印值。`vision-rsi.cmd` 启动器可将 Windows 用户环境变量加载到子进程；直接 `python -m` 检查当前进程环境。
+
+`vision-rsi.cmd doctor --config config.local.json` 只做本地配置检查，不创建账本、不调用API或SSH、不开始训练。`configuration_ready` 只表示本地SSH可用及LLM/远端配置格式通过；报告中的 `real_api_tested`、`remote_connectivity_tested`、`task_budget_checked`、`task_effect_verified` 和 `release_verified` 均为本次未验证，历史实测证据仍需另查。真实训练已实现的范围为固定COCO单图适配器及有限配方实验，不代表通用harness调整完成。
 不将密钥放入配置、Git 或聊天。OpenAI-compatible HTTP 客户端和独立 Training SSH 执行已接入。首个固定基线为 torchvision Faster R-CNN ResNet50 FPN v2 及其 COCO 预训练权重；原模拟 `run` 入口不执行真实训练。具体数据路径、完整哈希、远端运行时及任务预算须由 Training 准备阶段核查。
 
 ## 项目范围

@@ -70,12 +70,42 @@ def run(config, directory):
 
 
 def doctor(config):
-    return {'mode': config['mode'], 'ssh_available': bool(__import__('shutil').which('ssh')),
-            'llm_model_configured': bool(config['llm']['model']),
-            'llm_base_url_configured': bool(config['llm']['base_url']),
-            'api_key_present': bool(os.environ.get(config['llm']['api_key_env'])),
-            'remote_configured': bool(config['remote']['ssh_host'] and config['remote']['workspace']),
-            'real_training_implemented': False, 'real_api_tested': False}
+    """Local-only configuration checks; never claim remote/API/effect validation."""
+    if not isinstance(config,dict):raise ValueError('Doctor config must be an object')
+    llm=config.get('llm');remote=config.get('remote')
+    llm=llm if isinstance(llm,dict) else {}
+    remote=remote if isinstance(remote,dict) else {}
+    env_name=llm.get('api_key_env')
+    key_present=isinstance(env_name,str) and bool(env_name) and bool(os.environ.get(env_name))
+    llm_valid=False
+    try:
+        from .llm import OpenAICompatibleClient
+        OpenAICompatibleClient(llm).validate_config()
+        llm_valid=True
+    except (ValueError,TypeError,AttributeError):pass
+    remote_valid=False
+    try:
+        from .remote import ssh_argv
+        ssh_argv(remote)
+        from pathlib import PurePosixPath
+        workspace=remote.get('workspace')
+        remote_valid=isinstance(workspace,str) and PurePosixPath(workspace).is_absolute() and not any(c in workspace for c in ('\x00','\n','\r'))
+    except (ValueError,TypeError):pass
+    ssh_available=bool(__import__('shutil').which('ssh'))
+    return {'mode':config.get('mode'),'ssh_available':ssh_available,
+            'llm_model_configured':isinstance(llm.get('model'),str) and bool(llm['model'].strip()),
+            'llm_base_url_configured':isinstance(llm.get('base_url'),str) and bool(llm['base_url']),
+            'api_key_present':key_present,'api_key_scope':'current process environment only','llm_configuration_valid':llm_valid,
+            'remote_configured':remote_valid,'real_training_implemented':True,
+            'training_scope':'Fixed COCO single-image baseline and bounded recipe experiments; general harness/model adaptation is incomplete.',
+            'checks_performed':['local_configuration_only'],'read_only':True,
+            'configuration_ready':bool(ssh_available and remote_valid and llm_valid),
+            'real_api_tested':False,'remote_connectivity_tested':False,'training_performed':False,
+            'task_budget_checked':False,'task_effect_verified':False,'release_verified':False,
+            'next_steps':['training show --session-id SESSION_ID: inspect task contract and unresolved requirements',
+                          'training prepare --session-id SESSION_ID --config CONFIG: validate task budget and compile a plan',
+                          'remote-check and llm-check are separate explicit live probes'],
+            'scope':'Configuration readiness alone does not authorize training or prove task quality, live service access, or release readiness.'}
 
 
 def main():
