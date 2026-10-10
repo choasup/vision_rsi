@@ -296,6 +296,7 @@ def research_step(config, directory, steps=1, repository='.'):
     from .campaign import lease
     with lease(lock,owner='Research controller'):
         limit = planning_limit(config, ledger.events())
+        last_step_status = 'no_action'
         for _ in range(steps):
             events = ledger.events()
             controls = [e['kind'] for e in events if e['kind'] in ('paused', 'resumed')]
@@ -405,6 +406,7 @@ def research_step(config, directory, steps=1, repository='.'):
                 except (ValueError, KeyError, TypeError, AttributeError) as error:
                     ledger.append(response['key'] + ':rejected', 'reflection', {'summary': '规划响应校验失败，未执行工具；下次手动推进可发起新规划。', 'record_type': 'planning_rejected', 'planning_response': response['key'], 'refs': [response['key']], 'error_type': type(error).__name__})
                     dashboard(ledger)
+                    last_step_status = 'planning_rejected'
                     break
                 action_key = response['key'] + ':action'
                 ledger.append(action_key, 'action', dict(plan, executor='research-v1', planning_response=response['key'], refs=plan['refs'] + [response['key']]))
@@ -427,8 +429,10 @@ def research_step(config, directory, steps=1, repository='.'):
                 status, summary = 'failed', '研究工具失败，已保留失败证据。'
             ledger.append(pending['key'] + ':result', 'result', {'summary': summary, 'action': pending['key'], 'status': status,
                           'observation': observation, 'synthetic': False, 'read_only': pending['payload']['tool'] not in ('stage_candidate','check_candidate','check_contract')})
+            last_step_status = 'tool_completed' if status == 'completed' else 'tool_failed'
             dashboard(ledger)
             print(summary, flush=True)
         from .research_state import snapshot
         return {'dashboard': dashboard(ledger), 'events': len(ledger.events()),
+                'last_step_status':last_step_status,
                 'research_status': snapshot(ledger.events()), 'autonomous_background_loop': False}

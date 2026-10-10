@@ -157,7 +157,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -185,6 +185,7 @@ def main(argv):
     parser.add_argument('--candidate-id');parser.add_argument('--candidate-module')
     parser.add_argument('--candidate-store',default='runs/research-candidates')
     parser.add_argument('--research-root',default='runs/task-research',help='Task-bound general research ledger root')
+    parser.add_argument('--research-watch-turns',type=int,default=6,help='Maximum foreground general-research steps (1..1000)')
     parser.add_argument('--repository',default='.',help='Git source repository for general research; required explicitly outside the checkout')
     args=parser.parse_args(argv)
     if args.interactive and args.action not in ('start','show','reply','define'):
@@ -201,7 +202,7 @@ def main(argv):
             for blocker in result['blockers']:print('- '+blocker)
             print('仅核查本地产物；未调用推理、远端或API，不代表整个Agent已上线。')
         return
-    if args.action in ('research-init','research-step','research-status'):
+    if args.action in ('research-init','research-step','research-status','research-watch'):
         from .task_research import prepare,advance,status
         import sqlite3
         if not args.session_id:parser.error('research requires --session-id')
@@ -209,11 +210,28 @@ def main(argv):
             session=Sessions(args.sessions,read_only=True).show(args.session_id)
             if args.action=='research-init':result=prepare(session,args.research_root)
             elif args.action=='research-status':result=status(session,args.research_root)
+            elif args.action=='research-watch':
+                from .research_watch import watch
+                from .task_readiness import inspect
+                def session_now():return Sessions(args.sessions,read_only=True).show(args.session_id)
+                def next_step():
+                    current=session_now()
+                    config=json.loads(Path(args.config).read_text(encoding='utf-8'))
+                    context=inspect(args.session_id,config,args.sessions,args.run_store,args.config)
+                    from contextlib import redirect_stdout, nullcontext
+                    import sys
+                    with redirect_stdout(sys.stderr) if args.json else nullcontext():
+                        return advance(current,config,args.research_root,1,args.repository,task_context=context)
+                result=watch(next_step,lambda:status(session_now(),args.research_root),
+                             turns=args.research_watch_turns,duration=args.watch_seconds)
             else:
                 from .task_readiness import inspect
                 config=json.loads(Path(args.config).read_text(encoding='utf-8'))
                 context=inspect(args.session_id,config,args.sessions,args.run_store,args.config)
-                result=advance(session,config,args.research_root,args.steps,args.repository,task_context=context)
+                from contextlib import redirect_stdout, nullcontext
+                import sys
+                with redirect_stdout(sys.stderr) if args.json else nullcontext():
+                    result=advance(session,config,args.research_root,args.steps,args.repository,task_context=context)
         except (ValueError,OSError,KeyError,TypeError,RuntimeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
         if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
         elif args.action=='research-status':
@@ -221,6 +239,10 @@ def main(argv):
             print('研究状态: '+state['state'])
             print('规划尝试: '+str(state['planning_attempts_used'])+' / '+str(state['planning_limit'])+'；剩余 '+str(state['planning_attempts_remaining']))
             print('仅查询本地记录；未验证进程存活或任务达标。')
+        elif args.action=='research-watch':
+            print('研究监督已停止: '+result['watch']['stop_reason'])
+            print('本轮完成步数: '+str(result['watch']['completed_steps']))
+            print('报告: '+result['watch']['report_path'])
         else:
             print('任务研究: '+result['directory']+'\n观测页: '+result['dashboard'])
             print('固定接口版本: '+str(result['task_binding']['contract_version'])+'；未启动训练或采用候选。')

@@ -833,3 +833,11 @@ python -m vision_rsi training release-status --session-id SESSION --json
 ```
 
 状态区分暂停、待恢复行动、API 请求状态不确定、已有响应待处理及规划额度耗尽。使用自定义研究目录时传入相同的 `--research-root`。查询核对任务版本及冻结接口哈希，缺失账本不会自动创建。SQLite 只读连接可能创建 WAL 共享内存辅助文件，不追加研究事件。观测页在下次生成时显示相同状态与额度；两者均不代表进程存活或任务效果已验收。
+
+持续推进通用研究（前台运行，需先 `research-init`）：
+
+```powershell
+.\vision-rsi.cmd training research-watch --session-id SESSION_ID --research-watch-turns 6 --watch-seconds 3600
+```
+
+每轮执行一个研究步骤，并重新核对任务版本、接口及训练就绪状态。次数上限、时长到期、暂停、请求状态不确定、规划校验失败、工具失败或无进展都会停止；不自动重试 API 或工具调用。中断后记录仍保留，可查询状态再显式继续。时长限制阻止到期后启动新步骤，正在执行的有界调用可能稍后结束。停止报告保存在该任务研究目录的 `research-watch-runs`；此入口不等同于已有的固定检测训练 `training watch`，不会自动采用候选或绕过训练预算。
