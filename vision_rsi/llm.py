@@ -1,9 +1,20 @@
 """Replaceable OpenAI-compatible client; credentials are never persisted."""
 import json
 import os
-from urllib.request import Request, urlopen
+from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Default urllib copies Authorization to redirected requests, including
+        # another host. Require the configured HTTPS endpoint to answer directly.
+        return None
+
+
+def urlopen(request, timeout):
+    return build_opener(NoRedirect()).open(request, timeout=timeout)
 
 
 class OpenAICompatibleClient:
@@ -17,7 +28,7 @@ class OpenAICompatibleClient:
         base=self.config.get('base_url')
         if not isinstance(base,str):raise ValueError('LLM base_url must use HTTPS')
         parts=urlsplit(base)
-        if parts.scheme!='https' or not parts.hostname or parts.username is not None or parts.password is not None:
+        if parts.scheme!='https' or not parts.hostname or parts.username is not None or parts.password is not None or parts.query or parts.fragment:
             raise ValueError('LLM base_url must use HTTPS')
         parts.port  # Validate port syntax before reserving any caller budget.
         if not isinstance(self.config.get('model'),str) or not self.config['model'].strip():raise ValueError('LLM model ID is missing')
@@ -38,7 +49,9 @@ class OpenAICompatibleClient:
             with urlopen(request, timeout=60) as response:
                 result = json.load(response)
         except HTTPError as error:
-            raise RuntimeError(f'LLM HTTP {error.code}; response body suppressed') from None
+            code=error.code
+            error.close()
+            raise RuntimeError(f'LLM HTTP {code}; response body suppressed') from None
         except (URLError, TimeoutError):
             raise RuntimeError('LLM network error or timeout') from None
         return {'model': result.get('model'),

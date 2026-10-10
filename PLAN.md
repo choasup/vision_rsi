@@ -456,3 +456,11 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Added baseline-watch: freezes controlling source hashes/spec/model-data context, imports contiguous historical jobs into a persistent total step cap, authoritatively observes the current handle, and submits only after valid completed/partial receipt. Submission intent/next handle precede network calls; unknown submit/status never creates a replacement attempt automatically. Failed/lost jobs stop. Each worker remains CPU-only<=300s, and foreground deadline requires305s headroom before another submission.
 - Four regressions pass: imported quota retention/no increase, unknown-submit handle preservation with no retry, running/deadline no-submission and completed coverage regression stopping advancement. This controls baseline-stage worker count and foreground time only; global Agent budgets and real quality acceptance remain incomplete.
 - Last completed baseline step a4 is463/5,000 images; training download previous exec78059 completed partial9,099,954,166 bytes, next bounded exec25205 live. No full AP or GPU training.
+
+## Model transport redirect control (2026-10-10)
+
+- Inspected actual bundled Python urllib source: default redirect_request copies request headers except Content-Length/Content-Type, including Authorization on301/302/303 POST redirects. Model transport now installs a nonredirecting handler and rejects Base URL query/fragment locally; HTTP error bodies are suppressed/closed, with no automatic retry.
+- Seven transport tests pass, including actual two-origin loopback HTTP302 round trip confirming that the credential-bearing fixture request never reaches the target server. No real LLM/API call was made for these tests. Baseline controller protected source hashes were not changed.
+- Automatic CPU watcher confirmed live at job a6; independent audit610 real images passed at last observation. Training local exec8046 completed partial13,219,604,214 bytes and next bounded exec72635 is live. No full AP, GPU training or launch acceptance claim.
+
+- Full207-test suite passed in69.530s after transport and baseline-controller additions. This is implementation verification, not task-quality or RSI/adoption evidence.

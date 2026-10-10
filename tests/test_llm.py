@@ -1,8 +1,12 @@
 import io
 import json
 import unittest
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.request import Request
+from urllib.error import HTTPError
 from unittest.mock import patch
-from vision_rsi.llm import OpenAICompatibleClient
+from vision_rsi.llm import OpenAICompatibleClient, NoRedirect, urlopen
 
 
 class LLMTests(unittest.TestCase):
@@ -12,6 +16,8 @@ class LLMTests(unittest.TestCase):
         self.assertIsNone(self.client.validate_config())
         for changed in ({'base_url':'http://example.invalid'},{'base_url':'https://'},
                         {'base_url':'https://user:fixture@example.invalid'},
+                        {'base_url':'https://example.invalid?token=fixture'},
+                        {'base_url':'https://example.invalid#fragment'},
                         {'base_url':'https://example.invalid:bad'},{'model':''}):
             with self.subTest(config=changed),self.assertRaises(ValueError):
                 OpenAICompatibleClient(dict(self.client.config,**changed)).validate_config()
@@ -38,3 +44,53 @@ class LLMTests(unittest.TestCase):
         self.assertEqual(request.full_url, 'https://example.invalid/chat/completions')
         self.assertEqual(json.loads(request.data)['model'], 'fixture')
         self.assertNotIn('fixture-secret', json.dumps(result))
+
+    def test_redirect_handler_never_copies_credentials(self):
+        request=Request('https://example.invalid/chat/completions',data=b'{}',headers={'Authorization':'Bearer fixture-secret'})
+        handler=NoRedirect()
+        for code in (301,302,303,307,308):
+            for target in ('https://other.invalid/collect','http://example.invalid/collect','https://example.invalid/new'):
+                self.assertIsNone(handler.redirect_request(request,None,code,'redirect',{},target))
+
+    @patch('vision_rsi.llm.build_opener')
+    def test_transport_installs_nonredirecting_handler(self,build):
+        request=Request('https://example.invalid')
+        urlopen(request,timeout=60)
+        self.assertIsInstance(build.call_args.args[0],NoRedirect)
+        build.return_value.open.assert_called_once_with(request,timeout=60)
+
+    @patch.dict('os.environ', {'NO_PROXY':'127.0.0.1'})
+    def test_actual_loopback_redirect_does_not_reach_other_origin(self):
+        seen=[]
+        class Sink(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(self.headers.get('Authorization'))
+                self.send_response(200);self.end_headers()
+            def log_message(self,*args):pass
+        sink=ThreadingHTTPServer(('127.0.0.1',0),Sink)
+        class Redirect(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.send_response(302)
+                self.send_header('Location',f'http://127.0.0.1:{sink.server_port}/sink')
+                self.end_headers()
+            def log_message(self,*args):pass
+        source=ThreadingHTTPServer(('127.0.0.1',0),Redirect)
+        threads=[threading.Thread(target=server.serve_forever,kwargs={'poll_interval':.05},daemon=True) for server in (sink,source)]
+        for thread in threads:thread.start()
+        try:
+            request=Request(f'http://127.0.0.1:{source.server_port}/chat',data=b'{}',headers={'Authorization':'Bearer fixture-secret'})
+            with self.assertRaises(HTTPError) as error:urlopen(request,timeout=3)
+            self.assertEqual(error.exception.code,302);error.exception.close()
+            self.assertEqual(seen,[])
+        finally:
+            for server in (source,sink):server.shutdown();server.server_close()
+            for thread in threads:thread.join(timeout=2)
+
+    @patch.dict('os.environ', {'TEST_LLM_KEY':'fixture-secret'})
+    @patch('vision_rsi.llm.urlopen')
+    def test_redirect_error_is_suppressed_and_not_retried(self,opened):
+        body=io.BytesIO(b'fixture-secret response body')
+        opened.side_effect=HTTPError('https://other.invalid',302,'redirect',{},body)
+        with self.assertRaises(RuntimeError) as error:self.client.complete([{'role':'user','content':'hi'}])
+        self.assertNotIn('fixture-secret',str(error.exception))
+        opened.assert_called_once();self.assertTrue(body.closed)
