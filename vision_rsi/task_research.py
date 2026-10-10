@@ -45,6 +45,8 @@ def control(session, action, root='runs/task-research'):
     with lease(folder/'research-control.lock',owner='Research scheduling control'):
         if action=='resume' and (folder/'acceptance-history.json').exists():
             raise ValueError('Research history sealed for acceptance; cannot resume search')
+        if action=='resume' and (folder/'candidate-selection.json').exists():
+            raise ValueError('Development candidate selection sealed; cannot resume search')
         current=status(session,root)
         ledger=Ledger(folder)
         controls=[e for e in ledger.events() if e['kind'] in ('paused','resumed')]

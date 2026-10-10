@@ -1086,3 +1086,11 @@ CPU 运行器会在候选执行前后记录并核对指定环境组件：沙箱 
 需要研究已暂停、无未完成动作，且使用冻结的媒体 bundle 开发评测。程序只读取所覆盖开发评测及冻结开发集，核对实际媒体内容并从执行输出重新计算事件 F1；按分数降序、bundle ID、动作 ID 固定排序。没有达到原合同阈值时不选择，继续开发；达到时注册为待独立验收版本，返回 `version`，供 `deliver-candidate` 使用，不需要手填 bundle 路径。当前适配指标仅事件 F1，不适用于直接选择 COCO AP 检测器。
 
 选型记录固定到研究历史，不使用独立验收反馈。首次选型必须早于当前注册表内的任务独立验收预留；已有选型只允许相同证据恢复。当前只核对选定研究账本，不证明其他目录、注册表或人工开发历史的完整性，不能通过换目录规避验收独立性。源码候选和开发数据需保留。此步骤不调用 LLM、远端或 GPU，不声称已经通过正式质量和服务验收。
+
+可把选型和交付合并为一个命令，不提供候选版本或 bundle 路径：
+
+```powershell
+.\vision-rsi.cmd training deliver-candidate --select-development --session-id SESSION --dataset holdout.json --max-latency-seconds 30 --sessions SESSIONS_DIR --research-root RESEARCH_DIR --registry REGISTRY_DIR --config config.local.json
+```
+
+`--select-development` 与 `--version` 互斥。先按冻结开发证据选型，之后才处理独立验收；选型完成后禁止恢复搜索或追加研究记录，避免交付期间变化。不达开发阈值就停止，不接触验收；恢复相同命令复用原候选和阶段。源程序、开发证据或验收绑定变化会拒绝恢复。当前仅事件 F1/CPU bundle 路径，尚不支持从任意自然语言任务自动获得学习模型。此组合入口为 dev9 之后的源码更新。

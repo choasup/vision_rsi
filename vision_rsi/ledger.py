@@ -51,6 +51,8 @@ class Ledger:
                 if existing[1:] != (kind, encoded):
                     raise ValueError('Idempotency key conflicts with another event')
                 return existing[0]
+            if (self.directory/'candidate-selection.json').exists():
+                raise ValueError('Development candidate selection sealed; cannot append research work')
             events = self._events(db)
             if not events and kind != 'objective':
                 raise ValueError('Create objective first')

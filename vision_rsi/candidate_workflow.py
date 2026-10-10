@@ -11,13 +11,23 @@ from .candidate_serving import check
 from .candidate_delivery import promote
 
 
-def deliver(registry,session,version,dataset_path,research_root,remote,max_latency_seconds):
-    name,_,task_binding,_=pending_candidate(registry,session,version)
-    raw,_=read_document(dataset_path,2*1024*1024)
-    # Validate target before reserving any acceptance or dispatching a process.
+def validate_latency(max_latency_seconds):
     import math
     if type(max_latency_seconds) not in (int,float) or not math.isfinite(max_latency_seconds) or not 0<max_latency_seconds<=120:
         raise ValueError('Specify a finite latency target in (0,120] seconds')
+
+
+def deliver_selected(registry,session,dataset_path,research_root,remote,max_latency_seconds):
+    validate_latency(max_latency_seconds)
+    from .candidate_selection import select
+    selected=select(registry,session,research_root)
+    return deliver(registry,session,selected['version'],dataset_path,research_root,remote,max_latency_seconds)
+
+
+def deliver(registry,session,version,dataset_path,research_root,remote,max_latency_seconds):
+    name,_,task_binding,_=pending_candidate(registry,session,version)
+    raw,_=read_document(dataset_path,2*1024*1024)
+    validate_latency(max_latency_seconds)
     binding={'task_binding':task_binding,'version':version,'dataset_path':str(Path(dataset_path).resolve()),
              'dataset_sha256':hashlib.sha256(raw).hexdigest(),'research_root':str(Path(research_root).resolve()),
              'remote':remote,'max_latency_seconds':float(max_latency_seconds),

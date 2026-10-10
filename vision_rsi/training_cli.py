@@ -192,6 +192,7 @@ def main(argv):
     parser.add_argument('--research-root',default='runs/task-research',help='Task-bound general research ledger root')
     parser.add_argument('--research-watch-turns',type=int,default=6,help='Maximum foreground general-research steps (1..1000)')
     parser.add_argument('--repository',default='.',help='Git source repository for general research; required explicitly outside the checkout')
+    parser.add_argument('--select-development',action='store_true',help='Select from frozen paused development research before delivery; replaces --version')
     args=parser.parse_args(argv)
     if args.action=='select-candidate':
         if not args.session_id:parser.error('select-candidate requires --session-id')
@@ -221,16 +222,18 @@ def main(argv):
         except (ValueError,KeyError,TypeError,OSError,RuntimeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
         print(json.dumps(result,ensure_ascii=False,indent=2));return
     if args.action=='deliver-candidate':
-        if not args.session_id or not args.version or not args.dataset or args.max_latency_seconds is None:
-            parser.error('deliver-candidate requires --session-id, --version, --dataset and --max-latency-seconds')
+        if not args.session_id or bool(args.version)==args.select_development or not args.dataset or args.max_latency_seconds is None:
+            parser.error('deliver-candidate requires --session-id, exactly one of --version/--select-development, --dataset and --max-latency-seconds')
         import sqlite3
         from .capability import Capabilities
-        from .candidate_workflow import deliver
+        from .candidate_workflow import deliver,deliver_selected
         try:
             session=Sessions(args.sessions,read_only=True).show(args.session_id)
             config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
             registry=Capabilities(args.registry)
-            try:result=deliver(registry,session,args.version,args.dataset,args.research_root,config['remote'],args.max_latency_seconds)
+            try:
+                result=(deliver_selected(registry,session,args.dataset,args.research_root,config['remote'],args.max_latency_seconds)
+                        if args.select_development else deliver(registry,session,args.version,args.dataset,args.research_root,config['remote'],args.max_latency_seconds))
             finally:registry.close()
         except (ValueError,KeyError,TypeError,OSError,RuntimeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
         print(json.dumps(result,ensure_ascii=False,indent=2));return

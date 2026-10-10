@@ -479,6 +479,8 @@ def research_step(config, directory, steps=1, repository='.'):
     with lease(lock,owner='Research controller'):
         if (ledger.directory/'acceptance-history.json').exists():
             raise ValueError('Research history sealed for acceptance; further search is disabled')
+        if (ledger.directory/'candidate-selection.json').exists():
+            raise ValueError('Development candidate selection sealed; further search is disabled')
         limit = planning_limit(config, ledger.events())
         bind_validation(ledger,config)
         from .research_baseline import bind as bind_baseline

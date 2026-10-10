@@ -30,8 +30,10 @@ def main():
     parser.add_argument('--bundle',required=True)
     parser.add_argument('--config',default='config.local.json')
     parser.add_argument('--workflow',action='store_true',help='Use the integrated delivery workflow for fresh execution')
+    parser.add_argument('--select-development',action='store_true',help='Automatically select/register from development before workflow; requires --workflow')
     args=parser.parse_args()
     if not args.live_remote:parser.error('Require --live-remote; at most six CPU calls, no LLM/GPU')
+    if args.select_development and not args.workflow:parser.error('--select-development requires --workflow')
     repo=Path(__file__).resolve().parents[1]
     bundle=verify(args.bundle)
     contract=json.loads(base64.b64decode(bundle['contract_base64']))
@@ -41,7 +43,7 @@ def main():
     root=repo/'runs/candidate-delivery-live'/uuid.uuid4().hex
     root.mkdir(parents=True);print(str(root),flush=True)
     atomic_json(root/'preregistered.json',{'scope':__doc__,'max_remote_calls':6,'gpu_used':False,'llm_calls':0,
-                'bundle_id':bundle['bundle_id'],'integrated_workflow':args.workflow,'probe_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                'bundle_id':bundle['bundle_id'],'integrated_workflow':args.workflow,'automatic_selection':args.select_development,'probe_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 'criteria':['real isolated CPU execution','sealed ledger acceptance','immutable promotion',
                             'formal single and joint batch inference','cached external-directory CLI reuse']})
     original=transport.check_candidate;calls=[];registry=None;passed=False;failure=None
@@ -92,9 +94,18 @@ def main():
             'observation':{'report_path':report['report_path'],'report_sha256':hashlib.sha256(Path(report['report_path']).read_bytes()).hexdigest(),
                            'evaluation_identity':report['identity']}})
         ledger.append('pause','paused',{'summary':'Developer fixture research ended'})
-        registry=Capabilities(root/'registry');candidate=registry.register_candidate(session,bundle_path)
+        registry=Capabilities(root/'registry')
+        if not args.select_development:candidate=registry.register_candidate(session,bundle_path)
         workflow=None
-        if args.workflow:
+        if args.select_development:
+            from vision_rsi.candidate_workflow import deliver_selected
+            assert registry.list()==[]
+            workflow=deliver_selected(registry,session,holdout,research_root,remote,30)
+            assert workflow['status']=='scoped_delivery_ready_for_test' and len(calls)==4
+            assert deliver_selected(registry,session,holdout,research_root,remote,30)==workflow
+            candidate=json.loads((registry.root/session['task_id']/workflow['source_version']/'manifest.json').read_text(encoding='utf-8'))
+            delivery=json.loads((registry.root/session['task_id']/workflow['version']/'manifest.json').read_text(encoding='utf-8'))
+        elif args.workflow:
             from vision_rsi.candidate_workflow import deliver
             workflow=deliver(registry,session,candidate['version'],holdout,research_root,remote,30)
             assert workflow['status']=='scoped_delivery_ready_for_test' and len(calls)==4
@@ -139,6 +150,8 @@ def main():
             command=['training','deliver-candidate','--session-id',session['session_id'],'--version',candidate['version'],
                      '--sessions',str(sessions.root),'--research-root',str(research_root),'--registry',str(registry.root),
                      '--dataset',str(holdout),'--max-latency-seconds','30','--config',str(Path(args.config).resolve())]
+            if args.select_development:
+                index=command.index('--version');command[index:index+2]=['--select-development']
             completed=subprocess.run([sys.executable,'-X','utf8',str(repo/'launch_agent.py'),'--cli']+command,
                                      cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)
             assert completed.returncode==0,completed.stderr
@@ -152,7 +165,7 @@ def main():
     finally:
         transport.check_candidate=original
         if registry is not None:registry.close()
-        atomic_json(root/'evidence.json',{'passed':passed,'failure':failure,'remote_calls':len(calls),'integrated_workflow':args.workflow,
+        atomic_json(root/'evidence.json',{'passed':passed,'failure':failure,'remote_calls':len(calls),'integrated_workflow':args.workflow,'automatic_selection':args.select_development,
             'llm_calls':0,'gpu_used':False,'quality_verified':False,'production_accepted':False,
             'scope':__doc__})
 

@@ -7,10 +7,44 @@ from unittest.mock import patch
 
 import test_research_history as fixtures
 from test_candidate_runtime import identity
-from vision_rsi.candidate_workflow import deliver,status
+from vision_rsi.candidate_workflow import deliver,status,deliver_selected
 
 
 class CandidateWorkflowTests(unittest.TestCase):
+    @patch('vision_rsi.remote.check_candidate')
+    def test_auto_selection_to_delivery_with_empty_registry_and_cli_restore(self,remote):
+        self.prepared(remote)
+        from vision_rsi.capability import Capabilities
+        self.registry=Capabilities(self.root/'auto-registry');self.addCleanup(self.registry.close)
+        self.assertEqual(self.registry.list(),[])
+        args=(self.registry,self.session,self.holdout,self.research_root,{},30)
+        result=deliver_selected(*args)
+        self.assertEqual(result['status'],'scoped_delivery_ready_for_test')
+        self.assertEqual(deliver_selected(*args),result)
+        self.assertEqual(remote.call_count,4)
+        (self.root/'config.json').write_text(json.dumps({'remote':{}}))
+        command=[sys.executable,'-X','utf8',str(Path(__file__).resolve().parents[1]/'launch_agent.py'),'--cli',
+                 'training','deliver-candidate','--select-development','--session-id',self.session['session_id'],
+                 '--sessions',str(self.root/'sessions'),'--research-root',str(self.research_root),'--registry',str(self.registry.root),
+                 '--dataset',str(self.holdout),'--max-latency-seconds','30','--config',str(self.root/'config.json')]
+        completed=subprocess.run(command,cwd=self.root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+        self.assertEqual(completed.returncode,0,completed.stderr)
+        self.assertEqual(json.loads(completed.stdout),result)
+        self.assertEqual(remote.call_count,4)
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_selected_history_cannot_resume_or_append_before_acceptance(self,remote):
+        self.prepared(remote)
+        from vision_rsi.candidate_selection import select
+        from vision_rsi.task_research import control
+        from vision_rsi.controller import research_step
+        select(self.registry,self.session,self.research_root)
+        with self.assertRaisesRegex(ValueError,'selection sealed'):control(self.session,'resume',self.research_root)
+        with self.assertRaisesRegex(ValueError,'selection sealed'):research_step({},self.folder)
+        with self.assertRaisesRegex(ValueError,'selection sealed'):
+            self.ledger.append('new-evidence','evidence',{'summary':'Unexpected new research evidence'})
+        self.assertEqual(remote.call_count,1)
+
     @patch('vision_rsi.remote.check_candidate')
     def test_interrupt_persists_phase_and_status_without_retry(self,remote):
         args=self.prepared(remote);base=remote.side_effect

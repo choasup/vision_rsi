@@ -40,3 +40,16 @@ Set-Location F:\vision-rsi-agent
 ```
 
 该命令已只读核验真实保存的 CPU Demo 记录，证据为 `runs/workflow-status-real-saved.json`。无需 API 配置，不启动远端。显示的是持久调度状态，不证明进程还活着；当前产物是否仍可用于推理需查询 `release-status`。源码升级后旧一体化流程绑定会拒绝直接恢复，以上旧流程复核命令因此明确使用已验证的 dev9 安装环境，而不是新版源码；固定版本 Test 的证据也仍须通过自身检查。
+
+## 自动选型并交付（当前源码）
+
+此用例从空注册表开始，真实远端 CPU 跑通了开发评测 → 自动选型注册 → 独立验收 → 服务检查 → 固定版本推理；6次CPU调用，LLM0次、GPU未使用。它使用固定事件输出，不代表视觉模型效果或自动研究能力。以下命令只复查此新用例的已有记录：
+
+```powershell
+$demoRoot = 'F:\vision-rsi-agent\runs\candidate-delivery-live\f0a64b67f7c2432c9e444c9b686fc8ee'
+$demoSession = 'e8a0205e4e2a423eb178a7c78b02518d'
+.\vision-rsi.cmd training deliver-candidate --select-development --session-id $demoSession --dataset "$demoRoot\research\$demoSession\holdout.json" --max-latency-seconds 30 --sessions "$demoRoot\sessions" --research-root "$demoRoot\research" --registry "$demoRoot\registry" --config F:\vision-rsi-agent\config.local.json
+.\vision-rsi.cmd test --task-id delivery-fixture --version 4ff2654633cec3cf740997c0340d85bd --input "$demoRoot\research\$demoSession\single.json" --registry "$demoRoot\registry"
+```
+
+证据 `runs/candidate-delivery-live/f0a64b67f7c2432c9e444c9b686fc8ee/evidence.json` 的 `automatic_selection` 与 `integrated_workflow` 均为 true。已有选型只恢复相同记录，不重选，不从独立验收反馈重新搜索。此入口未包含在 dev9 包中，需当前源码。
