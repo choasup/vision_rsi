@@ -10,6 +10,42 @@ from vision_rsi.ledger import Ledger
 
 
 class ControllerTests(unittest.TestCase):
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    def test_synthesis_preserves_findings_and_rejects_non_result_citations(self,client):
+        from vision_rsi.controller import validate_synthesis_evidence,execute
+        with tempfile.TemporaryDirectory() as folder:
+            ledger=Ledger(folder);ledger.append('goal','objective',{'summary':'goal'})
+            ledger.append('inspect','action',{'executor':'research-v1','tool':'inspect_repository','summary':'inspect'})
+            ledger.append('inspect:result','result',{'action':'inspect','status':'completed','summary':'observed',
+                'observation':{'source_sha256':{'vision_rsi/controller.py':'a'*64}}})
+            args={'findings':[{'statement':'Observed source identity is available.','refs':['inspect:result']}],
+                  'limitations':['No training executed.'],'next_steps':['Read the observed source before designing an experiment.']}
+            plan={'tool':'synthesize','arguments':args,'summary':'source findings','question':'q','expected_evidence':'e','refs':['inspect:result']}
+            client.return_value.complete.return_value={'content':json.dumps(plan)}
+            research_step({'llm':{'model':'fixture'},'remote':{}},folder)
+            result=ledger.events()[-1]['payload']
+            self.assertEqual(result['status'],'completed')
+            self.assertEqual(result['observation']['findings'],args['findings'])
+            self.assertTrue(result['observation']['interpretation_only'])
+            self.assertFalse(result['observation']['experiment_executed'])
+            for ref in ('goal','inspect',ledger.events()[-1]['key'],'missing'):
+                invalid=dict(args,findings=[{'statement':'unsupported','refs':[ref]}])
+                with self.assertRaises(ValueError):validate_synthesis_evidence(invalid,ledger.events())
+            with self.assertRaises(ValueError):execute('synthesize',{},'.',None)
+
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    def test_synthesis_with_goal_citation_is_rejected_before_execution(self,client):
+        with tempfile.TemporaryDirectory() as folder,patch('vision_rsi.controller.execute') as execute:
+            ledger=Ledger(folder);ledger.append('goal','objective',{'summary':'goal'})
+            ledger.append('inspect','action',{'executor':'research-v1','tool':'inspect_repository','summary':'inspect'})
+            ledger.append('inspect:result','result',{'action':'inspect','status':'completed','summary':'observed','observation':{}})
+            plan={'tool':'synthesize','summary':'bad','question':'q','expected_evidence':'e','refs':['goal'],
+                  'arguments':{'findings':[{'statement':'claim','refs':['goal']}],'limitations':['none'],'next_steps':['train']}}
+            client.return_value.complete.return_value={'content':json.dumps(plan)}
+            research_step({'llm':{'model':'fixture'},'remote':{}},folder)
+            execute.assert_not_called()
+            self.assertEqual(ledger.events()[-1]['payload']['record_type'],'planning_rejected')
+
     def test_sorted_ledger_observation_projection_retains_source_hashes(self):
         from vision_rsi.controller import observation_context
         from vision_rsi.runner import digest
