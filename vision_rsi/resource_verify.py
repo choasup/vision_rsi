@@ -25,7 +25,7 @@ def verify_images(root, split, expected_images, progress=None):
     raw=annotation.read_bytes()
     if hashlib.sha256(raw).hexdigest()!=checked['annotation_sha256']:
         raise ValueError('Annotations changed during verification')
-    data=json.loads(raw); fingerprint=hashlib.sha256();total=0
+    data=json.loads(raw); fingerprint=hashlib.sha256();total=0;formats={}
     Image.MAX_IMAGE_PIXELS=40_000_000
     ImageFile.LOAD_TRUNCATED_IMAGES=False
     report('decoding_images',0)
@@ -38,9 +38,10 @@ def verify_images(root, split, expected_images, progress=None):
         with warnings.catch_warnings():
             warnings.simplefilter('error',Image.DecompressionBombWarning)
             with Image.open(io.BytesIO(content)) as image:
-                if image.format!='JPEG' or image.size!=(item['width'],item['height']):
-                    raise ValueError('Unexpected image format/dimensions')
+                if image.format not in ('JPEG','PNG') or image.size!=(item['width'],item['height']) or getattr(image,'n_frames',1)!=1:
+                    raise ValueError(f"Unexpected image format/dimensions: image {item['id']} {item['file_name']}, {image.format} {image.size}")
                 image.load()
+                formats[image.format]=formats.get(image.format,0)+1
         image_sha=hashlib.sha256(content).hexdigest()
         fingerprint.update(json.dumps([item['id'],item['file_name'],image_sha],separators=(',',':')).encode()+b'\n')
         total+=len(content)
@@ -49,6 +50,7 @@ def verify_images(root, split, expected_images, progress=None):
         raise ValueError('Annotations changed during verification')
     report('completed',expected_images)
     return {'split':split,'images':expected_images,'annotations':checked['annotations'],
+            'formats':formats,
             'zero_area_annotation_ids':checked['zero_area_annotation_ids'],
             'training_box_policy':checked['training_box_policy'],
             'annotation_sha256':checked['annotation_sha256'],'image_manifest_sha256':fingerprint.hexdigest(),
