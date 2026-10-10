@@ -10,6 +10,18 @@ from vision_rsi.ledger import Ledger
 
 
 class ControllerTests(unittest.TestCase):
+    def test_candidate_context_preserves_source_for_failure_repair(self):
+        from vision_rsi.controller import observation_context
+        value={'candidate_id':'a'*64,'base_revision':'b'*40,'source_hashes':{},'source_edits':[
+            {'path':'vision_rsi/adapter_fixture.py','base_sha256':None,'content':'def predict(value):\n    return value * 2\n'}]}
+        projected=observation_context(json.loads(json.dumps(value,sort_keys=True)))
+        self.assertEqual(projected['source_edits'][0]['content'],value['source_edits'][0]['content'])
+        self.assertFalse(projected['projection_truncated'])
+        value['source_edits']=[dict(value['source_edits'][0],content='x'*20000) for _ in range(8)]
+        projected=observation_context(value)
+        self.assertTrue(projected['projection_truncated'])
+        self.assertLessEqual(len(json.dumps(projected,ensure_ascii=False)),9000)
+
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_model_stages_isolated_candidate_without_executing_source(self,client):
         from vision_rsi.candidates import git

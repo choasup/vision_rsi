@@ -17,6 +17,17 @@ TOOLS = {'inspect_repository', 'read_source', 'remote_environment', 'synthesize'
 
 def observation_context(value):
     """Preserve source identities across sorted ledger JSON and bounded prompts."""
+    if isinstance(value,dict) and isinstance(value.get('candidate_id'),str) and isinstance(value.get('source_edits'),list):
+        edits=value['source_edits']
+        result={key:value.get(key) for key in ('candidate_id','git_revision','base_revision','source_hashes','status','adopted','code_executed')}
+        result.update(kind='isolated_candidate_source',source_edits=[dict(edit,content=edit['content'][:3000],
+            content_truncated=len(edit['content'])>3000) for edit in edits[:2]],
+            source_edit_count=len(edits),projection_truncated=len(edits)>2 or any(len(e['content'])>3000 for e in edits),
+            observation_sha256=digest(value))
+        while len(json.dumps(result,ensure_ascii=False))>8800 and result['source_edits']:
+            result['source_edits'].pop();result['projection_truncated']=True
+        result['included_source_edit_count']=len(result['source_edits'])
+        return result
     if isinstance(value,dict) and isinstance(value.get('source_sha256'),dict):
         hashes=value['source_sha256'];excerpts=value.get('source_excerpts') or {}
         result={'kind':'repository_source_index','git_revision':value.get('git_revision'),
@@ -157,6 +168,7 @@ def execute(tool, config, repository,arguments=None):
             record=store.create(arguments['proposal'],context['binding'],base=arguments['base_revision'])
         finally:store.close()
         return {'candidate_id':record['candidate_id'],'git_revision':record['git_revision'],
+                'base_revision':record['identity']['base_revision'],'source_edits':record['identity']['proposal']['edits'],
                 'source_hashes':record['source_hashes'],'checkout':record['checkout'],
                 'status':'proposed','code_executed':False,'adopted':False,'interpretation_only':False,
                 'limitation':'Isolated syntax-checked proposal; sandbox execution and independent quality evaluation are still required.'}
