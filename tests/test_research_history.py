@@ -19,6 +19,12 @@ from vision_rsi.task_research import prepare, control
 class ResearchHistoryTests(unittest.TestCase):
     setUp=fixtures.AdapterEvaluationTests.setUp
 
+    @patch('vision_rsi.remote.check_candidate')
+    def test_imported_baseline_history_is_not_covered_by_media_execution_receipts(self,remote):
+        self.history(remote)
+        self.ledger.append('external-baseline','evidence',{'summary':'Imported baseline','record_type':'baseline_binding','binding':{}})
+        with self.assertRaisesRegex(ValueError,'baseline input history'):inspect(self.session,self.research_root)
+
     def test_compact_directory_checks_full_identity_on_collision(self):
         from vision_rsi.candidate_bundle import bound_directory
         with patch('vision_rsi.candidate_bundle.digest',return_value='a'*64):

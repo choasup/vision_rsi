@@ -23,6 +23,8 @@ def inspect(session, root):
     if events[0]['payload'].get('task_binding')!=current['task_binding']:
         raise ValueError('Research task binding changed')
     validation=[e['payload']['binding'] for e in events if e['payload'].get('record_type')=='validation_binding']
+    if any(e['payload'].get('record_type')=='baseline_binding' for e in events):
+        raise ValueError('Imported baseline input history is outside covered media execution provenance')
     if len(validation)!=1 or validation[0].get('candidate_bundle_execution',{}).get('media_input') is not True:
         raise ValueError('History coverage requires frozen media-bundle research validation')
     contract_hash=events[0]['payload']['frozen_contract_sha256']
