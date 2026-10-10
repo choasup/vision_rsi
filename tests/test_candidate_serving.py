@@ -13,6 +13,46 @@ class CandidateServingTests(unittest.TestCase):
     prepare=fixtures.TaskAcceptanceTests.prepare
     registry=fixtures.TaskAcceptanceTests.registry
 
+    @patch('vision_rsi.remote.check_candidate')
+    def test_bundle_metric_carries_runtime_identity(self,remote):
+        from test_candidate_runtime import identity
+        from vision_rsi.runner import digest
+        from vision_rsi.bundle_evaluation import evaluate_bundle
+        self.prepare(remote);base=remote.side_effect;value=identity()
+        remote.side_effect=lambda *args:dict(base(*args),runtime_identity=value,runtime_identity_sha256=digest(value))
+        self.data['purpose']='development_validation';self.dataset.write_text(json.dumps(self.data))
+        report=evaluate_bundle(self.bundle['path'],self.dataset,{},self.root/'evaluations')
+        self.assertEqual(report['identity']['runtime_identity_sha256'],digest(value))
+
+    def runtime_accepted(self,remote):
+        from test_candidate_runtime import identity
+        from vision_rsi.runner import digest
+        development,_,_=self.prepare(remote);registry,delivery=self.registry()
+        base=remote.side_effect;value=identity()
+        remote.side_effect=lambda *args:dict(base(*args),runtime_identity=value,runtime_identity_sha256=digest(value))
+        accept(registry,self.session,delivery['version'],self.dataset,[development['execution_path']],{})
+        return registry,delivery,value
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_selected_runtime_pinned_and_report_scope_remains_partial(self,remote):
+        from vision_rsi.runner import digest
+        registry,delivery,value=self.runtime_accepted(remote)
+        args=(registry,self.session,delivery['version'],self.dataset,{},30)
+        result=check(*args)
+        self.assertTrue(result['selected_runtime_consistent'])
+        self.assertFalse(result['environment_fully_verified'])
+        self.assertEqual(remote.call_args.args[1]['expected_runtime_identity_sha256'],digest(value))
+        self.assertEqual(check(*args),result);self.assertEqual(remote.call_count,4)
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_changed_runtime_refused_and_measurement_not_retried(self,remote):
+        registry,delivery,value=self.runtime_accepted(remote)
+        value['kernel_release']='changed-runtime'
+        args=(registry,self.session,delivery['version'],self.dataset,{},30)
+        with self.assertRaisesRegex(ValueError,'runtime differs'):check(*args)
+        with self.assertRaisesRegex(RuntimeError,'uncertain'):check(*args)
+        self.assertEqual(remote.call_count,3)
+
     def accepted(self,remote):
         development,_,_=self.prepare(remote);registry,delivery=self.registry()
         accept(registry,self.session,delivery['version'],self.dataset,[development['execution_path']],{})

@@ -12,6 +12,9 @@ import re
 import signal
 import subprocess
 import tempfile
+import platform
+import shutil
+import sys
 
 
 RUNNER='''import importlib,json,sys
@@ -33,6 +36,42 @@ def limits():
 MAX_CASE_BYTES=1024*1024
 
 
+def runtime_identity():
+    """Selected host components only; not the entire mounted dependency tree."""
+    def checksum(path):
+        path=Path(path);size=path.stat().st_size
+        if not path.is_file() or not 0<size<=32*1024*1024:raise ValueError('Runtime binary outside bounded identity scan')
+        value=hashlib.sha256();count=0
+        with path.open('rb') as stream:
+            while block:=stream.read(1024*1024):
+                count+=len(block)
+                if count>32*1024*1024:raise ValueError('Runtime binary changed or exceeds identity bound')
+                value.update(block)
+        if count!=size:raise ValueError('Runtime binary changed during identity scan')
+        return value.hexdigest()
+    bwrap=shutil.which('bwrap')
+    if not bwrap:raise ValueError('bwrap missing')
+    value={'protocol':'vision-rsi/selected-cpu-runtime/v1','python_binary_sha256':checksum('/usr/bin/python3.12'),
+           'bwrap_binary_sha256':checksum(bwrap),'bwrap_path':str(Path(bwrap).resolve()),
+           'kernel_release':platform.release(),'machine':platform.machine(),'controller_python':sys.version}
+    checksum_value=hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
+    validate_runtime_identity(value,checksum_value)
+    return value,checksum_value
+
+
+def validate_runtime_identity(value,checksum):
+    keys={'protocol','python_binary_sha256','bwrap_binary_sha256','bwrap_path','kernel_release','machine','controller_python'}
+    if not isinstance(value,dict) or set(value)!=keys or value.get('protocol')!='vision-rsi/selected-cpu-runtime/v1':
+        raise ValueError('Invalid selected runtime identity')
+    for name in ('python_binary_sha256','bwrap_binary_sha256'):
+        if not isinstance(value[name],str) or not re.fullmatch('[0-9a-f]{64}',value[name]):raise ValueError('Invalid runtime binary hash')
+    if any(not isinstance(value[name],str) or not 1<=len(value[name])<=512 for name in ('bwrap_path','kernel_release','machine','controller_python')):
+        raise ValueError('Invalid runtime identity metadata')
+    if not PurePosixPath(value['bwrap_path']).is_absolute() or checksum!=hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest():
+        raise ValueError('Runtime identity hash or path differs')
+    return True
+
+
 def encode_cases(module,function,cases):
     """Shared local/remote admission; bound the entire serialized request."""
     if not isinstance(module,str) or not re.fullmatch(r'vision_rsi\.(?:strategy|harness|adapter)_[a-z][a-z0-9_]*',module):raise ValueError('Invalid candidate module')
@@ -47,6 +86,9 @@ def encode_cases(module,function,cases):
 def run(request):
     workspace=PurePosixPath(request['workspace'])
     if not workspace.is_absolute() or '..' in workspace.parts or str(workspace)=='/':raise ValueError('Dedicated workspace required')
+    environment,environment_hash=runtime_identity()
+    expected=request.get('expected_runtime_identity_sha256')
+    if expected is not None and expected!=environment_hash:raise ValueError('Selected runtime identity changed; candidate was not executed')
     files=request['files']
     if not isinstance(files,dict) or not 1<=len(files)<=20:raise ValueError('Invalid candidate file set')
     module=request['module'];function=request['function'];cases=request['cases']
@@ -65,7 +107,7 @@ def run(request):
         if hashes!=request['source_hashes']:raise ValueError('Candidate source identity differs')
         runner=source/'runner.py';runner.write_text(RUNNER);runner.chmod(0o444)
         # Mount no host home, /etc, credentials, workspace, GPUs, sockets or proc.
-        command=['bwrap','--unshare-all','--die-with-parent','--new-session','--cap-drop','ALL',
+        command=[environment['bwrap_path'],'--unshare-all','--die-with-parent','--new-session','--cap-drop','ALL',
                  '--uid','65534','--gid','65534','--clearenv','--setenv','LANG','C.UTF-8',
                  '--ro-bind','/usr/bin/python3.12','/usr/bin/python3.12',
                  '--ro-bind','/usr/lib/python3.12','/usr/lib/python3.12',
@@ -85,7 +127,9 @@ def run(request):
             if len(raw)>1024*1024:raise ValueError('Candidate output too large')
             value=json.loads(raw)
             if not isinstance(value,dict) or not isinstance(value.get('results'),list) or len(value['results'])!=len(cases):raise ValueError('Candidate runtime response shape differs')
+            if runtime_identity()!=(environment,environment_hash):raise ValueError('Selected runtime changed during execution')
             return {'status':'executed_unverified','observation':value,'source_hashes':hashes,'adopted':False,
+                    'runtime_identity':environment,'runtime_identity_sha256':environment_hash,
                     'limits':{'cpu_seconds_per_process':5,'wall_seconds':12,'address_space_bytes_per_process':512*1024*1024,'processes':32,'network':False,'gpu':False},
                     'limitation':'Candidate output is untrusted; not independent quality or RSI adoption evidence.'}
 

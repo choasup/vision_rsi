@@ -28,9 +28,13 @@ class ResearchHistoryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'full identity differs'):
                 bound_directory(self.root/'artifacts',{'source':'two'})
 
-    def history(self, remote):
+    def history(self, remote, runtime=None):
         remote.side_effect=lambda endpoint,request:{'status':'executed_unverified','source_hashes':request['source_hashes'],
             'limits':{'gpu':False,'network':False},'observation':{'results':[{'events':[event(0,1)]} for _ in request['cases']]}}
+        if runtime is not None:
+            from vision_rsi.runner import digest
+            base=remote.side_effect
+            remote.side_effect=lambda *args:dict(base(*args),runtime_identity=runtime,runtime_identity_sha256=digest(runtime))
         sessions=Sessions(self.root/'sessions');session=sessions.create('history-fixture','Developer fixture')
         self.session=sessions.define(session['session_id'],json.loads(self.contract.read_text()))
         self.research_root=self.root/'research';prepared=prepare(self.session,self.research_root)
@@ -66,7 +70,8 @@ class ResearchHistoryTests(unittest.TestCase):
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     @patch('vision_rsi.remote.check_candidate')
     def test_auto_history_seal_prevents_search_and_preserves_scope(self, remote, client):
-        self.history(remote)
+        from test_candidate_runtime import identity
+        self.history(remote,runtime=identity())
         history=inspect(self.session,self.research_root)
         self.assertEqual(len(history['development_paths']),1)
         self.assertFalse(history['complete_development_history_verified'])

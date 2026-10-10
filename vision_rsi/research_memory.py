@@ -111,6 +111,10 @@ def metric_memory(events):
         binding={key:identity[key] for key in fields};key=digest(binding)
         if 'input_set_sha256' in identity:
             binding['input_set_sha256']=identity['input_set_sha256'];key=digest(binding)
+        if 'runtime_identity_sha256' in identity:
+            runtime_hash=identity['runtime_identity_sha256']
+            if not isinstance(runtime_hash,str) or len(runtime_hash)!=64:continue
+            binding['runtime_identity_sha256']=runtime_hash;key=digest(binding)
         group=groups.setdefault(key,{'comparison_binding':binding,'best':None,'latest':None,'latest_failure':None,'last_index':index})
         row={'ref':event['key'],'candidate_id':value.get('candidate_id'),'report_sha256':value.get('report_sha256'),
              'staged_ref':staged.get(value.get('candidate_id')),'module':identity.get('module'),'function':identity.get('function'),

@@ -47,9 +47,13 @@ def check(registry,session,version,dataset_path,remote,max_latency_seconds):
     for key,filename in components.items():
         if baseline['binding'].get(key)!=hashlib.sha256(Path(__file__).with_name(filename).read_bytes()).hexdigest():
             raise ValueError('Accepted serving implementation changed or identity missing: '+key)
+    runtime_hash=baseline.get('runtime_identity_sha256')
+    if runtime_hash is not None:
+        from .candidate_runtime import validate_runtime_identity
+        validate_runtime_identity(baseline.get('runtime_identity'),runtime_hash)
     binding={'task_binding':task_binding,'version':version,'acceptance_report_sha256':report['report_sha256'],
              'bundle_id':bundle['bundle_id'],'max_latency_seconds':max_latency_seconds,
-             'input_manifest':rows,'gate_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+             'input_manifest':rows,'selected_runtime_sha256':runtime_hash,'gate_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     root=registry.root/name/'candidate-serving';root.mkdir(parents=True,exist_ok=True)
     with lease(root/'serving.lock',owner='Candidate serving checks'):
         seal_path=root/'binding.json'
@@ -73,13 +77,17 @@ def check(registry,session,version,dataset_path,remote,max_latency_seconds):
                 trial={'binding_sha256':digest(binding),'status':'reserved','index':index}
                 trial['record_sha256']=digest(trial);atomic_json(trial_path,trial)
                 started=time.perf_counter()
-                execution=run(artifact/'bundle.json',data['samples'],remote,root/('execution-'+str(index)),bundle['bundle_id'],Path(dataset_path).resolve().parent,rows)
+                execution=run(artifact/'bundle.json',data['samples'],remote,root/('execution-'+str(index)),bundle['bundle_id'],Path(dataset_path).resolve().parent,rows,
+                              expected_runtime_identity_sha256=runtime_hash)
                 elapsed=time.perf_counter()-started
                 trial={'binding_sha256':digest(binding),'status':'completed','index':index,
                        'elapsed_seconds':elapsed,'execution_path':execution['execution_path'],
                        'execution_record_sha256':execution['record_sha256']}
                 trial['record_sha256']=digest(trial);atomic_json(trial_path,trial)
             elapsed=trial['elapsed_seconds']
+            if runtime_hash is not None:
+                validate_runtime_identity(execution.get('runtime_identity'),execution.get('runtime_identity_sha256'))
+                if execution.get('runtime_identity_sha256')!=runtime_hash:raise ValueError('Serving runtime differs from accepted runtime')
             if type(elapsed) not in (int,float) or not math.isfinite(elapsed) or elapsed<0:raise ValueError('Invalid serving latency evidence')
             trials.append(dict(trial,outputs_match_acceptance=execution['outputs']==baseline['outputs'],
                                latency_target_met=elapsed<=max_latency_seconds))
@@ -87,7 +95,7 @@ def check(registry,session,version,dataset_path,remote,max_latency_seconds):
         result={'task_id':name,'version':version,'binding_sha256':digest(binding),
                 'status':'serving_contract_checks_met' if passed else 'serving_contract_checks_not_met',
                 'trials':trials,'fresh_execution_count':2,'latency_scope':'Entire supplied batch, including transport and decode',
-                'environment_fully_verified':False,'quality_verified':False,'production_accepted':False,'capability_registered':False,
+                'selected_runtime_consistent':runtime_hash is not None,'environment_fully_verified':False,'quality_verified':False,'production_accepted':False,'capability_registered':False,
                 'limitations':'Two observed CPU runs on accepted samples, not workload-wide latency, complete environment or model-quality certification.'}
         result['record_sha256']=digest(result)
         result_path=root/'serving.json'

@@ -186,6 +186,12 @@ from vision_rsi.research_memory import metric_memory
 
 
 class MetricMemoryTests(unittest.TestCase):
+    def test_runtime_drift_and_unknown_runtime_do_not_share_comparisons(self):
+        first=self.records(1,.9);second=self.records(2,.1);unknown=self.records(3,.8)
+        first[1]['payload']['observation']['evaluation_identity']['runtime_identity_sha256']='a'*64
+        second[1]['payload']['observation']['evaluation_identity']['runtime_identity_sha256']='b'*64
+        self.assertEqual(metric_memory(first+second+unknown)['comparison_group_count'],3)
+
     def test_actual_input_content_separates_comparison_groups(self):
         first=self.records(1,.9);second=self.records(2,.1)
         first[1]['payload']['observation']['evaluation_identity']['input_set_sha256']='a'*64

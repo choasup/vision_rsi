@@ -34,6 +34,7 @@ def evaluate_bundle(bundle_path,dataset_path,remote,output,expected_dataset_sha2
     execution=run(bundle_path,samples,remote,root/'executions',bundle['bundle_id'],Path(dataset_path).resolve().parent)
     identity=dict(binding,execution_record_sha256=execution['record_sha256'],input_set_sha256=execution['binding']['input_sha256'],
                   module=bundle['identity']['module'],function=bundle['identity']['function'])
+    if 'runtime_identity_sha256' in execution:identity['runtime_identity_sha256']=execution['runtime_identity_sha256']
     folder=bound_directory(root,identity)
     predictions={'labels':truth['labels'],'samples':[{'sample_id':key,'events':value['events']}
         for key,value in zip(ids,execution['outputs'])]}

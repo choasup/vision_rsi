@@ -55,6 +55,8 @@ def inspect(session, root):
         execution,_=_read(execution_path)
         if execution['record_sha256']!=identity.get('execution_record_sha256') or execution['binding'].get('bundle_id')!=identity.get('bundle_id') or execution['binding'].get('input_sha256')!=identity.get('input_set_sha256'):
             raise ValueError('Evaluation execution identity differs')
+        if execution.get('runtime_identity_sha256')!=identity.get('runtime_identity_sha256'):
+            raise ValueError('Evaluation runtime identity differs')
         paths.append(str(execution_path))
         receipts.append({'action':action['key'],'report_sha256':observation['report_sha256'],'execution_record_sha256':execution['record_sha256']})
     if not paths:raise ValueError('No covered development evaluations in research ledger')

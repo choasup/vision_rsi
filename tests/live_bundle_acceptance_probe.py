@@ -76,6 +76,7 @@ def main():
             from vision_rsi.candidate_serving import check
             serving=check(registry,session,delivery['version'],dataset,remote,30)
             assert serving['status']=='serving_contract_checks_met'
+            assert serving['selected_runtime_consistent'] and not serving['environment_fully_verified']
             assert check(registry,session,delivery['version'],dataset,remote,30)==serving and len(calls)==4
             command=[sys.executable,'-X','utf8','-m','vision_rsi','training','candidate-serving-check',
                 '--session-id',session['session_id'],'--sessions',str(root/'sessions'),'--registry',str(root/'registry'),

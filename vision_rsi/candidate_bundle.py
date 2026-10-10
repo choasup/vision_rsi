@@ -106,11 +106,22 @@ def decoded_video(asset,plan,remote,output,driver_hash):
         return result
 
 
-def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_directory=None,expected_input_manifest=None):
+def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_directory=None,expected_input_manifest=None,expected_runtime_identity_sha256=None):
     from .contracts import validate_sample,validate_schema
     from .campaign import lease
     from .runner import atomic_json
     from .remote import check_candidate
+    from .candidate_runtime import validate_runtime_identity
+    def runtime_fields(value):
+        if 'runtime_identity' not in value and 'runtime_identity_sha256' not in value:
+            if expected_runtime_identity_sha256 is not None:raise ValueError('Expected runtime identity missing')
+            return {}
+        validate_runtime_identity(value.get('runtime_identity'),value.get('runtime_identity_sha256'))
+        if expected_runtime_identity_sha256 is not None and value['runtime_identity_sha256']!=expected_runtime_identity_sha256:
+            raise ValueError('Selected runtime differs from accepted execution')
+        return {key:value[key] for key in ('runtime_identity','runtime_identity_sha256')}
+    if expected_runtime_identity_sha256 is not None and (not isinstance(expected_runtime_identity_sha256,str) or not re.fullmatch('[0-9a-f]{64}',expected_runtime_identity_sha256)):
+        raise ValueError('Invalid expected runtime identity')
     bundle=verify(bundle_path);identity=bundle['identity']
     if expected_bundle_id is not None and bundle['bundle_id']!=expected_bundle_id:raise ValueError('Pinned bundle identity changed')
     contract=json.loads(base64.b64decode(bundle['contract_base64']).decode('utf-8-sig'))
@@ -137,6 +148,7 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_director
     encode_cases(identity['module'],identity['function'],cases)
     request={'files':bundle['files'],'source_hashes':identity['source_hashes'],
              'module':identity['module'],'function':identity['function'],'cases':cases}
+    if expected_runtime_identity_sha256 is not None:request['expected_runtime_identity_sha256']=expected_runtime_identity_sha256
     binding={'bundle_id':bundle['bundle_id'],'contract_sha256':identity['contract_sha256'],'request_sha256':digest(request),'input_sha256':digest(cases),'remote':remote,
              'runtime_driver_sha256':hashlib.sha256(Path(__file__).with_name('candidate_runtime.py').read_bytes()).hexdigest(),
              'transport_sha256':hashlib.sha256(Path(__file__).with_name('remote.py').read_bytes()).hexdigest(),
@@ -152,6 +164,7 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_director
             if saved.get('record_sha256')!=digest({key:value for key,value in saved.items() if key!='record_sha256'}):raise ValueError('Saved bundle execution content changed')
             if saved['status']!='development_execution_completed' or saved.get('production_accepted') is not False:raise ValueError('Invalid development execution state')
             for result in saved['outputs']:validate_schema(contract['output_schema'],result)
+            runtime_fields(saved)
             return saved
         record={'binding':binding,'status':'reserved','production_accepted':False,'capability_registered':False,
                 'quality_verified':False,'gpu_used':False}
@@ -164,8 +177,9 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_director
         if response.get('status')!='executed_unverified' or not isinstance(results,list) or len(results)!=len(samples):
             raise ValueError('Bundle runtime did not produce one output per input')
         for result in results:validate_schema(contract['output_schema'],result)
+        runtime=runtime_fields(response)
         record.update(status='development_execution_completed',outputs=results,limits=limits,input_manifest=input_manifest,
-                      response_sha256=digest(response),execution_path=str(path))
+                      response_sha256=digest(response),execution_path=str(path),**runtime)
         record['record_sha256']=digest(record)
         atomic_json(path,record);return record
 
