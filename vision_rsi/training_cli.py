@@ -139,7 +139,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -158,6 +158,9 @@ def main(argv):
     parser.add_argument('--campaign-store',default='runs/campaigns')
     parser.add_argument('--steps',type=int,default=3)
     parser.add_argument('--research-rounds',type=int,help='Bounded automatic method proposals after measured training failure (0..10; default 0)')
+    parser.add_argument('--source-index',type=int,help='Zero-based original observation index from research memory')
+    parser.add_argument('--context-sha256',help='Exact research memory snapshot hash for detail retrieval')
+    parser.add_argument('--history-rows',type=int,help='Original snapshot length; permits lookup after later actions were appended')
     parser.add_argument('--campaign-id',help='Resume/query the exact persisted campaign and its frozen strategy/research settings')
     parser.add_argument('--watch-seconds',type=float,default=3600)
     parser.add_argument('--poll-seconds',type=float,default=15)
@@ -166,6 +169,23 @@ def main(argv):
     args=parser.parse_args(argv)
     if args.interactive and args.action not in ('start','show','reply','define'):
         parser.error('--interactive is supported for start/show/reply/define')
+    if args.action=='memory':
+        from .research_memory import read_memory
+        if not args.session_id or not args.campaign_id:parser.error('memory requires --session-id and --campaign-id')
+        try:
+            result=read_memory(args.session_id,args.campaign_id,args.campaign_store,args.source_index,args.context_sha256,args.history_rows)
+        except (ValueError,OSError,KeyError,TypeError) as error:parser.exit(1,str(error)+'\n')
+        if args.json or args.source_index is not None:print(json.dumps(result,ensure_ascii=False,indent=2))
+        else:
+            print('只读研究记忆；未查询远端。原始历史 '+str(result['history_rows'])+' 条，当前策略视图 '+str(result['view_rows'])+' 条。')
+            print('上下文摘要: '+result['context_sha256'])
+            view=result['view'];compacted=bool(view and view[0]['kind']=='memory_summary')
+            indices=view[0]['observation']['source_indices'] if compacted else range(len(view))
+            if compacted:print('省略历史 '+str(view[0]['observation']['omitted_rows'])+' 条；完整证据仍保留。')
+            for index,item in list(zip(indices,view[1:] if compacted else view))[-16:]:
+                print('['+str(index)+'] '+item['id']+' '+item['status'])
+            print('取回原始诊断：增加 --source-index N --context-sha256 上述摘要 --history-rows '+str(result['history_rows']))
+        return
     store=Sessions(args.sessions)
     def clarify(session,message=None):
         config=json.loads(Path(args.config).read_text(encoding='utf-8'))

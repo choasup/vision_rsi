@@ -614,3 +614,15 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 研究策略上下文 v3 为运行成本快照增加 run_id、预留是否仍占用、整次运行累计值的口径标记，以及会话授权/剩余 GPU 小时。重复查询、收集、分析中的同一运行耗时不能相加。分析时的余额由完整会话账本计算，包含其他流程和失败运行的已用/未释放成本；数值 budget 参数仍表示控制步数。新决策记录上下文版本，历史 v1/v2 的审计重放保留原语义。此为策略可用证据的改进，尚未证明 RSI 效率提升。
 
 长程策略上下文 v4 在历史超出256行或192KiB时生成确定性有界视图，保留近期状态、实测极值和优先的研究记录；大诊断细节以摘要及省略标记引用原证据。memory_summary 明示总行数、保留/省略数、原上下文哈希及源行索引，计数不是费用。完整控制历史保持原样，所有已尝试行动ID仍由控制器在完整历史上检查；旧v1/v2/v3审计重放不采用新压缩语义。该机制限制策略传输上下文，不代表控制器磁盘历史大小、总运行时长或自主记忆检索已无限扩展。远端隔离策略已用2500条开发历史验证通过，未据此采用候选。
+
+
+### 查看研究记忆与省略诊断
+
+以下命令只读本地 campaign 状态，不创建会话、不轮询远端、不调用 LLM：
+
+```powershell
+.\vision-rsi.cmd training memory --session-id SESSION_ID --campaign-id CAMPAIGN_ID --json
+.\vision-rsi.cmd training memory --session-id SESSION_ID --campaign-id CAMPAIGN_ID --source-index N --context-sha256 HASH --history-rows COUNT
+```
+
+第一条返回当前 v4 记忆视图、`context_sha256` 和 `history_rows`。第二条用这两个值固定快照，并按零起始的原历史行号取回未截短的策略观察；索引可从 `memory_summary.source_indices` 核对。历史追加后仍可查询原快照；原快照内容改变则拒绝返回。返回的是经过字段筛选的策略观察，不是原始状态文件或任意配置。该入口用于人工核查，尚未接成策略自主检索工具。
