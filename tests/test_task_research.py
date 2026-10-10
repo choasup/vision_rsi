@@ -45,6 +45,9 @@ class TaskResearchTests(unittest.TestCase):
             self.assertEqual(prompt['frozen_task_contract']['sha256'],result['task_contract']['sha256'])
             self.assertEqual(prompt['frozen_task_contract']['contract'],session['versions'][-1]['contract'])
             self.assertEqual(prompt['task_readiness'],context)
+            self.assertNotIn('synthesize',prompt['available_tools'])
+            self.assertEqual(prompt['schema']['tool'],prompt['available_tools'])
+            self.assertIn('NOT successful tool evidence',prompt['instruction'])
 
     def task(self,folder):
         store=Sessions(Path(folder)/'sessions')
