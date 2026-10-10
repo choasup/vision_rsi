@@ -132,7 +132,7 @@ def main():
     parser.add_argument('--input')
     parser.add_argument('--output')
     parser.add_argument('--input-dir')
-    parser.add_argument('--manifest')
+    parser.add_argument('--manifest',help='Batch JSONL: contract samples {sample_id,inputs} or legacy {sample_id,input:path}')
     parser.add_argument('--output-dir')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--version')

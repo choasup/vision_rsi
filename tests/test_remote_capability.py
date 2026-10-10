@@ -46,6 +46,33 @@ class RemoteCapabilityTests(unittest.TestCase):
         return self.registry.promote_serving('coco-task',candidate['version'],path)
 
     @patch('vision_rsi.remote.infer_training',side_effect=response)
+    def test_canonical_batch_reuses_the_registered_contract_and_refuses_joint_input(self,infer):
+        from vision_rsi.batch import batch,input_rows
+        manifest=self.registered_fixture();infer.reset_mock()
+        sample=json.loads(self.sample.read_text());sample['sample_id']='inline'
+        path=self.root/'samples.jsonl';path.write_text(json.dumps(sample)+'\n'+json.dumps({'sample_id':'legacy','input':'sample.json'}))
+        rows=input_rows(manifest=path);result=batch(self.registry,'coco-task',rows,self.root/'results')
+        self.assertEqual(result['succeeded'],2);self.assertEqual(result['capability_version'],manifest['version'])
+        self.assertEqual(infer.call_count,2)
+        batch(self.registry,'coco-task',rows,self.root/'results',resume=True);self.assertEqual(infer.call_count,2)
+        joint={'sample_id':'joint','inputs':{'image':{'type':'image_list','items':[{'uri':'image.jpg'},{'uri':'image.jpg'}]}}}
+        path.write_text(json.dumps(joint));bad=batch(self.registry,'coco-task',input_rows(manifest=path),self.root/'joint-results')
+        self.assertEqual(bad['failed'],1);self.assertEqual(infer.call_count,2)
+
+    @patch('vision_rsi.remote.infer_training',side_effect=response)
+    def test_actual_test_cli_accepts_inline_samples_from_external_directory(self,infer):
+        import contextlib,io,sys
+        from vision_rsi.runner import main
+        manifest=self.registered_fixture();infer.reset_mock()
+        path=self.root/'samples.jsonl';path.write_text(self.sample.read_text().replace('\n',''))
+        output=io.StringIO()
+        with contextlib.chdir(self.root),patch.object(sys,'argv',['vision-rsi','test','--task-id','coco-task',
+                '--manifest',str(path),'--registry',str(self.registry.root),'--output-dir',str(self.root/'cli-results')]),contextlib.redirect_stdout(output):
+            main()
+        result=json.loads(output.getvalue());self.assertEqual(result['succeeded'],1)
+        self.assertEqual(result['capability_version'],manifest['version']);self.assertEqual(infer.call_count,1)
+
+    @patch('vision_rsi.remote.infer_training',side_effect=response)
     def test_cpu_runtime_change_blocks_pinned_test_result(self,infer):
         manifest=self.registered_fixture()
         original=self.response
