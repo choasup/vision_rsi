@@ -20,3 +20,13 @@ Set-Location F:\vision-rsi-agent
 需要重新执行实际远端验证时，使用 `tests/live_candidate_delivery_probe.py --help`，必须显式传 `--live-remote --bundle PATH --config PATH`。每次生成独立证据目录，最多6次CPU调用，不触发LLM或GPU；失败与不确定结果不会覆盖为成功。现有 dev8 安装包不包含当前源码的晋升链路。
 
 本轮新版 Demo 同时通过本地 `release-status` 与仓库外 CLI 状态查询。状态为 `local_evidence_ready_for_test`，仅表示有限范围的本地产物检查通过，不代表远端当前可用、全量历史独立性或整个 Agent 已上线。旧一轮 `3ad98250c3a44fec8f94fcae1d6158ac` 证据保留，校验程序升级后不用于证明当前版本。
+
+## 一次命令复核交付阶段
+
+以下命令已通过当前源码仓库外 CLI，复用此 Demo 已有的验收和服务记录，返回相同固定版本；不会重新占用验收机会。
+
+```powershell
+.\vision-rsi.cmd training deliver-candidate --session-id 6d38d3cdec4e4302b49a247bbe812096 --version daa7eb2141781cfd8ca2be9149ad8c4a --dataset F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\research\6d38d3cdec4e4302b49a247bbe812096\holdout.json --max-latency-seconds 30 --sessions F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\sessions --research-root F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\research --registry F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\registry --config F:\vision-rsi-agent\config.local.json
+```
+
+`--version` 在此传原候选版本；成功返回晋升后的版本。证据 `runs/candidate-workflow-cached-live.json` 记录了直接入口禁止远端调用时仍通过，以及实际 CLI 返回相同版本。这是对已完成真实 CPU 记录的恢复验证，不是新模型执行或质量验证。

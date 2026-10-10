@@ -2,6 +2,14 @@
 
 ## 通用候选的固定版本交付（当前源码）
 
+已注册候选且研究已暂停后，可用一个入口依次完成独立验收、服务检查和晋升：
+
+```powershell
+.\vision-rsi.cmd training deliver-candidate --session-id SESSION --version CANDIDATE_VERSION --dataset holdout.json --max-latency-seconds 30 --sessions SESSIONS_DIR --research-root RESEARCH_DIR --registry REGISTRY_DIR --config config.local.json
+```
+
+它固定验收集、任务版本和延迟目标，最多执行一次验收及两次服务检查；重复相同命令复核并复用原有阶段，不新建验收机会。需要已暂停且输入执行历史可核验的研究账本。验收或服务未达标时停止，不将冻结验收反馈送回搜索；结果不确定时保留原状态并停止，不自动重发。最终返回 `scoped_delivery_ready_for_test` 和固定 `version`，之后可运行下面的 `test` 命令。中途异常的阶段状态保存在注册目录的任务 `delivery-workflows/CANDIDATE_VERSION/state.json`。
+
 候选需先通过任务绑定、已暂停研究账本的独立验收（`accept-candidate --from-research`）及 `candidate-serving-check`，再执行：
 
 ```powershell
