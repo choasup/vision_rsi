@@ -466,3 +466,9 @@
 - 列表、文本和引用均有长度边界；规划阶段与pending恢复执行阶段均重新检查证据。interpretation_only=true、experiment_executed=false，不把引用合法等同结论正确。旧无参数synthesis动作恢复将记录失败，不伪造历史报告。
 - 24项controller/controller_budget/ledger测试通过（5.599秒），覆盖结构化报告持久化、目标引用拒绝且工具未执行、自引解释拒绝、源码细读和原有恢复。首次回归因提示缺少既有REQUIRED约定失败，恢复该约定后通过。
 - 无真实API/SSH/GPU；最新dev3安装包仍对应f11edcd源码，不包含此次报告扩展。真实COCO训练、通用harness修改与RSI效果及完整上线目标仍未完成。
+
+## 结构化研究报告真实调用验证（2026-10-10）
+
+- 扩展显式--live探针的--synthesis模式：实际检查本仓库，预登记独立API上限1，要求synthesize；核验findings引用inspect:result、报告字段持久保存、interpretation_only=true、experiment_executed=false，无语义重试。修正原源码探针在规划拒绝时的StopIteration，改为明确未生成工具结果的AssertionError。
+- 实际一次DeepSeek Flash调用通过上述机械协议检查：4条发现，reported prompt4592/completion970/total5562 tokens，额度剩0。原始证据 runs/source-research-live/2d8ef3064ecf41598f7744d521a844e8/{preregistered.json,evidence.json,report.json,research/research.sqlite3}；另从原始输出生成可读report.md。
+- 不将passed等同研究内容正确：模型将original_excerpt_count描述为非空片段，计数语义未独立核对；引用有效只证明记录存在。evidence原scope沿用旧source-range措辞，已修改探针后续输出按模式区分，未改写这次原始记录。无SSH/GPU/训练，安装包未更新，完整上线目标未完成。
