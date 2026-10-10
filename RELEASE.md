@@ -563,3 +563,10 @@
 - training research-step现在在模型调用前执行现有只读task_readiness，带入授权GPU预算/剩余快照/记录数/未结算运行/支持范围/阻塞与建议；task_research核对session/task/接口版本，首次/后续规划及完整请求快照均包含该上下文。保留所有真实训练门槛，不把建议动作当已执行、不把本地快照当实时远端或质量证明。
 - 31项task_research/task_readiness/training_shell/controller测试通过（10.349秒）；补充实际提示含预算null/未结算ID的断言后6项task_research/task_readiness通过（0.378秒）。版本错配拒绝。
 - 实际只读核查现有会话，证据runs/task-research/current-readiness.json；未调用LLM/SSH/GPU。已再次集中询问真实GPU预算但尚无答复，不设置预算、不启动训练。安装包仍是dev4旧源码，完整上线目标未完成。
+
+## 配对研究独立API额度（2026-10-10）
+
+- 发现两臂共享usage ledger会使先运行的一臂消耗另一臂额度，不能据此认定相同研究资源预算。spec新增显式可选llm_call_limit_per_arm，预登记每臂独立绝对路径账本与同一上限，campaign binding和step使用各臂execution_config；旧研究仍用旧pair config。
+- 已配置全局usage ledger/call cap时拒绝此选项，不自动重置/扩容/复制全局授权；已有臂账本拒绝创建新研究重置。compare说明independent_per_arm或shared_or_unbounded，不声称Token/金额/CPU公平或自动采用。
+- 22项paired_study/study_resources/llm_usage测试通过（1.523秒），含4个臂独立路径、执行配置精确传递、真实SQLite额度一臂耗尽另一臂可预留、旧全局预算保留及新选项冲突拒绝。首次fixture传dict给reserve导致类型失败，改为实际字节载荷后重跑通过。最后比较字段与变量命名改动未再次运行完整回归。
+- 无实际API/SSH/GPU或真实配对研究，未采用候选。GPU预算仍待用户答复；安装包未更新，完整上线目标仍未完成。

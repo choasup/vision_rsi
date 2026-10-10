@@ -809,3 +809,5 @@ python -m vision_rsi training research-step --session-id SESSION --steps 1 --rep
 `research-init` 只读会话数据库，固定任务代号、接口版本、需求摘要身份，并导出研究用合同；不调用API/SSH。`research-step` 使用同一账本、固定合同和现有LLM配置，每次推进1–3个行动。创建候选/远端CPU检查仍分别由 `research.allow_candidate_writes` / `allow_candidate_checks` 配置控制；此入口不启动训练、不注册能力。
 
 会话需求或接口版本改变后，原研究不会被覆盖；可用新的 `--research-root` 建立另一研究。研究在第一次模型请求就收到完整固定接口。真实训练仍使用training的预算和执行门槛，候选开发用例通过不能代替任务效果验收。
+
+配对研究的spec可显式添加 `llm_call_limit_per_arm`（整数，0–1000000）。每个baseline/candidate会话将预登记独立的API调用账本和相同上限，并在执行时使用各自配置，防止先运行的一臂消耗另一臂额度。若输入配置已有全局usage_ledger或usage_call_limit，则拒绝该选项，不把既有全局上限复制成多份。已有臂账本不能重新初始化；旧研究保持原共享配置，比较结果明确标为shared_or_unbounded。调用次数额度不是Token或金额上限，CPU/时间资源公平、保留任务独立性和真实RSI提升仍需分别验证。

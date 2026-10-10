@@ -69,8 +69,15 @@ def sources():
 
 def create(spec,config,root='runs/paired-studies',sessions='runs/training-sessions',campaigns='runs/campaigns',runs='runs/training-runs'):
     if git(Path.cwd(),'status','--porcelain','--untracked-files=no'):raise ValueError('Commit control source before preregistration')
-    if set(spec)!={'candidate','pairs','research_rounds','minimum_mean_ap_gain','heldout_declaration'}:
+    required={'candidate','pairs','research_rounds','minimum_mean_ap_gain','heldout_declaration'}
+    if set(spec) not in (required,required|{'llm_call_limit_per_arm'}):
         raise ValueError('Study requires candidate, pairs, research_rounds, minimum_mean_ap_gain and heldout_declaration')
+    arm_limit=spec.get('llm_call_limit_per_arm')
+    if 'llm_call_limit_per_arm' in spec:
+        from .llm_usage import validate_call_limit
+        validate_call_limit(arm_limit)
+        if 'usage_ledger' in config['llm'] or 'usage_call_limit' in config['llm']:
+            raise ValueError('Independent arm quotas cannot replace an existing global usage ledger or cap')
     policy=dict(spec['candidate']);policy['store']=str(Path(policy['store']).resolve())
     if set(policy)!={'candidate_id','module','store'} or not re.fullmatch('[0-9a-f]{64}',policy['candidate_id']):raise ValueError('Invalid study candidate')
     candidate=verify_candidate(policy['store'],json.loads((Path(policy['store'])/policy['candidate_id']/'candidate.json').read_text(encoding='utf-8')))
@@ -121,8 +128,14 @@ def create(spec,config,root='runs/paired-studies',sessions='runs/training-sessio
                 if ledger and ledger.list(sid):raise ValueError('Study session already contains Training runs')
                 for path in (Path(campaigns)/sid).glob('*/state.json'):
                     if json.loads(path.read_text(encoding='utf-8')).get('history'):raise ValueError('Preregister before campaign execution')
-                binding=campaign_binding(session,pair_config,runs,policy if arm=='candidate' else None,rounds)
+                arm_config=json.loads(json.dumps(pair_config))
+                if arm_limit is not None:
+                    arm_usage_path=Path(root).resolve()/'arm-api-budgets'/sid/'usage.sqlite3'
+                    if arm_usage_path.exists():raise ValueError('Study arm API ledger already exists; cannot reset its quota')
+                    arm_config['llm'].update(usage_ledger=str(arm_usage_path),usage_call_limit=arm_limit)
+                binding=campaign_binding(session,arm_config,runs,policy if arm=='candidate' else None,rounds)
                 arms[arm]={'session_id':sid,'contract_version':latest['version'],'campaign_id':digest(binding),'binding':binding}
+                if arm_limit is not None:arms[arm]['execution_config']=arm_config
                 contracts.append(contract)
             if digest(contracts[0])!=digest(contracts[1]):raise ValueError('Paired arms must have identical task requirements and budget')
             context=(digest(contracts[0]),pair['seed'])
@@ -136,6 +149,7 @@ def create(spec,config,root='runs/paired-studies',sessions='runs/training-sessio
               'runs':str(Path(runs).resolve()),'minimum_mean_ap_gain':gain,'heldout_declaration':spec['heldout_declaration'],
               'statistical_rule':dict(SIGN_RULE),
               'comparison_rule':'Mean paired best real COCO AP gain at equal authorized GPU budgets; every preregistered arm must settle and pass independent evidence audit.'}
+    if arm_limit is not None:identity['llm_call_limit_per_arm']=arm_limit
     sid=digest(identity);folder=Path(root)/sid;folder.mkdir(parents=True,exist_ok=True);path=folder/'study.json'
     record={'study_id':sid,'identity':identity,'agent_adopted':False}
     with lease(folder/'study.lock'):
@@ -160,10 +174,11 @@ def step(study_id,pair_index,arm,root='runs/paired-studies',steps=3):
     pair=identity['pairs'][pair_index];bound=pair[arm]
     session=Sessions(identity['sessions']).show(bound['session_id'])
     if len(session['versions'])!=bound['contract_version']:raise ValueError('Study contract version changed')
-    binding=campaign_binding(session,pair['config'],identity['runs'],bound['binding']['policy'],bound['binding']['research_rounds'])
+    execution_config=bound.get('execution_config',pair['config'])
+    binding=campaign_binding(session,execution_config,identity['runs'],bound['binding']['policy'],bound['binding']['research_rounds'])
     if binding!=bound['binding']:raise ValueError('Study campaign requirements changed')
     path=Path(identity['campaigns'])/bound['session_id']/bound['campaign_id']/'state.json'
-    return advance(session,pair['config'],identity['campaigns'],identity['runs'],steps,binding['policy'],research_rounds=binding['research_rounds'],selected_campaign=bound['campaign_id'] if path.exists() else None)
+    return advance(session,execution_config,identity['campaigns'],identity['runs'],steps,binding['policy'],research_rounds=binding['research_rounds'],selected_campaign=bound['campaign_id'] if path.exists() else None)
 
 
 def verify_study_candidate(identity):
@@ -221,6 +236,8 @@ def compare(study_id,root='runs/paired-studies'):
     if complete and 'statistical_rule' in identity:
         statistical=paired_sign_evidence([p['ap_gain'] for p in pairs],identity['minimum_mean_ap_gain'],identity['statistical_rule'])
     return {'study_id':study_id,'pairs':pairs,'missing_evidence':missing,'comparison_complete':complete,'mean_paired_ap_gain':mean,
+            'llm_budget_design':{'mode':'independent_per_arm' if 'llm_call_limit_per_arm' in identity else 'shared_or_unbounded',
+                                 'call_limit_per_arm':identity.get('llm_call_limit_per_arm'),'billing_budget_enforced':False},
             'preregistered_gain_rule_met':complete and mean>=identity['minimum_mean_ap_gain'],
             'paired_statistical_evidence':statistical,
             'rsi_efficiency_verified':False,'agent_adopted':False,

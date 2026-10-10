@@ -12,6 +12,38 @@ from vision_rsi.paired_study import create,load,step,compare,paired_sign_evidenc
 
 
 class PairedStudyTests(unittest.TestCase):
+    def test_explicit_per_arm_api_caps_are_isolated_and_used_by_execution(self):
+        self.spec.update(research_rounds=1,llm_call_limit_per_arm=1)
+        record=self.create();pair=record['identity']['pairs'][0]
+        paths=[]
+        for entry in record['identity']['pairs']:
+            for arm in ('baseline','candidate'):
+                llm=entry[arm]['execution_config']['llm']
+                paths.append(llm['usage_ledger'])
+                self.assertEqual(llm['usage_call_limit'],1)
+                self.assertEqual(entry[arm]['binding']['research_model']['usage_ledger'],llm['usage_ledger'])
+                self.assertFalse(Path(llm['usage_ledger']).exists())
+        self.assertEqual(len(set(paths)),4)
+        with patch('vision_rsi.paired_study.advance',return_value={}) as runner:
+            step(record['study_id'],0,'candidate',self.studies)
+            self.assertEqual(runner.call_args.args[1],pair['candidate']['execution_config'])
+        from vision_rsi.llm_usage import UsageLedger
+        first=UsageLedger(paths[0],call_limit=1);second=UsageLedger(paths[1],call_limit=1)
+        first.reserve(b'fixture-1','fixture')
+        with self.assertRaises(ValueError):first.reserve(b'fixture-2','fixture')
+        second.reserve(b'fixture-3','fixture')
+        with self.assertRaisesRegex(ValueError,'already exists'):self.create()
+
+    def test_per_arm_caps_cannot_replace_global_ledger_or_accept_invalid_values(self):
+        for value in (True,None,-1,1.5):
+            self.spec['llm_call_limit_per_arm']=value
+            with self.assertRaises(ValueError):self.create()
+        self.spec['llm_call_limit_per_arm']=2
+        for changed in ({'usage_call_limit':9},{'usage_ledger':str(self.root/'global.sqlite3')}):
+            self.config['llm'].update(changed)
+            with self.assertRaisesRegex(ValueError,'cannot replace'):self.create()
+            for key in changed:self.config['llm'].pop(key)
+
     def test_exact_sign_rule_counts_ties_losses_and_insufficient_replication(self):
         strong=paired_sign_evidence([2]*5,1,SIGN_RULE)
         self.assertEqual(strong['p_value'],1/32)
