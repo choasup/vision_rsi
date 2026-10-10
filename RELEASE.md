@@ -529,3 +529,10 @@
 - 输入样本与输出schema复用Candidates.check_adapter，1..16样本且研究参数≤12000字符，候选仍须属于本研究stage结果。结果区分adapter_contract_passed/failed，保留合同SHA、失败条目、原始adapter报告及有界响应；quality_verified/adopted始终false。
 - 稳定检查身份额外绑定合同SHA；普通check_candidate旧ID算法保持，避免升级后重复发送历史检查。接口检查开发样本不构成独立任务质量或RSI验收。
 - 34项controller/controller_budget/ledger/not_dispatched测试通过（12.193秒）：真实临时Git候选、mock运输下合规输出通过/负时间戳输出失败、合同改动发送前拒绝。未实际调用LLM/SSH/GPU，新的合同控制器链真实执行待验证；安装包未重建，完整上线目标仍未完成。
+
+## 固定合同候选真实CPU验证（2026-10-10）
+
+- 扩展tests/live_research_candidate_probe.py --live-remote --contract，使用examples/interface-contract.json的原始SHA固定接口，预设适配器返回符合/违反schema的输出；不读取图片或视频URI，不声称媒体模型推理。
+- 首次 runs/research-candidate-live/9dd5352eed4a431b9c5040f55591fc7b 因探针tracked修改未提交，被stage候选clean门槛拒绝，未发SSH；原evidence沿用remote_requested=true措辞表示意图而非已调用，后续改为remote_allowed，原记录不改写。
+- 提交bc8ced6后真实探针通过：runs/research-candidate-live/dfadd9649f2d4ae1b92013db00e69ac9/{preregistered.json,evidence.json,controller-result.json,rejected-output.json,research/research.sqlite3}。实际CPU沙箱合规输出adapter_contract_passed，负start_seconds输出adapter_contract_failed；同目标/候选/样本另动作绑定恢复，在禁止运输调用时复用原报告digest。
+- 此轮无LLM/GPU，未训练/采用，不证明视觉效果或同预算RSI提升。安装包未更新，完整上线目标未完成。
