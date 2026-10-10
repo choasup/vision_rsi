@@ -140,6 +140,8 @@ def run(recipe,output,resume=False):
         for image in dataset.images:
             data_hash.update(str(dataset.root.name).encode()+str(image['id']).encode()+file_sha(dataset.root/image['file_name']).encode())
     identity={'image_contents_sha256':data_hash.hexdigest(),'recipe':recipe,'sources':{p.name:file_sha(p) for p in sorted(Path(__file__).parent.glob('*.py'))},'torch':torch.__version__}
+    from .training_runtime import fingerprint
+    identity['runtime']=fingerprint(torch,device)
     identity_hash=digest(identity)
     checkpoint_path=output/'checkpoint.pt'
     if checkpoint_path.exists() and not resume: raise ValueError('Checkpoint exists; explicitly resume or use another output')
@@ -152,7 +154,7 @@ def run(recipe,output,resume=False):
     epoch_start=0;cursor_start=0;step=0;restore_rng=None
     if resume:
         checkpoint=torch.load(checkpoint_path,map_location='cpu',weights_only=True)
-        if checkpoint['identity_hash']!=identity_hash: raise ValueError('Checkpoint recipe/code identity differs')
+        if checkpoint['identity_hash']!=identity_hash: raise ValueError('Checkpoint data/recipe/code/runtime identity differs')
         model.load_state_dict(checkpoint['model']);optimizer.load_state_dict(checkpoint['optimizer'])
         epoch_start=checkpoint['epoch'];cursor_start=checkpoint['cursor'];step=checkpoint['step'];restore_rng=checkpoint['rank_rng'][rank]
     wrapped=DistributedDataParallel(model,device_ids=[local]) if world>1 else model

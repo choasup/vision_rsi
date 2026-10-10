@@ -604,3 +604,5 @@ Image integrity verification identifies static JPEG/PNG from decoded content rat
 安装版的控制程序不依赖当前工作目录是 Git 仓库。源码版的版本读取固定到程序自己的仓库；wheel 中没有 Git 时，历史字段 `git_revision` 使用 `source-sha256:` 前缀记录控制包 Python/HTML 文件的确定性哈希，不把它冒充 Git 提交。候选代码研究仍需要独立的真实 Git 仓库。
 
 研究流程及方法/策略候选/适配器修复请求会绑定配置中的共享 LLM 账本路径、调用上限和模型执行设置；对同一 campaign 或请求 ID 更换、删除这些配置会拒绝继续执行。指定 campaign 后仍可读取状态和暂停。未记录这些字段的历史流程不据此获得追溯性额度保证；显式新建项目或不同账本之间也没有全账户额度合并。API Key 不写入身份记录。
+
+新建 GPU 训练实验将 Python/平台、torch/torchvision/pycocotools/Pillow/NumPy 版本、PyTorch 构建摘要、CUDA/cuDNN/NCCL、驱动版本、设备类型及确定性设置写入实验身份并纳入 checkpoint 校验。恢复时身份变化即拒绝继续；此指纹不代替依赖安装锁或数值复现验收，也不追溯改写旧实验。指纹采集只在已准入的训练作业内执行，驱动查询限时 10 秒；无法采集不按空环境继续。NCCL 可选版本后缀按 [PyTorch 2.6 源码](https://github.com/pytorch/pytorch/blob/v2.6.0/torch/cuda/nccl.py) 保留。
