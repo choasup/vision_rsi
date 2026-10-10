@@ -496,3 +496,7 @@ Training 需求理解会在内部对已收到的接口格式错误最多修正�
 服务器端 `python3 -m vision_rsi.resource_bootstrap --root ABSOLUTE_ASSET_DIR --seconds 240` 可执行一轮有界下载；由 Windows 控制端通过现有持久化 CPU 作业协议调度。固定资源为 torchvision COCO_V1 检测权重、COCO2017 标注及验证图片压缩包；下载后记录完整 SHA-256，断点续传必须匹配 ETag/尺寸/Range。模块不启动训练、不用 GPU、不解压，也不把下载成功作为数据覆盖或模型效果已验收。下载收据和原始数据保存在独立资源目录。
 
 来源：[COCO下载页](https://cocodataset.org/#download)、[PyTorch固定模型权重说明](https://docs.pytorch.org/vision/master/models/generated/torchvision.models.detection.fasterrcnn_resnet50_fpn_v2.html)。官方参考 AP46.7 不等于本项目已复测，更不等于目标 AP60 已达标。训练图片尚未包含在此准备步骤中。
+
+### Resource extraction and readiness
+
+After download receipts report a completed archive, use `python -m vision_rsi.resource_extract --archive ARCHIVE --destination NEW_DIRECTORY --sha256 FULL_SHA256 --max-bytes LIMIT --max-files LIMIT`. Destination must be new; CRC and SHA are checked before publication. Extraction does not certify dataset coverage. The detector dataset check reports `evaluation_ready` separately from `training_ready`; a validation-only dataset cannot authorize training. Pixel decoding and measured COCO AP remain separate verification steps.

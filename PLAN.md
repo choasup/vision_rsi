@@ -396,3 +396,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - Added full SHA-256 verification and bounded ZIP extraction into a new staging directory, CRC verification, unsafe/normalized/duplicate path rejection and no destination merge. Publication occurs only after successful extraction; receipt explicitly leaves dataset coverage unverified. Six download/extraction tests pass.
 - Actual CPU download attempt a0 completed with zero GPU-hours: official fixed weight SHA-256 dd69338a24b8d7381807e247652bdc356325bcbaf1cd3e092e00e0a1a58706bf verified, annotations partial. Attempt a1 resumes the same pinned sources under a separate bounded CPU job after a0 terminal confirmation. Validation images, actual archive extraction/coverage and real model evaluation remain pending.
+
+## Dataset readiness separation (2026-10-10)
+
+- Detector dataset-check now distinguishes evaluation_ready (full 5,000-image validation split) from training_ready (full 118,287-image training split plus validation, disjoint image IDs). Validates all referenced image files exist/nonempty, unique image/file/annotation IDs, sparse category IDs, dimensions and finite positive bbox extents; records annotation SHA-256. This does not claim pixels were decoded or AP measured.
+- Extraction has a standalone CLI with explicit SHA/byte/file bounds; malformed CRC cleans staging, special files and reserved receipt paths are rejected, including platform-normalized entry names. Actual Linux CPU fixture extraction passed without GPU; evidence runs/resource-bootstrap/extraction-linux-fixture.json. Targeted11 detector/download/extraction tests passed.
+
+- Full182-test suite passed in65.928s after readiness/extraction changes. Attempt a1 terminal completed with archive still partial6,455,415 bytes; bounded CPU attempt a2 resumes it. Actual COCO extraction/evaluation remains pending; no real training or quality/adoption claim.

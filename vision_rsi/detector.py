@@ -22,18 +22,58 @@ def detections(boxes, labels, scores):
     return output
 
 
-def dataset_check(root):
-    if not root: return {'ready':False,'reason':'COCO root not configured'}
+def split_check(root, split, expected_images):
     root=Path(root)
-    required=['train2017','val2017','annotations/instances_train2017.json','annotations/instances_val2017.json']
-    missing=[name for name in required if not (root/name).exists()]
-    result={'ready':not missing,'missing':missing,'root':str(root)}
-    if not missing:
-        data=json.loads((root/'annotations/instances_val2017.json').read_text())
-        ids={category['id'] for category in data['categories']}
-        result.update(validation_images=len(data['images']),category_ids_valid=ids==set(COCO_IDS))
-        result['ready']=bool(data['images']) and ids==set(COCO_IDS)
-    return result
+    annotation=root/'annotations'/f'instances_{split}2017.json'
+    directory=root/f'{split}2017'
+    try:
+        data=json.loads(annotation.read_text())
+        categories=data['categories'];images=data['images'];annotations=data['annotations']
+        category_ids=[row['id'] for row in categories]
+        if len(category_ids)!=80 or set(category_ids)!=set(COCO_IDS):
+            raise ValueError('Expected exactly 80 COCO category IDs')
+        ids=[row['id'] for row in images]
+        if len(ids)!=expected_images or len(set(ids))!=len(ids) or any(type(i) is not int or i<0 for i in ids):
+            raise ValueError('Unexpected image count or duplicate/invalid image IDs')
+        image_ids=set(ids);names=set()
+        for image in images:
+            name=image['file_name']
+            if not isinstance(name,str) or not name or Path(name).name!=name or chr(92) in name or ':' in name:
+                raise ValueError('Invalid image filename')
+            if name in names:raise ValueError('Duplicate image filename')
+            names.add(name)
+            path=directory/name
+            if path.is_symlink() or not path.resolve().is_relative_to(directory.resolve()) or not path.is_file() or path.stat().st_size==0:
+                raise ValueError('Missing, empty or escaping image file')
+            if any(type(image[k]) is not int or image[k]<=0 for k in ('width','height')):
+                raise ValueError('Invalid image dimensions')
+        annotation_ids=set()
+        for row in annotations:
+            if type(row['id']) is not int or row['id'] in annotation_ids:
+                raise ValueError('Duplicate/invalid annotation ID')
+            annotation_ids.add(row['id'])
+            if row['image_id'] not in image_ids or row['category_id'] not in COCO_IDS:
+                raise ValueError('Unknown annotation image/category')
+            box=row['bbox']
+            if not isinstance(box,list) or len(box)!=4 or any(type(v) not in (int,float) or not math.isfinite(v) for v in box) or box[2]<=0 or box[3]<=0:
+                raise ValueError('Invalid annotation box')
+        import hashlib
+        return {'ready':True,'images':len(images),'annotations':len(annotations),
+                'annotation_sha256':hashlib.sha256(annotation.read_bytes()).hexdigest(),
+                'image_ids':ids,'pixel_decode_verified':False}
+    except (OSError,ValueError,KeyError,TypeError) as error:
+        return {'ready':False,'reason':str(error)[:300]}
+
+
+def dataset_check(root):
+    if not root:return {'ready':False,'evaluation_ready':False,'reason':'COCO root not configured'}
+    train=split_check(root,'train',118287);val=split_check(root,'val',5000)
+    overlap=bool(set(train.get('image_ids',[]))&set(val.get('image_ids',[])))
+    train.pop('image_ids',None);val.pop('image_ids',None)
+    return {'ready':train['ready'] and val['ready'] and not overlap,
+            'evaluation_ready':val['ready'],'training_ready':train['ready'] and val['ready'] and not overlap,
+            'root':str(root),'splits':{'train':train,'val':val},'split_overlap':overlap,
+            'limitation':'File coverage and annotation checks only; pixel decoding and model evaluation remain separate.'}
 
 
 def smoke():

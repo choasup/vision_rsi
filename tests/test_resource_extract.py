@@ -1,4 +1,5 @@
 import hashlib
+import stat
 from pathlib import Path
 import tempfile
 import unittest
@@ -36,3 +37,29 @@ class ExtractTests(unittest.TestCase):
                 self.assertFalse(dest.exists())
             with self.assertRaises(ValueError):
                 extract(archive, dest, '0' * 64, max_bytes=100, max_files=2)
+
+    def test_crc_corruption_cleans_staging(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); archive = root / 'a.zip'; dest = root / 'data'
+            with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_STORED) as z:
+                z.writestr('a.jpg', b'unique-payload')
+            content = archive.read_bytes().replace(b'unique-payload', b'broken-payload')
+            archive.write_bytes(content)
+            with self.assertRaises(zipfile.BadZipFile):
+                extract(archive, dest, hashlib.sha256(content).hexdigest(), max_bytes=100, max_files=2)
+            self.assertFalse(dest.exists())
+            self.assertEqual(list(root.glob('.extract-*')), [])
+
+    def test_special_files_and_reserved_receipt_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for index, (name, mode) in enumerate((('.', 0), ('.extraction-receipt.json', 0),
+                                                ('link', stat.S_IFLNK), ('fifo', stat.S_IFIFO))):
+                archive = root / f'{index}.zip'
+                with zipfile.ZipFile(archive, 'w') as z:
+                    info = zipfile.ZipInfo(name); info.create_system = 3
+                    info.external_attr = (mode | 0o644) << 16
+                    z.writestr(info, b'payload')
+                with self.assertRaises(ValueError):
+                    extract(archive, root / f'd{index}', hashlib.sha256(archive.read_bytes()).hexdigest(),
+                            max_bytes=100, max_files=2)

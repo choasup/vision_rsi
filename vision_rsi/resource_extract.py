@@ -37,9 +37,9 @@ def extract(archive, destination, expected_sha256, *, max_bytes, max_files):
                     raise ValueError('Archive entry was normalized by platform')
                 path = PurePosixPath(name)
                 mode = member.external_attr >> 16
-                if (not name or chr(92) in name or ':' in name or path.is_absolute()
+                if (not name or not path.parts or chr(92) in name or ':' in name or path.is_absolute()
                         or '..' in path.parts or name in names
-                        or stat.S_ISLNK(mode) or member.flag_bits & 1
+                        or (stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR)) or member.flag_bits & 1
                         or path.parts[0] == '.extraction-receipt.json'):
                     raise ValueError('Unsafe or duplicate archive entry')
                 if path.as_posix().rstrip('/') != name.rstrip('/'):
@@ -71,3 +71,16 @@ def extract(archive, destination, expected_sha256, *, max_bytes, max_files):
             finally:
                 if staging.exists():
                     shutil.rmtree(staging)
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--archive', required=True)
+    parser.add_argument('--destination', required=True)
+    parser.add_argument('--sha256', required=True)
+    parser.add_argument('--max-bytes', type=int, required=True)
+    parser.add_argument('--max-files', type=int, required=True)
+    args = parser.parse_args()
+    print(json.dumps(extract(args.archive, args.destination, args.sha256,
+                             max_bytes=args.max_bytes, max_files=args.max_files)))
