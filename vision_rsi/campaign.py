@@ -119,7 +119,7 @@ def project(state,action,result):
     if kind=='prepare':
         state['plan']=result;state['status']='blocked' if result['status']=='blocked' else 'ready'
         state['blockers']=result.get('blockers',[])
-    elif kind in ('submit','observe','collect'):
+    elif kind in ('submit','observe','logs','collect'):
         state['run_id']=result['run_id'];state['run_status']=result['status']
         state['status']='waiting' if result['status'] not in LOCAL_TERMINAL else 'processing_result'
         if kind=='collect':state['receipt_collected']=True

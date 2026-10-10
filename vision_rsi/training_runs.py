@@ -118,14 +118,20 @@ def observe(run_id,remote,store,action='status'):
     record=store.get(run_id)
     if record['remote']!=remote_identity(remote): raise ValueError('Training run belongs to another SSH destination')
     response=job_request(remote,action,run_id)
-    if action=='logs': return dict(record,log=response['log'])
+    log=None
+    if action=='logs':
+        log=response['log']
+        # Logs are diagnostic text, never authoritative process evidence.
+        # Reconcile the same job before releasing any budget reservation.
+        response=job_request(remote,'status',run_id)
     details=record['details'];details['remote_state']=response
     actual=None
     if response['status'] in TERMINAL:
         actual=response.get('gpu_hours')
         if isinstance(actual,bool) or not isinstance(actual,(int,float)) or not math.isfinite(actual) or actual<0:
             raise ValueError('Invalid remote GPU accounting; reservation retained')
-    return store.update(run_id,response['status'],details,actual)
+    updated=store.update(run_id,response['status'],details,actual)
+    return dict(updated,log=log) if action=='logs' else updated
 
 
 def collect(run_id,remote,store):

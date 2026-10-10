@@ -13,6 +13,30 @@ def plan(identity='one'):
 
 
 class TrainingRunsTests(unittest.TestCase):
+    @patch('vision_rsi.training_runs.job_request')
+    def test_logs_reconcile_terminal_status_and_campaign_progress(self,request):
+        from vision_rsi.campaign import project
+        record,_=self.store.reserve(plan(),REMOTE)
+        request.side_effect=[{'log':'still training'}, {'status':'completed','gpu_hours':.002}]
+        result=observe(record['run_id'],REMOTE,self.store,'logs')
+        self.assertEqual(result['log'],'still training')
+        self.assertEqual(result['actual_gpu_hours'],.002)
+        self.assertEqual(self.store.get(record['run_id'])['status'],'completed')
+        state={}
+        project(state,{'kind':'logs'},result)
+        self.assertEqual(state['run_status'],'completed')
+        self.assertEqual(state['status'],'processing_result')
+        self.assertEqual([call.args[1] for call in request.call_args_list],['logs','status'])
+
+    @patch('vision_rsi.training_runs.job_request')
+    def test_log_text_cannot_settle_budget_when_status_is_unavailable(self,request):
+        record,_=self.store.reserve(plan(),REMOTE)
+        request.side_effect=[{'log':'completed gpu_hours=0'},TimeoutError('status unavailable')]
+        with self.assertRaises(TimeoutError):observe(record['run_id'],REMOTE,self.store,'logs')
+        saved=self.store.get(record['run_id'])
+        self.assertIsNone(saved['actual_gpu_hours'])
+        self.assertEqual(saved['status'],record['status'])
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.store=TrainingRuns(self.temp.name);self.addCleanup(self.store.close)

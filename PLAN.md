@@ -309,3 +309,9 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - New Training evaluation reports derive per-class AP and diagnostic TP/FP/FN from the same official COCOeval accumulator. Explicit IoU0.5 / confidence0.05 / max100-per-image-per-category diagnostic scope does not replace acceptance. Crowd and low-confidence matching cases tested.
 - Independent receipt review validates category coverage, class AP versus overall AP and count conservation. Bounded summaries enter strategy observations and method-planner evidence; absent legacy diagnostics remain unknown. No causal error classification inferred from unmatched detections.
 - Fetched only hash-verified bounded historical H20 fixture annotation/prediction/coverage artifacts, recomputed on local official pycocotools: AP remained0, TP0/FP0/FN2/GT2,80 category coverage, acceptance false. No GPU or API call. Evidence under ignored runs/error-analysis-integration/{evaluation,summary}.json. This is fixture integration, not real COCO quality.
+
+
+## Log observation liveness (2026-10-10)
+
+- Log observations now reconcile authoritative status for the same remote job and project it into campaign state. Completed jobs can proceed to collection even when the strategy selected logs. Terminal GPU accounting uses status evidence; failed reconciliation retains reservations.
+- Regression coverage includes misleading log text and unavailable status. Real COCO data/weights and authorized GPU budget remain outstanding; bounded resource discovery found no matches before its 10,000-directory limit and does not establish absence.
