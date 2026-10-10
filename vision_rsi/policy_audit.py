@@ -8,6 +8,7 @@ from .campaign import available, project
 from .candidates import verify_candidate
 from .runner import digest
 from .strategy_protocol import validate_decision
+from .strategy_context import history_context
 
 
 def verify_trace(state):
@@ -55,15 +56,19 @@ def verify_trace(state):
             raise ValueError('Action does not match replayed controller state')
         decision=row['decision']
         if decision['action_id']!=row['action']['id']:raise ValueError('Executed action differs from policy decision')
-        history=[{'id':item['action']['id'],'kind':item['action']['kind'],'status':item['status']} for item in replay['history']]
+        history=history_context(replay['history'],row.get('strategy_context_version',1))
         verify_decision_evidence(row,actions,history)
+        brief=decision.get('research_brief')
+        if brief is not None and row['result'].get('status')!='budget_exhausted':
+            recorded=row['result'].get('experiment',{}).get('strategy_brief_sha256',row['result'].get('strategy_brief_sha256'))
+            if recorded!=digest(brief):raise ValueError('Research plan does not match executed strategy brief')
         project(replay,row['action'],row['result'])
         replay['history'].append(row)
     stop=state.get('policy_stop')
     if stop:
         if state.get('intent') or state.get('status')!='policy_stopped' or stop['decision'].get('action_id') is not None:
             raise ValueError('Invalid terminal policy stop')
-        history=[{'id':item['action']['id'],'kind':item['action']['kind'],'status':item['status']} for item in replay['history']]
+        history=history_context(replay['history'],stop.get('strategy_context_version',1))
         actions=available(replay)
         if not actions:raise ValueError('Policy stop has no decision context')
         verify_decision_evidence(stop,actions,history)

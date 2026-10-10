@@ -282,3 +282,11 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Paused campaigns cannot count as completed study arms. Comparison also checks that the independently audited state hash matches the phase-checked snapshot, rejecting concurrent state changes.
 
 - Actual remote CPU isolation probe at control revision f54e0fe: explicit-stop candidate ced30cf8dd290d0cf6afa69d2b30dd594c869307dc502ea8c765c882826ccbbe produced a durable terminal decision. Second advance reused it, no tools ran, no Training run or GPU reservation was created. Independent audit verified one decision and correctly refused real measurement/RSI claims. Ignored evidence: runs/policy-stop-integration/{first,second,audit,summary}.json and cli-audit.txt. No LLM call or GPU training was performed.
+
+
+## Evidence-aware strategy research direction (2026-10-10)
+
+- Corrected a core limitation: candidate policies previously saw IDs/status only and could influence scheduling but not the next hypothesis. Context v2 now exposes bounded method settings, reported scores/gaps, known costs and prior hypotheses without paths/credentials. Replay reconstructs the exact versioned context; legacy v1 remains explicit.
+- Strategies may attach a bounded research_brief only to propose_experiment. The method planner considers it as an untrusted hypothesis, rechecks original receipts and preserves frozen data/model/threshold/budget constraints. Request identity and resulting plan bind the brief; changing it cannot reuse an old response.
+- Pending controller intents cannot silently execute after control-source changes. Resume requires the original source snapshot.
+- This enables strategy influence over the existing first-task method planner; general harness/code modifications, actual equal-budget efficiency and automatic adoption remain pending.

@@ -1,5 +1,6 @@
 """Deterministic boundary between proposed strategy decisions and execution."""
 import math
+import json
 
 
 def number(value,name,minimum=None):
@@ -12,6 +13,9 @@ def validate_context(history,actions,budget):
     number(budget,'budget',0)
     if not isinstance(history,list) or not isinstance(actions,list):raise ValueError('History and actions must be arrays')
     if len(history)>10000 or len(actions)>1000:raise ValueError('Strategy context exceeds bounds')
+    try:encoded=json.dumps({'history':history,'actions':actions},allow_nan=False)
+    except (ValueError,TypeError) as error:raise ValueError('Strategy context must be finite JSON data') from error
+    if len(encoded.encode('utf-8'))>512*1024:raise ValueError('Strategy context exceeds byte limit')
     seen=set()
     for row in history+actions:
         if not isinstance(row,dict) or not isinstance(row.get('id'),str) or not 1<=len(row['id'])<=128:raise ValueError('Invalid action ID')
@@ -30,10 +34,16 @@ def validate_decision(history,actions,budget,decision):
     rationale=decision.get('rationale')
     if not isinstance(rationale,str) or not 1<=len(rationale)<=4000:raise ValueError('Decision needs bounded rationale')
     action_id=decision.get('action_id')
-    if action_id is None:return decision
+    if action_id is None:
+        if 'research_brief' in decision:raise ValueError('Stopped strategy cannot submit a research brief')
+        return decision
     if not isinstance(action_id,str):raise ValueError('Invalid selected action ID')
     if action_id in {row['id'] for row in history}:raise ValueError('Strategy selected an already attempted action; retries require a new explicit attempt ID')
     selected=next((action for action in actions if action['id']==action_id),None)
     if selected is None:raise ValueError('Strategy invented an unavailable action')
     if selected['estimated_cost']>budget:raise ValueError('Strategy selected an unaffordable action')
+    if 'research_brief' in decision:
+        brief=decision['research_brief']
+        if selected.get('kind')!='propose_experiment' or not isinstance(brief,str) or not 1<=len(brief)<=6000:
+            raise ValueError('Research brief must be bounded text on a propose_experiment action')
     return decision

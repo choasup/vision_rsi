@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .runner import atomic_json,digest,revision
 from .strategy_protocol import validate_decision
+from .strategy_context import history_context
 from .training_plan import prepare
 from .training_runs import TrainingRuns,submit,observe,collect,TERMINAL,remote_identity
 
@@ -65,7 +66,7 @@ def available(state):
 
 
 def choose(state,actions,steps_left,policy,remote):
-    history=[{'id':row['action']['id'],'kind':row['action']['kind'],'status':row['status']} for row in state['history']]
+    history=history_context(state['history'])
     if policy:
         from .candidates import Candidates
         candidates=Candidates(policy['store'])
@@ -99,7 +100,8 @@ def execute(action,state,session,config,folder,runs):
         from .experiments import propose_next
         record=runs.get(state['run_id'])
         request_id='experiment-'+state['campaign_id'][:24]+'-'+str(state.get('proposals_attempted',0))
-        return propose_next(record,runs,config['llm'],folder/'experiments',request_id)
+        brief=(state.get('intent') or {}).get('decision',{}).get('research_brief')
+        return propose_next(record,runs,config['llm'],folder/'experiments',request_id,research_brief=brief)
     if kind=='analyze':
         record=runs.get(state['run_id']);verdict=record['details'].get('acceptance_review')
         analysis={'run_id':record['run_id'],'process_status':record['status'],'actual_gpu_hours':record['actual_gpu_hours'],
@@ -192,15 +194,18 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                     policy_elapsed=time.monotonic()-choice_started
                     if decision['action_id'] is None:
                         state['policy_stop']={'decision':decision,'policy_evidence':evidence,'policy_elapsed_seconds':policy_elapsed,
-                                              'control_sources':control_sources,'git_revision':revision(),'created_at_unix':time.time()}
+                                              'control_sources':control_sources,'git_revision':revision(),'created_at_unix':time.time(),'strategy_context_version':2}
                         state['status']='policy_stopped';atomic_json(path,state);break
                     action=next(row for row in actions if row['id']==decision['action_id'])
                     intent={'action':action,'decision':decision,'policy_evidence':evidence,'status':'reserved',
+                            'strategy_context_version':2,
                             'control_sources':control_sources,'git_revision':revision(),'policy_elapsed_seconds':policy_elapsed,
                             'created_at_unix':time.time(),'tool_attempts':[]}
                     state['intent']=intent;atomic_json(path,state)
                 # Only fixed, idempotent tools may resume an interrupted intent.
                 # submit reconciles the existing durable Training run ID.
+                if intent.get('control_sources')!=control_sources:
+                    raise ValueError('Pending action uses different control source; restore its frozen source before resuming')
                 attempt={'started_at_unix':time.time(),'status':'started'}
                 intent.setdefault('tool_attempts',[]).append(attempt);atomic_json(path,state)
                 tool_started=time.monotonic()

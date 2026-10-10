@@ -54,6 +54,19 @@ class ExperimentTests(unittest.TestCase):
         with self.assertRaises(ValueError):compile_plan(self.parent,self.record,proposal(),.001,self.root/'plans')
 
     @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_strategy_brief_reaches_planner_and_is_bound_to_plan_and_request(self,client):
+        client.return_value.complete.return_value={'content':json.dumps(proposal())}
+        brief='Use the measured target gap to test lower LR; do not infer instability from AP alone.'
+        result=propose_next(self.record,self.runs,self.llm,self.root/'research','directed',research_brief=brief)
+        messages=client.return_value.complete.call_args.args[0]
+        self.assertEqual(json.loads(messages[1]['content'])['strategy_research_brief'],brief)
+        self.assertEqual(result['experiment']['strategy_research_brief'],brief)
+        self.assertEqual(result['experiment']['strategy_brief_sha256'],digest(brief))
+        with self.assertRaisesRegex(ValueError,'context changed'):
+            propose_next(self.record,self.runs,self.llm,self.root/'research','directed',research_brief='Changed hypothesis')
+        client.return_value.complete.assert_called_once()
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
     def test_proposal_response_reused_and_original_receipt_rechecked(self,client):
         client.return_value.complete.return_value={'content':json.dumps(proposal()),'model':'fixture'}
         first=propose_next(self.record,self.runs,self.llm,self.root/'research','request-one')

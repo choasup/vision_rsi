@@ -65,12 +65,43 @@ class CampaignTests(unittest.TestCase):
         self.assertTrue(all(attempt['elapsed_seconds']>=0 for attempt in attempts))
 
     @patch('vision_rsi.campaign.prepare')
+    @patch('vision_rsi.campaign.submit')
+    def test_pending_action_cannot_resume_with_changed_control_source(self,submit,prepare):
+        prepare.return_value=self.plan;submit.side_effect=RuntimeError('uncertain submission')
+        with self.assertRaises(RuntimeError):self.advance()
+        path=next((self.root/'campaigns').glob('*/*/state.json'));state=json.loads(path.read_text())
+        state['intent']['control_sources']['campaign.py']='0'*64;path.write_text(json.dumps(state))
+        with self.assertRaisesRegex(ValueError,'frozen source'):self.advance()
+        submit.assert_called_once()
+
+    @patch('vision_rsi.campaign.prepare')
     def test_blocked_no_repeated_preflight_and_pause(self,prepare):
         prepare.return_value={'status':'blocked','blockers':['Need real GPU budget']}
         result=self.advance();self.assertEqual(result['status'],'blocked')
         self.advance();prepare.assert_called_once()
         self.advance(control='pause');self.assertTrue(self.advance()['paused'])
         self.assertFalse(self.advance(control='resume')['paused'])
+
+    @patch('vision_rsi.candidates.Candidates')
+    def test_policy_receives_actual_observations_and_can_direct_research(self,candidates):
+        brief='Test a new method using the measured gap, without changing requirements.'
+        candidates.return_value.check_strategy.return_value={'status':'protocol_passed','protocol_report_path':'fixture',
+            'response':{'observation':{'results':[{'action_id':'research-1','rationale':'measured failure','research_brief':brief}]}}}
+        state={'history':[{'action':{'id':'analyze-0','kind':'analyze'},'status':'completed','result':{'metric_gap':18,'acceptance_review':{'box_AP':42,'threshold':60}}}]}
+        actions=[{'id':'research-1','kind':'propose_experiment','estimated_cost':1,'expected_gain':2,'uncertainty':.1}]
+        decision,_=choose(state,actions,1,{'store':'fixture','candidate_id':'fixture','module':'fixture'},self.config['remote'])
+        context=candidates.return_value.check_strategy.call_args.args[3][0]
+        self.assertEqual(context['history'][0]['observation']['measurement']['value'],42)
+        self.assertEqual(decision['research_brief'],brief)
+
+    @patch('vision_rsi.experiments.propose_next')
+    def test_execute_passes_selected_research_brief_to_method_planner(self,planner):
+        from unittest.mock import MagicMock
+        from vision_rsi.campaign import execute
+        runs=MagicMock();runs.get.return_value=self.record
+        state={'run_id':self.record['run_id'],'campaign_id':'a'*64,'intent':{'decision':{'research_brief':'A bounded hypothesis'}}}
+        execute({'kind':'propose_experiment'},state,self.session,{**self.config,'llm':{}},self.root,runs)
+        self.assertEqual(planner.call_args.kwargs['research_brief'],'A bounded hypothesis')
 
     @patch('vision_rsi.candidates.Candidates')
     def test_experimental_strategy_cannot_invent_tool(self,candidates):
