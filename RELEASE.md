@@ -391,3 +391,9 @@
 - 实际step1/4/5/6/14/15共6种断点、2rank全部loss/batch trace、模型张量、动量buffer、最终CPU RNG与连续运行完全一致。Torch2.6.0+cu124，生产迭代器SHA42c6cf1afe40af5af752f7dc7c20a9dd537e4c2dec13c098527c30b6b6701ef2。
 - 证据runs/resource-bootstrap/cpu-numerical-resume-92a12c52d40d4bd484233cac0c8459d5/{preregistered.json,stdout.txt,stderr.txt,evidence.json}；远端临时rendezvous正常清理，fixture数据及checkpoint仅进程内存。
 - 仅两进程CPU对象重建恢复，未杀进程，不证明实际检测器/8卡CUDA/NCCL恢复或真实训练质量。无LLM/GPU调用、未修改真实任务预算，完整上线目标仍未完成。
+## 固定检测器CPU数值恢复（2026-10-10）
+
+- 新增显式--live-remote的tests/live_detector_cpu_resume_probe.py，远端50秒alarm、外层60秒timeout、CUDA禁用、CPU单线程。Faster R-CNN ResNet50 FPN v2实际加载固定预训练权重，SHA核验dd69338a24b8d7381807e247652bdc356325bcbaf1cd3e092e00e0a1a58706bf。
+- 两张64x64合成图/类别1/batch2，SGD lr.0001/momentum.9/weight_decay.0001；连续2step与1step后真实序列化、重建模型/优化器、恢复CPU RNG再1step完全一致。核对4项loss、全模型parameters/buffers、momentum和CPU RNG，合计4次fixture训练step。
+- 实际Torch2.6.0+cu124 CPU探针成功并正常结束。checkpoint SHA e89aab067722229248d4614fde9acce4455da96c30a579cddbc1034d6f1f3051；证据runs/resource-bootstrap/detector-cpu-resume-3fca0fdb2dd14f959d0f1e67fb366e0c/{preregistered.json,stdout.txt,stderr.txt,evidence.json}。
+- 无LLM/GPU调用、未读取用户COCO数据、未改变任务预算或权重文件。此处是极小CPU检测器fixture训练，不是生产coco_train完整入口、进程死亡、CUDA/DDP/NCCL恢复或AP质量证明；完整上线目标仍未完成。
