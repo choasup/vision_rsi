@@ -93,6 +93,7 @@ def step(request):
                 report=evaluate(annotation,folder/'predictions.json',folder/'coverage.json',endpoint['contract']['acceptance']['threshold'],endpoint['recipe']['val_annotations_sha256'])
                 report.update(backend='cpu',fixture=fixture,inference_adapter_sha256=source_sha,
                               checkpoint_sha256=endpoint['checkpoint_sha256'],training_identity_hash=endpoint['training_identity_hash'],
+                              serving_runtime_sha256=runtime['serving_runtime_sha256'],serving_runtime=runtime['serving_runtime'],
                               validation_images_sha256=digest(image_fingerprints),evaluation_id=evaluation_id)
                 save(folder/'serving-report.json',report);state.update(status='evaluated',report_sha256=sha(folder/'serving-report.json'))
                 return {'status':'evaluated','evaluation_id':evaluation_id,'report':report}

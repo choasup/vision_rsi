@@ -11,6 +11,10 @@ def review_serving(manifest,report):
               'training_identity_hash':endpoint['training_identity_hash'],
               'inference_adapter_sha256':manifest['artifacts']['inference.py'],
               'annotation_sha256':endpoint['recipe']['val_annotations_sha256']}
+    runtime_sha=endpoint.get('serving_runtime_sha256')
+    if not isinstance(runtime_sha,str) or len(runtime_sha)!=64 or any(c not in '0123456789abcdef' for c in runtime_sha):
+        raise ValueError('Missing registered CPU serving runtime; re-register and evaluate backend')
+    expected['serving_runtime_sha256']=runtime_sha
     for key,value in expected.items():
         if report.get(key)!=value:raise ValueError('Serving evaluation identity mismatch: '+key)
     if report.get('fixture') is not False or report.get('image_count')!=5000 or report.get('coverage_complete') is not True:

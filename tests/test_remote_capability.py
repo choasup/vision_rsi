@@ -31,19 +31,30 @@ class RemoteCapabilityTests(unittest.TestCase):
     def response(remote,request,source_path):
         return {'sample_id':request['sample']['sample_id'],'output':{'detections':[]},'device':'cpu',
                 'image_sha256':hashlib.sha256(base64.b64decode(request['image_base64'])).hexdigest(),
-                'checkpoint_sha256':request['checkpoint_sha256'],'training_identity_hash':request['training_identity_hash']}
+                'checkpoint_sha256':request['checkpoint_sha256'],'training_identity_hash':request['training_identity_hash'],'serving_runtime_sha256':'9'*64}
     def registered_fixture(self):
         # Synthetic metadata and mocked transport exercise lifecycle only.
         candidate=self.registry.register_training(self.record,self.sample)
         self.assertEqual(candidate['status'],'pending_serving_validation')
         with self.assertRaises(ValueError):self.registry.resolve_version('coco-task')
         endpoint=candidate['endpoint']
-        report={'backend':'cpu','protocol':'pycocotools.COCOeval/bbox/defaults','metric_scale':'0..100','pycocotools_version':'2.0.11',
+        report={'serving_runtime_sha256':'9'*64,'backend':'cpu','protocol':'pycocotools.COCOeval/bbox/defaults','metric_scale':'0..100','pycocotools_version':'2.0.11',
                 'checkpoint_sha256':endpoint['checkpoint_sha256'],'training_identity_hash':endpoint['training_identity_hash'],
                 'inference_adapter_sha256':candidate['artifacts']['inference.py'],'annotation_sha256':endpoint['recipe']['val_annotations_sha256'],
                 'fixture':False,'image_count':5000,'coverage_complete':True,'metrics':{'box_AP':65},'predictions_sha256':'d'*64,'coverage_sha256':'e'*64}
         path=self.root/'unit-serving-report.json';path.write_text(json.dumps(report))
         return self.registry.promote_serving('coco-task',candidate['version'],path)
+
+    @patch('vision_rsi.remote.infer_training',side_effect=response)
+    def test_cpu_runtime_change_blocks_pinned_test_result(self,infer):
+        manifest=self.registered_fixture()
+        original=self.response
+        def changed(remote,request,source):
+            result=original(remote,request,source);result['serving_runtime_sha256']='8'*64
+            return result
+        infer.side_effect=changed
+        with self.assertRaisesRegex(ValueError,'runtime differs'):
+            self.registry.infer('coco-task',self.sample)
 
     @patch('vision_rsi.remote.infer_training',side_effect=response)
     def test_serving_failure_keeps_candidate_unavailable(self,infer):

@@ -112,6 +112,7 @@ class Capabilities:
         request=dict(image_request(plan['contract'],sample_path),**{key:value for key,value in endpoint.items() if key!='remote'})
         probe=infer_training(endpoint['remote'],request,folder/'inference.py')
         self._verify_remote_prediction(endpoint,request,probe)
+        endpoint['serving_runtime_sha256']=probe['serving_runtime_sha256']
         manifest={'task_id':name,'version':version,'status':'pending_serving_validation','spec':{'kind':'coco_detection'},'training_run_id':record['run_id'],'session_id':record['session_id'],
                   'endpoint':endpoint,'validation':dict(verdict,status='pending_serving_validation',capability_registered=False,serving_backend='cpu',serving_accuracy_verified=False),'registration_sample_sha256':probe['image_sha256'],
                   'limitations':'COCO AP measured by frozen Training evaluation; CPU serving accuracy and latency need deployment validation. Not a guarantee for arbitrary input.',
@@ -171,6 +172,11 @@ class Capabilities:
         if response.get('image_sha256')!=hashlib.sha256(base64.b64decode(request['image_base64'])).hexdigest():
             raise ValueError('Inference response image bytes differ')
         if response.get('device')!='cpu':raise ValueError('Unexpected inference serving backend')
+        runtime_sha=response.get('serving_runtime_sha256')
+        if not isinstance(runtime_sha,str) or not re.fullmatch('[0-9a-f]{64}',runtime_sha):
+            raise ValueError('Missing CPU serving runtime identity; re-register and validate this backend')
+        if endpoint.get('serving_runtime_sha256') is not None and runtime_sha!=endpoint['serving_runtime_sha256']:
+            raise ValueError('CPU serving runtime differs from registered evaluation environment')
         validate_schema(endpoint['contract']['output_schema'],response['output'])
 
     def resolve_version(self, name, version=None):

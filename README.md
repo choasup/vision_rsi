@@ -606,3 +606,5 @@ Image integrity verification identifies static JPEG/PNG from decoded content rat
 研究流程及方法/策略候选/适配器修复请求会绑定配置中的共享 LLM 账本路径、调用上限和模型执行设置；对同一 campaign 或请求 ID 更换、删除这些配置会拒绝继续执行。指定 campaign 后仍可读取状态和暂停。未记录这些字段的历史流程不据此获得追溯性额度保证；显式新建项目或不同账本之间也没有全账户额度合并。API Key 不写入身份记录。
 
 新建 GPU 训练实验将 Python/平台、torch/torchvision/pycocotools/Pillow/NumPy 版本、PyTorch 构建摘要、CUDA/cuDNN/NCCL、驱动版本、设备类型及确定性设置写入实验身份并纳入 checkpoint 校验。恢复时身份变化即拒绝继续；此指纹不代替依赖安装锁或数值复现验收，也不追溯改写旧实验。指纹采集只在已准入的训练作业内执行，驱动查询限时 10 秒；无法采集不按空环境继续。NCCL 可选版本后缀按 [PyTorch 2.6 源码](https://github.com/pytorch/pytorch/blob/v2.6.0/torch/cuda/nccl.py) 保留。
+
+CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依赖安装版本及模块构建版本、PyTorch 构建摘要、线程数、确定性与矩阵精度设置）。每个分段评测和后续推理都重新计算并匹配该摘要；评测报告必须携带同一摘要才能晋级。旧的无摘要候选/后端需重新注册并完成完整 serving 验收，不自动继承通过状态。这不保证任意输入效果，也不代替模型 AP 验收。远端 CPU 指纹采集已实测通过，CUDA 未初始化；本机记录位于 `runs/resource-bootstrap/cpu-serving-runtime-live.json`。

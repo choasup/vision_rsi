@@ -16,6 +16,23 @@ def file_sha(path):
     return value.hexdigest()
 
 
+def cpu_runtime_identity(torch,torchvision):
+    import importlib.metadata
+    import platform
+    packages={name:importlib.metadata.version(name) for name in ('torch','torchvision','pycocotools','Pillow','numpy')}
+    modules={'torch':str(torch.__version__),'torchvision':str(torchvision.__version__)}
+    if any(packages[name].partition('+')[0]!=modules[name].partition('+')[0] for name in modules):
+        raise ValueError('CPU module and installed package versions differ')
+    identity={'schema':'vision-rsi-cpu-runtime-v1','python':platform.python_version(),
+              'platform':platform.platform(),'packages':packages,'modules':modules,
+              'torch_build_sha256':hashlib.sha256(torch.__config__.show().encode()).hexdigest(),
+              'cpu_threads':torch.get_num_threads(),'cpu_interop_threads':torch.get_num_interop_threads(),
+              'deterministic_algorithms':torch.are_deterministic_algorithms_enabled(),
+              'matmul_precision':torch.get_float32_matmul_precision()}
+    encoded=json.dumps(identity,sort_keys=True,allow_nan=False).encode()
+    return identity,hashlib.sha256(encoded).hexdigest()
+
+
 def load_runtime(request):
     workspace=PurePosixPath(request['workspace'])
     if not workspace.is_absolute() or '..' in workspace.parts or str(workspace)=='/':raise ValueError('Dedicated workspace required')
@@ -36,6 +53,9 @@ def load_runtime(request):
     import torch,torchvision
     if torch.__version__!='2.6.0+cu124' or torchvision.__version__!='0.21.0+cu124':raise ValueError('Inference runtime differs from frozen baseline')
     torch.set_num_threads(4)
+    serving_runtime,serving_runtime_sha=cpu_runtime_identity(torch,torchvision)
+    if request.get('serving_runtime_sha256') is not None and request['serving_runtime_sha256']!=serving_runtime_sha:
+        raise ValueError('CPU serving runtime differs from registered evaluation environment')
     from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2
     from torchvision.transforms.functional import pil_to_tensor
     recipe=request['recipe']
@@ -44,6 +64,7 @@ def load_runtime(request):
     if state['identity_hash']!=request['training_identity_hash']:raise ValueError('Checkpoint Training identity differs')
     model.load_state_dict(state['model'],strict=True);model.eval()
     return {'model':model,'request':request,'torch':torch,'pil_to_tensor':pil_to_tensor,
+            'serving_runtime':serving_runtime,'serving_runtime_sha256':serving_runtime_sha,
             'detections':detections,'validate_sample':validate_sample,'validate_schema':validate_schema}
 
 
@@ -63,7 +84,8 @@ def predict(runtime,raw,sample):
     runtime['validate_schema'](contract['output_schema'],output)
     return {'sample_id':sample['sample_id'],'output':output,'device':'cpu','width':image.width,'height':image.height,
             'image_sha256':hashlib.sha256(raw).hexdigest(),'checkpoint_sha256':request['checkpoint_sha256'],
-            'training_identity_hash':request['training_identity_hash']}
+            'training_identity_hash':request['training_identity_hash'],
+            'serving_runtime':runtime['serving_runtime'],'serving_runtime_sha256':runtime['serving_runtime_sha256']}
 
 
 def infer(request):
