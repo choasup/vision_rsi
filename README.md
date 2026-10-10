@@ -29,6 +29,16 @@ $env:VISION_RSI_PYTHON = 'C:\path\to\python.exe'
 
 当前源码的 LLM 客户端与 doctor 优先读取当前进程的 Key 环境变量；Windows 下缺失时再只读查询同名用户环境变量，兼容已经在系统用户设置中填写、但尚未进入当前进程的 Key。不写入配置或报告，不复制到进程环境，doctor 只显示是否存在与来源。此修复尚未包含在既有 dev6 包中。
 
+通用候选的开发指标评测（新增源码入口，当前支持固定 `event_micro_f1` 协议）：
+
+```powershell
+.\vision-rsi.cmd candidate adapter-evaluate --store CANDIDATE_STORE --repository GIT_REPO --candidate-id CANDIDATE_ID --module vision_rsi.adapter_name --function predict --contract contract.json --dataset validation.json --config config.local.json --json
+```
+
+`validation.json` 必须包含且仅包含 `purpose`（值为 `development_validation`）、`samples`（1–16 个符合任务接口的输入）及 `ground_truth`（事件评测文档，含 labels 和逐 sample_id 的 events）。输入与标签覆盖必须一致。评测前固定合同、数据和评测程序哈希；隔离 CPU 执行仅接收输入，不接收 ground_truth，返回输出后由确定性程序计算 F1，使用原合同的阈值。重复相同上下文复用稳定运行检查记录，不重发结果不确定的检查。
+
+`development_metric_met` 只表示这份开发验证集达到合同数值阈值，不证明数据来源或独立性，不注册推理能力，不采用 Agent，也不证明真实视频理解或 RSI 提升。隐藏测试不能作为这条反馈路径的数据。通用 harness 到生产质量与版本化推理的完整交付仍未完成。
+
 Windows 本地 CLI，通过 SSH 调度视觉研究任务。核心入口是 `training start`（自然语言定义与澄清）、`training watch`（持续研究控制）和 `test`（按已验收任务版本推理）。COCO 检测是首个真实任务适配器。
 
 当前开发状态：已实现真实 LLM、SSH 作业、固定检测器训练/恢复、官方 COCO 指标计算、结果验收及版本化推理接口；H20 小规模开发验证已执行。官方预训练权重在完整 COCO val2017 的 CPU 基线已测得 box AP46.7097，隔离本地环境复算一致；完整 COCO 训练和 AP≥60 验收尚未完成，没有真实达标 COCO 能力，也尚无通用 RSI 效率提升的独立证据。当前应用只支持可信本地用户，不是公网多用户服务。

@@ -276,12 +276,13 @@ class Candidates:
 def main(argv):
     import argparse
     parser=argparse.ArgumentParser(prog='vision-rsi candidate')
-    parser.add_argument('action',choices=['create','propose','list','show','check','strategy-check','adapter-check','adapter-repair','adapter-budget'])
+    parser.add_argument('action',choices=['create','propose','list','show','check','strategy-check','adapter-check','adapter-evaluate','adapter-repair','adapter-budget'])
     parser.add_argument('--store',default='runs/research-candidates');parser.add_argument('--repository',default='.')
     parser.add_argument('--proposal');parser.add_argument('--evidence');parser.add_argument('--request-id');parser.add_argument('--candidate-id')
     parser.add_argument('--session-id');parser.add_argument('--sessions',default='runs/training-sessions')
     parser.add_argument('--module');parser.add_argument('--function');parser.add_argument('--cases')
     parser.add_argument('--contract')
+    parser.add_argument('--dataset',help='Frozen development_validation JSON; never a hidden-test feedback dataset')
     parser.add_argument('--report')
     parser.add_argument('--json',action='store_true')
     parser.add_argument('--config',default='config.local.json')
@@ -297,6 +298,12 @@ def main(argv):
             if not session['versions']:raise ValueError('Define the task contract first')
             config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
             result=store.propose(args.request_id,session['versions'][-1]['contract'],json.loads(Path(args.evidence).read_text(encoding='utf-8-sig')),config['llm'])
+        elif args.action=='adapter-evaluate':
+            if not all((args.candidate_id,args.module,args.function,args.contract,args.dataset)):
+                parser.error('adapter-evaluate requires --candidate-id, --module, --function, --contract and --dataset')
+            from .adapter_evaluation import evaluate
+            config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
+            result=evaluate(store,args.candidate_id,config['remote'],args.module,args.function,args.contract,args.dataset)
         elif args.action=='adapter-budget':
             if not all((args.report,args.module,args.function)):parser.error('adapter-budget requires --report, --module and --function')
             from .adapter_repair import failure_context
@@ -322,6 +329,8 @@ def main(argv):
             result=store.verify(json.loads((store.root/args.candidate_id/'candidate.json').read_text(encoding='utf-8')))
         else:result=[json.loads(path.read_text(encoding='utf-8')) for path in sorted(store.root.glob('*/candidate.json'))]
         if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
+        elif args.action=='adapter-evaluate':
+            print('候选指标评测: '+result['status']+'\n报告: '+result['report_path']+'\n仅开发验证；未注册能力或采用Agent。')
         elif args.action=='adapter-budget':
             print('修复调用预算: '+str(result['llm_calls_limit'])+'\n已占用: '+str(result['occupied_calls'])+'\n结果不明: '+str(result['unsettled_calls'])+'\n账面剩余: '+str(result['remaining_calls'])+'\n新调用预算门槛: '+('可准入' if result['new_calls_authorized'] else '未通过')+'\n范围: 仅此适配器修复谱系；全Agent统一预算未验证')
         elif args.action=='adapter-repair':
