@@ -351,3 +351,7 @@
 - readiness新增suggested_actions结构化argv、原因、用户值要求及executed=false。缺预算且任务可实现/无待审或不确定请求时提供budget占位命令；已有预算且全部条件满足才提供prepare；未结算预留提供runs查询，阻塞任务提供show。保留自定义sessions/run-store/config路径，不执行建议。
 - 10项readiness/shell测试通过（.215秒），实际Windows命令显示正确会话的budget/show下一步。首次回归暴露新增函数内import遮蔽全局subprocess造成异常路径错误，已移除局部import并重跑通过。
 - 只读本地检查，无API/SSH/GPU；配置可用不证明远端实时状态、任务效果或上线。真实预算缺失与完整上线门槛仍未解决。
+## CLI顶层任务入口（2026-10-10）
+
+- 修正顶层无参数/-h/--help仍由早期mock runner提供说明的问题，展示实际training start/list/readiness/watch、单样本/批量test、预算和注册前提，列出实际工具入口并说明通用训练范围尚不完整。training无动作显示新任务CLI帮助；旧training --task入口保持兼容。
+- 11项CLI帮助/任务shell/启动路径测试通过（.957秒），Windows vision-rsi.cmd --help实际成功。无配置读取、API/SSH/GPU或任务状态修改。安装包探针加入新CLI测试但未重建；完整上线目标仍未完成。

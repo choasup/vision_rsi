@@ -768,3 +768,6 @@ checkpoint CPU预检进一步检查每rank CPU/CUDA RNG字段必须是非空的�
 `study compare` 每个已核验的实验对包含 `resource_comparison`：展示 baseline/candidate 的已结算 GPU 小时、已记录动作耗时及实验规划 Token，并计算 candidate 减 baseline 的差值。任何未结算、未知、非法或不完整值都显示为 null，不按零处理；LLM 成本范围不同也会标记不完整。
 
 AP 比较完整性与成本完整性分别显示：`comparison_complete` 不代表成本可比，请同时查看 `observed_costs_complete` 及缺失证据。这些是观测成本，尚非固定 CPU/总耗时/总 Token/费用预算下的效率证明；需求澄清和候选生成成本不包含在实验规划 Token 中。`equal_resource_budgets_verified` 和 `rsi_efficiency_verified` 仍为 false，不自动采用候选。
+# CLI 入口
+
+运行 `vision-rsi.cmd` 或 `vision-rsi.cmd --help` 查看实际任务工作流；安装版使用 `python -m vision_rsi --help`。不带动作的 `training` 显示需求会话和执行命令帮助。顶层帮助明确区分真实 training/test 流程与旧 run/demo/compare 合成演示，具体能力以任务适配器和已注册版本为准。
