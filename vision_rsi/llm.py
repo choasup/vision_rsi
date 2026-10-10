@@ -73,6 +73,9 @@ class OpenAICompatibleClient:
             raise ValueError('LLM base_url must use HTTPS')
         parts.port  # Validate port syntax before reserving any caller budget.
         if not isinstance(self.config.get('model'),str) or not self.config['model'].strip():raise ValueError('LLM model ID is missing')
+        if 'usage_ledger' in self.config:
+            from .llm_usage import ledger_path
+            ledger_path(self.config['usage_ledger'])
 
     def complete(self, messages, max_tokens=128):
         self.validate_config()
@@ -91,6 +94,24 @@ class OpenAICompatibleClient:
                           data=encoded,
                           headers={'Authorization': 'Bearer ' + key,
                                    'Content-Type': 'application/json'})
+        ledger=None
+        if 'usage_ledger' in self.config:
+            from .llm_usage import UsageLedger
+            ledger=UsageLedger(self.config['usage_ledger'])
+            identity=ledger.reserve(encoded,self.config['model'])
+        try:
+            result=self._response(request)
+        except BaseException:
+            if ledger is not None:
+                try:ledger.finish(identity)
+                except Exception:pass  # Pending remains visibly unknown, never zero.
+            raise
+        if ledger is not None:
+            ledger.finish(identity,result['usage'])
+            result['usage_record_id']=identity
+        return result
+
+    def _response(self,request):
         try:
             with urlopen(request, timeout=60) as response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
