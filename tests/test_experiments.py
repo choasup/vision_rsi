@@ -38,6 +38,22 @@ class ExperimentTests(unittest.TestCase):
         self.runs=MagicMock();self.runs.remaining.return_value=.5
         self.llm={'model':'fixture','base_url':'https://fixture.invalid'}
 
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_not_dispatched_is_durable_and_requires_explicit_new_id(self,client):
+        from vision_rsi.llm import LLMNotDispatched
+        client.return_value.complete.side_effect=LLMNotDispatched('local cap exhausted')
+        folder=self.root/'not-sent'
+        for _ in range(2):
+            with self.assertRaises(LLMNotDispatched):
+                propose_next(self.record,self.runs,self.llm,folder,'same-id')
+        self.assertEqual(client.return_value.complete.call_count,1)
+        with closing(sqlite3.connect(folder/'requests.sqlite3')) as db:
+            self.assertEqual(db.execute('SELECT state,response FROM requests').fetchone(),('not_dispatched',None))
+        client.return_value.complete.side_effect=None
+        client.return_value.complete.return_value={'content':json.dumps(proposal())}
+        result=propose_next(self.record,self.runs,self.llm,folder,'explicit-new-id')
+        self.assertEqual(result['status'],'ready_to_submit')
+
     def test_missing_key_does_not_reserve_method_request(self):
         with patch.dict('os.environ',{'VISION_RSI_UNSET':''}), patch('vision_rsi.llm.urlopen') as http:
             config=dict(self.llm,api_key_env='VISION_RSI_UNSET')

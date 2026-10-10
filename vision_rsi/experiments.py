@@ -42,7 +42,7 @@ def compile_plan(parent,record,proposal,remaining,root,research_brief=None):
 
 
 def propose_next(record,runs,llm,root,request_id,research_brief=None):
-    from .llm import OpenAICompatibleClient
+    from .llm import OpenAICompatibleClient, LLMNotDispatched
     if not isinstance(request_id,str) or not re.fullmatch('[A-Za-z0-9_-]{1,100}',request_id):raise ValueError('Invalid experiment request ID')
     if research_brief is not None and (not isinstance(research_brief,str) or not 1<=len(research_brief)<=6000):raise ValueError('Invalid strategy research brief')
     if record['status']!='completed' or record['actual_gpu_hours'] is None:raise ValueError('Collect and settle a completed experiment before proposing the next')
@@ -66,6 +66,7 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None):
         row=db.execute('SELECT context,state,response FROM requests WHERE id=?',(request_id,)).fetchone()
         if row:
             if json.loads(row[0])!=context:raise ValueError('Experiment request context changed')
+            if row[1]=='not_dispatched':raise LLMNotDispatched('Experiment request was not dispatched; explicit retry requires a new request ID')
             if row[1]!='responded':raise RuntimeError('Uncertain experiment API response; no automatic retry')
             response=json.loads(row[2])
         else:
@@ -88,7 +89,11 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None):
             client=OpenAICompatibleClient(settings)
             client.validate_config()
             with db:db.execute('INSERT INTO requests VALUES (?,?,?,NULL)',(request_id,json.dumps(context),'reserved'))
-            response=client.complete([{'role':'system','content':instruction},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=2048)
+            try:
+                response=client.complete([{'role':'system','content':instruction},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=2048)
+            except LLMNotDispatched:
+                with db:db.execute('UPDATE requests SET state=? WHERE id=?',('not_dispatched',request_id))
+                raise
             with db:db.execute('UPDATE requests SET state=?,response=? WHERE id=?',('responded',json.dumps(response),request_id))
         folder=root/request_id;folder.mkdir(exist_ok=True);atomic_json(folder/'response.json',response)
         saved=folder/'experiment.json'

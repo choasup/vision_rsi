@@ -17,6 +17,23 @@ class CampaignTests(unittest.TestCase):
     def advance(self,**kwargs):
         return advance(self.session,self.config,self.root/'campaigns',self.root/'runs',**kwargs)
 
+    @patch('vision_rsi.campaign.execute')
+    @patch('vision_rsi.campaign.available')
+    def test_known_unsent_pauses_until_explicit_resume(self,available,execute):
+        from vision_rsi.llm import LLMNotDispatched
+        available.return_value=[{'id':'proposal-0','kind':'propose_experiment','estimated_cost':1,'expected_gain':0,'uncertainty':1}]
+        execute.side_effect=LLMNotDispatched('local admission refused')
+        with self.assertRaises(LLMNotDispatched):self.advance(steps=1)
+        paused=self.advance(steps=1)
+        self.assertEqual(paused['status'],'action_not_dispatched')
+        self.assertTrue(paused['paused']);self.assertEqual(execute.call_count,1)
+        self.assertEqual(paused['intent']['tool_attempts'][0]['status'],'not_dispatched')
+        resumed=self.advance(control='resume')
+        self.assertEqual(resumed['intent']['explicit_retry'],1)
+        self.assertFalse(resumed['paused'])
+        with self.assertRaises(LLMNotDispatched):self.advance(steps=1)
+        self.assertEqual(execute.call_count,2)
+
     @patch('vision_rsi.campaign.choose')
     @patch('vision_rsi.campaign.submit')
     @patch('vision_rsi.campaign.prepare')

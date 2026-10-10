@@ -100,6 +100,8 @@ def execute(action,state,session,config,folder,runs):
         from .experiments import propose_next
         record=runs.get(state['run_id'])
         request_id='experiment-'+state['campaign_id'][:24]+'-'+str(state.get('proposals_attempted',0))
+        retry=state.get('intent',{}).get('explicit_retry',0)
+        if retry:request_id+='-retry-'+str(retry)
         brief=(state.get('intent') or {}).get('decision',{}).get('research_brief')
         return propose_next(record,runs,config['llm'],folder/'experiments',request_id,research_brief=brief)
     if kind=='analyze':
@@ -167,7 +169,7 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
         comparable=dict(saved_binding)
         comparable.setdefault('research_rounds',0);comparable.setdefault('research_model',None)
         comparable.pop('control_sources',None)  # Legacy source snapshots remain in the immutable binding.
-        if not control and binding!=comparable:raise ValueError('Current task/config differs from selected campaign; observe or pause it, but do not execute with changed requirements')
+        if control not in ('show','pause') and binding!=comparable:raise ValueError('Current task/config differs from selected campaign; observe or pause it, but do not execute with changed requirements')
         binding=saved_binding
     control_sources={path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(Path(__file__).parent.glob('*.py'))}
     campaign_id=digest(binding);folder=Path(root)/session['session_id']/campaign_id;folder.mkdir(parents=True,exist_ok=True)
@@ -181,6 +183,11 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                    'status':'new','history':[],'intent':None,'git_revision':revision(),'policy_adopted':False,'research_rounds':research_rounds}
         if control:
             if control not in ('pause','resume','show'):raise ValueError('Unknown controller command')
+            if control=='resume' and (state.get('intent') or {}).get('status')=='not_dispatched':
+                intent=state['intent']
+                intent['explicit_retry']=intent.get('explicit_retry',0)+1
+                intent['status']='reserved'
+                state['status']='retry_authorized'
             if control!='show':state['paused']=control=='pause';atomic_json(path,state)
             return dict(state,state_path=str(path.resolve()))
         runs=TrainingRuns(run_store)
@@ -213,6 +220,13 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                 tool_started=time.monotonic()
                 try:result=execute(intent['action'],state,session,config,folder,runs)
                 except Exception as error:
+                    from .llm import LLMNotDispatched
+                    if isinstance(error,LLMNotDispatched) and intent['action']['kind']=='propose_experiment':
+                        attempt.update(status='not_dispatched',elapsed_seconds=time.monotonic()-tool_started)
+                        intent['status']='not_dispatched'
+                        state.update(status='action_not_dispatched',paused=True,last_error=str(error))
+                        atomic_json(path,state)
+                        raise
                     attempt.update(status='uncertain',elapsed_seconds=time.monotonic()-tool_started)
                     state['status']='action_uncertain';state['last_error']=type(error).__name__+': '+str(error)
                     atomic_json(path,state);raise
