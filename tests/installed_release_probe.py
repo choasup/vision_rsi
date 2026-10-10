@@ -40,7 +40,8 @@ def main():
             checked[str(relative)] = expected
         commands = [['--help'], ['training', 'memory', '--help'], ['test', '--help'],
                     ['training', 'readiness', '--help'], ['evaluate-events', '--help'],
-                    ['experiment-request', '--help']]
+                    ['experiment-request', '--help'], ['training','research-status','--help'],
+                    ['training','research-watch','--help']]
         for command in commands:
             result = subprocess.run([sys.executable, '-X', 'utf8', '-m', 'vision_rsi']+command,
                                     capture_output=True, text=True, encoding='utf-8', timeout=30)
