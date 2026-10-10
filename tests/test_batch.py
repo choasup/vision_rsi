@@ -10,6 +10,8 @@ from vision_rsi.batch import batch,input_rows,LOCK_MARKER
 from vision_rsi.campaign import lease
 from vision_rsi.capability import Capabilities
 
+EXAMPLES = Path(__file__).resolve().parents[1] / 'examples'
+
 class FixtureRegistry:
     def __init__(self):self.calls=[]
     def resolve_version(self,task,version):return version or 'fixture-v1'
@@ -105,8 +107,8 @@ batch(Pause(),'fixture',json.loads(Path(sys.argv[2]).read_text()),sys.argv[3])
         with tempfile.TemporaryDirectory() as root:
             root=Path(root);registry=Capabilities(root/'registry')
             try:
-                trained=registry.train('examples/toy-task.json')
-                valid=root/'good.json';valid.write_text(Path('examples/toy-input.json').read_text())
+                trained=registry.train(EXAMPLES/'toy-task.json')
+                valid=root/'good.json';valid.write_text((EXAMPLES/'toy-input.json').read_text())
                 invalid=root/'bad.json';invalid.write_text('{"image":[]}')
                 manifest=root/'samples.jsonl';manifest.write_text(json.dumps({'sample_id':'good','input':'good.json'})+'\n'+json.dumps({'sample_id':'bad','input':'bad.json'})+'\n')
                 rows=input_rows(manifest=manifest)
@@ -128,8 +130,8 @@ batch(Pause(),'fixture',json.loads(Path(sys.argv[2]).read_text()),sys.argv[3])
         with tempfile.TemporaryDirectory() as root:
             root=Path(root);registry=Capabilities(root/'registry')
             try:
-                registry.train('examples/toy-task.json')
-                rows=[{'sample_id':'one','input':str(Path('examples/toy-input.json').resolve())}]
+                registry.train(EXAMPLES/'toy-task.json')
+                rows=[{'sample_id':'one','input':str((EXAMPLES/'toy-input.json').resolve())}]
                 batch(registry,'bright-object',rows,root/'results')
                 state=json.loads((root/'results'/'batch-state.json').read_text())
                 (root/'results'/state['items']['one']['output_file']).write_text('{}')

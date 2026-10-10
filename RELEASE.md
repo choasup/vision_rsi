@@ -311,3 +311,10 @@
 - evaluate-events 新增 --contract，严格绑定 event_micro_f1/maximize、精确协议ID、显式IoU/F1阈值及逐样本输出schema，拒绝冲突覆盖，记录原始合同SHA256。未绑定模式沿用原默认值。
 - 7项测试通过，含合同阈值改变实际匹配结果、拒绝错误协议/非有限阈值/错误输出，以及既有CLI/匹配测试。实际Windows命令链绑定合成合同成功，证据 runs/events-task-bound.json 和 runs/events-task-contract.json。
 - 合同文件评测字段绑定不证明会话接受状态、训练预算、视频采样或模型质量；尚未集成视频训练、能力注册和安装包重建。完整上线目标仍未完成。
+## 当前代码整体回归与隔离安装（2026-10-10）
+
+- 产品源码版本5665bd11d29545673545d821d941f622d6cf295b，源码全量354项测试通过（118.454秒），日志 runs/release-current-full-tests.log。
+- 当前wheel SHA256为4fc7fb4d094b239112c81b27d982121d8dfd47338be35f2b3e0b4a915ccaa2fb，文件 runs/release-current/wheelhouse/vision_rsi_agent-0.1.0.dev1-py3-none-any.whl。新venv离线按哈希安装依赖、安装本包、pip check通过。
+- 仓库外实际导入site-packages，所有Python/HTML文件集合及SHA与当前源码一致，控制器identity为source-sha256:3ddeed2090fcb5a035041bf146bbc02f5c064343c6344898295c7712dc1a03ca。161项安装回归及5个模块CLI帮助入口通过，含新增readiness、事件评测、checkpoint恢复和批处理。
+- 首轮安装回归发现两个批处理测试的相对样例路径错误，已改为基于__file__定位并重跑161项通过；原失败证据保留为installed-tests-first-failure.log及installed-evidence-first-failure.json。修正仅测试路径，不改变wheel内容。成功证据 runs/release-current/installed-evidence.json 和 installed-tests.log。
+- 本轮无真实API/SSH/GPU调用。仅证明本机当前Windows/Python安装与回归；不证明新机器兼容性、真实训练/恢复、COCO AP60、视频训练/推理或研究策略提升，完整上线门槛仍未完成。
