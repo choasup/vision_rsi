@@ -4,6 +4,7 @@ import math
 from pathlib import Path, PurePosixPath
 import sqlite3
 import time
+from urllib.parse import quote
 
 from .remote import deploy_training, job_request
 from .runner import digest
@@ -16,8 +17,14 @@ def remote_identity(remote):
 
 
 class TrainingRuns:
-    def __init__(self,root):
-        self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)
+    def __init__(self,root,read_only=False):
+        self.root=Path(root)
+        if read_only:
+            path=self.root/'training-runs.sqlite3'
+            if not path.is_file():raise ValueError('Training ledger missing')
+            self.db=sqlite3.connect('file:'+quote(str(path.resolve()).replace('\\','/'),safe='/:')+'?mode=ro',uri=True,timeout=10)
+            return
+        self.root.mkdir(parents=True,exist_ok=True)
         self.db=sqlite3.connect(self.root/'training-runs.sqlite3',timeout=10)
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('CREATE TABLE IF NOT EXISTS budgets(session TEXT PRIMARY KEY,gpu_hours REAL NOT NULL)')

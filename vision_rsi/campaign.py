@@ -4,6 +4,7 @@ import json
 import hashlib
 import os
 import re
+import time
 from pathlib import Path
 
 from .runner import atomic_json,digest,revision
@@ -181,18 +182,26 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                 if intent is None:
                     actions=available(state)
                     if not actions:break
+                    choice_started=time.monotonic()
                     decision,evidence=choose(state,actions,steps-index,policy,config['remote'])
+                    policy_elapsed=time.monotonic()-choice_started
                     if decision['action_id'] is None:state['status']='policy_stopped';atomic_json(path,state);break
                     action=next(row for row in actions if row['id']==decision['action_id'])
                     intent={'action':action,'decision':decision,'policy_evidence':evidence,'status':'reserved',
-                            'control_sources':control_sources,'git_revision':revision()}
+                            'control_sources':control_sources,'git_revision':revision(),'policy_elapsed_seconds':policy_elapsed,
+                            'created_at_unix':time.time(),'tool_attempts':[]}
                     state['intent']=intent;atomic_json(path,state)
                 # Only fixed, idempotent tools may resume an interrupted intent.
                 # submit reconciles the existing durable Training run ID.
+                attempt={'started_at_unix':time.time(),'status':'started'}
+                intent.setdefault('tool_attempts',[]).append(attempt);atomic_json(path,state)
+                tool_started=time.monotonic()
                 try:result=execute(intent['action'],state,session,config,folder,runs)
                 except Exception as error:
+                    attempt.update(status='uncertain',elapsed_seconds=time.monotonic()-tool_started)
                     state['status']='action_uncertain';state['last_error']=type(error).__name__+': '+str(error)
                     atomic_json(path,state);raise
+                attempt.update(status='completed',elapsed_seconds=time.monotonic()-tool_started)
                 project(state,intent['action'],result)
                 state['history'].append(dict(intent,status='completed',result=result))
                 state['intent']=None;state.pop('last_error',None);atomic_json(path,state)

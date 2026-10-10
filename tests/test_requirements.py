@@ -83,6 +83,14 @@ class RequirementsTests(unittest.TestCase):
         self.assertTrue(any('解析失败' in x for x in result['versions'][-1]['issues']))
 
     @patch('vision_rsi.contracts.OpenAICompatibleClient')
+    def test_null_or_array_response_keeps_previous_contract_and_clears_known_request(self,client):
+        for content in (None,'[]'):
+            client.return_value.complete.return_value={'content':content}
+            result=self.store.clarify(self.session,{'model':'fixture'},'Continue')
+            self.assertEqual(result['versions'][-1]['contract'],self.contract)
+            self.assertFalse(result['pending_request'])
+
+    @patch('vision_rsi.contracts.OpenAICompatibleClient')
     def test_summary_shows_diff_without_requiring_schema_edits(self,client):
         from vision_rsi.training_cli import summary
         proposed=copy.deepcopy(self.contract);proposed['acceptance']['threshold']=40

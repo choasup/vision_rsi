@@ -44,6 +44,9 @@ class CampaignTests(unittest.TestCase):
         pending=json.loads(path.read_text());self.assertEqual(pending['intent']['action']['id'],'submit-1')
         resumed=self.advance();self.assertEqual(resumed['history'][-1]['action']['id'],'submit-1')
         self.assertIsNone(resumed['intent']);self.assertEqual(submit.call_args_list[0].args[0],submit.call_args_list[1].args[0])
+        attempts=resumed['history'][-1]['tool_attempts']
+        self.assertEqual([attempt['status'] for attempt in attempts],['uncertain','completed'])
+        self.assertTrue(all(attempt['elapsed_seconds']>=0 for attempt in attempts))
 
     @patch('vision_rsi.campaign.prepare')
     def test_blocked_no_repeated_preflight_and_pause(self,prepare):

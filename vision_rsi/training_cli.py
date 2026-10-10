@@ -69,7 +69,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','accept','reject','list','build','prepare','advance','watch','campaigns','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','accept','reject','list','build','prepare','advance','watch','campaigns','audit','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -99,6 +99,19 @@ def main(argv):
         config=json.loads(Path(args.config).read_text(encoding='utf-8'))
         return store.clarify(session,config['llm'],message)
     try:
+        if args.action=='audit':
+            from .campaign_audit import audit
+            if not args.session_id or not args.campaign_id:parser.error('audit requires --session-id and --campaign-id')
+            result=audit(args.session_id,args.campaign_id,args.campaign_store,args.run_store)
+            if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
+            else:
+                print('Campaign: '+result['campaign_id'])
+                print('GPU小时: 已结算 '+str(result['settled_gpu_hours'])+'，仍预留 '+str(result['held_gpu_hours']))
+                print('LLM tokens: 已知 '+str(result['known_llm_tokens'])+'，记录完整 '+str(result['llm_usage_complete']))
+                print('已核验真实box AP: '+str(result['best_verified_real_box_AP']))
+                for item in result['missing_evidence']:print('- '+item)
+                print('单流程证据审计；未证明RSI提升，未采用候选。')
+            return
         if args.action=='campaigns':
             from .campaign import list_campaigns
             if not args.session_id:parser.error('campaigns requires --session-id')
