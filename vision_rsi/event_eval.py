@@ -83,7 +83,33 @@ def matched_count(predicted, annotated, threshold):
     return len(pm)
 
 
-def evaluate(ground_truth, predictions, iou_threshold=0.5, threshold=0.9):
+def evaluate(ground_truth, predictions, iou_threshold=None, threshold=None, contract_path=None):
+    contract_hash = None
+    contract = None
+    if contract_path is not None:
+        from .contracts import validate_schema_definition
+        raw_contract = Path(contract_path).read_bytes()
+        contract = json.loads(raw_contract)
+        acceptance = contract.get('acceptance') if isinstance(contract, dict) else None
+        if (not isinstance(acceptance, dict) or acceptance.get('metric') != 'event_micro_f1'
+                or acceptance.get('direction') != 'maximize'
+                or acceptance.get('evaluation_protocol') != PROTOCOL):
+            raise ValueError('Contract must specify event_micro_f1/maximize and exact protocol')
+        bound_iou, bound_threshold = acceptance.get('iou_threshold'), acceptance.get('threshold')
+        if (not number(bound_iou, 0, 1) or bound_iou == 0
+                or not number(bound_threshold, 0, 1)):
+            raise ValueError('Contract requires explicit IoU and F1 thresholds')
+        if ((iou_threshold is not None and iou_threshold != bound_iou)
+                or (threshold is not None and threshold != bound_threshold)):
+            raise ValueError('CLI thresholds cannot override the task contract')
+        iou_threshold, threshold = bound_iou, bound_threshold
+        schema = contract.get('output_schema')
+        validate_schema_definition(schema)
+        if schema.get('type') != 'object' or 'events' not in schema.get('properties', {}):
+            raise ValueError('Contract output must define an events property')
+        contract_hash = hashlib.sha256(raw_contract).hexdigest()
+    iou_threshold = 0.5 if iou_threshold is None else iou_threshold
+    threshold = 0.9 if threshold is None else threshold
     if not number(iou_threshold, 0, 1) or iou_threshold == 0 or not number(threshold, 0, 1):
         raise ValueError('Require 0 < IoU <= 1 and 0 <= F1 threshold <= 1')
     raw_gt, raw_pred = Path(ground_truth).read_bytes(), Path(predictions).read_bytes()
@@ -93,6 +119,10 @@ def evaluate(ground_truth, predictions, iou_threshold=0.5, threshold=0.9):
             any(not isinstance(x, str) or not x.strip() for x in labels) or len(set(labels)) != len(labels)):
         raise ValueError('Require a unique nonempty label vocabulary')
     gt, pred = samples(gt_doc, labels), samples(pred_doc, labels)
+    if contract is not None:
+        from .contracts import validate_schema
+        for events in pred.values():
+            validate_schema(contract['output_schema'], {'events': events})
     if set(gt) != set(pred):
         raise ValueError('Prediction sample coverage must match exactly')
     positives = sum(map(len, gt.values()))
@@ -107,7 +137,8 @@ def evaluate(ground_truth, predictions, iou_threshold=0.5, threshold=0.9):
             'sample_count': len(gt), 'tp': tp, 'fp': count - tp, 'fn': positives - tp,
             'precision': precision, 'recall': recall, 'event_micro_f1': f1,
             'metric_threshold_met': f1 >= threshold, 'capability_registered': False,
-            'provenance_verified': False,
+            'provenance_verified': False, 'contract_bound': contract is not None,
+            'contract_sha256': contract_hash,
             'ground_truth_sha256': hashlib.sha256(raw_gt).hexdigest(),
             'predictions_sha256': hashlib.sha256(raw_pred).hexdigest()}
 
@@ -117,11 +148,12 @@ def main(argv=None):
     parser.add_argument('--ground-truth', required=True)
     parser.add_argument('--predictions', required=True)
     parser.add_argument('--output', required=True)
-    parser.add_argument('--iou-threshold', type=float, default=0.5)
-    parser.add_argument('--threshold', type=float, default=0.9)
+    parser.add_argument('--iou-threshold', type=float)
+    parser.add_argument('--threshold', type=float)
+    parser.add_argument('--contract', help='Bind exact task acceptance and output schema')
     args = parser.parse_args(argv)
     try:
-        report = evaluate(args.ground_truth, args.predictions, args.iou_threshold, args.threshold)
+        report = evaluate(args.ground_truth, args.predictions, args.iou_threshold, args.threshold, args.contract)
         atomic_json(Path(args.output), report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
     except (ValueError, TypeError, OSError) as error:

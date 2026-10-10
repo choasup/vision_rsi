@@ -745,3 +745,5 @@ checkpoint CPU预检进一步检查每rank CPU/CUDA RNG字段必须是非空的�
 固定协议 `vision-rsi/event_micro_f1/v1`：同一样本、同类别、时间 IoU 达标的事件进行最大数量一对一匹配，汇总 TP/FP/FN 后计算 micro-F1（0..1）。不使用置信度或自动过滤；重复预测计入 FP。至少有一个真实标注事件，每份文件最多 10000 样本，每样本最多 1000 事件，超限拒绝而不截断。
 
 输出记录原始文件 SHA256 和 `metric_threshold_met`。这是独立协议的评分工具，尚未接入视频训练适配器或能力注册；不验证标注来源、数据划分或真实模型质量。
+
+可追加 `--contract <任务接口JSON路径>` 绑定验收定义。此时 `acceptance` 必须明确包含 `metric="event_micro_f1"`、`direction="maximize"`、`evaluation_protocol="vision-rsi/event_micro_f1/v1"`、`iou_threshold`（大于0且不超过1）和 `threshold`（0..1）。评测使用合同中的两个阈值，拒绝冲突的命令行覆盖；每个预测样本的 `{ "events": [...] }` 还必须符合合同 `output_schema`。结果保存原始合同 SHA256。这里校验的是评测所需的合同字段，不验证 training 会话是否已接受该版本、视频采样策略或任务预算，也不自动执行训练。

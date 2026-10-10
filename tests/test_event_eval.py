@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from vision_rsi.event_eval import evaluate, matched_count
+from vision_rsi.event_eval import PROTOCOL, evaluate, matched_count
 
 
 def event(start, end, label='action'):
@@ -73,3 +73,48 @@ class EventEvaluationTests(unittest.TestCase):
         self.assertEqual(matched_count([event(1, 2)], [event(0, 1)], .5), 0)
         self.assertEqual(matched_count([event(0, 1, 'other')], [event(0, 1)], .5), 0)
         self.assertEqual(matched_count([event(0, 1e308)], [event(0, 1e308)], 1), 1)
+
+    def contract(self):
+        return {'acceptance': {'metric': 'event_micro_f1', 'direction': 'maximize',
+                               'evaluation_protocol': PROTOCOL, 'iou_threshold': .75,
+                               'threshold': .95},
+                'output_schema': {'type': 'object', 'properties': {'events': {
+                    'type': 'array', 'items': {'type': 'object', 'properties': {
+                        'label': {'type': 'string', 'enum': ['action']},
+                        'start_seconds': {'type': 'number'}, 'end_seconds': {'type': 'number'}},
+                        'required': ['label', 'start_seconds', 'end_seconds']}}},
+                    'required': ['events'], 'additionalProperties': False}}
+
+    def test_task_binding_uses_frozen_thresholds(self):
+        gt = self.write('gt.json', [event(0, 2)])
+        pred = self.write('pred.json', [event(0, 1)])
+        contract = self.root / 'contract.json'
+        contract.write_text(json.dumps(self.contract()), encoding='utf-8')
+        report = evaluate(gt, pred, contract_path=contract)
+        self.assertTrue(report['contract_bound'])
+        self.assertEqual(report['iou_threshold'], .75)
+        self.assertEqual(report['threshold'], .95)
+        self.assertEqual(report['tp'], 0)
+        self.assertFalse(report['metric_threshold_met'])
+        self.assertEqual(len(report['contract_sha256']), 64)
+        for kwargs in ({'iou_threshold': .5}, {'threshold': .5}):
+            with self.assertRaisesRegex(ValueError, 'override'):
+                evaluate(gt, pred, contract_path=contract, **kwargs)
+
+    def test_task_binding_rejects_wrong_protocol_and_output(self):
+        gt = self.write('gt.json', [event(0, 1)])
+        pred = self.write('pred.json', [event(0, 1)])
+        path = self.root / 'contract.json'
+        for field, value in [('metric', 'AP'), ('direction', 'minimize'),
+                             ('evaluation_protocol', 'unspecified'), ('iou_threshold', None),
+                             ('threshold', float('nan'))]:
+            contract = self.contract()
+            contract['acceptance'][field] = value
+            path.write_text(json.dumps(contract), encoding='utf-8')
+            with self.assertRaises(ValueError):
+                evaluate(gt, pred, contract_path=path)
+        contract = self.contract()
+        contract['output_schema']['properties']['events']['items']['properties']['label']['enum'] = ['other']
+        path.write_text(json.dumps(contract), encoding='utf-8')
+        with self.assertRaises(ValueError):
+            evaluate(gt, pred, contract_path=path)
