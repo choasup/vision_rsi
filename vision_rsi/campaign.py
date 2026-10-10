@@ -33,7 +33,7 @@ def list_campaigns(session_id,root='runs/campaigns'):
 
 
 @contextmanager
-def lease(path):
+def lease(path,owner='Training controller'):
     with path.open('a+b') as file:
         file.seek(0,2)
         if not file.tell():file.write(b'0');file.flush()
@@ -41,11 +41,11 @@ def lease(path):
         if os.name=='nt':
             import msvcrt
             try:msvcrt.locking(file.fileno(),msvcrt.LK_NBLCK,1)
-            except OSError:raise RuntimeError('Training controller is already active') from None
+            except OSError:raise RuntimeError(owner+' is already active') from None
         else:
             import fcntl
             try:fcntl.flock(file.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
-            except BlockingIOError:raise RuntimeError('Training controller is already active') from None
+            except BlockingIOError:raise RuntimeError(owner+' is already active') from None
         try:yield
         finally:
             if os.name=='nt':file.seek(0);msvcrt.locking(file.fileno(),msvcrt.LK_UNLCK,1)

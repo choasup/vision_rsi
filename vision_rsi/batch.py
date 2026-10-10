@@ -1,11 +1,13 @@
 """Resumable inference batches pinned to one validated capability version."""
 import hashlib
 import json
-import os
 import subprocess
 from pathlib import Path
 
 from .runner import atomic_json
+from .campaign import lease
+
+LOCK_MARKER=b'vision-rsi-batch-os-lease-v1\n'
 
 
 def digest_bytes(value): return hashlib.sha256(value).hexdigest()
@@ -41,8 +43,16 @@ def batch(registry, task_id, rows, output_dir, version=None, resume=False):
     version=registry.resolve_version(task_id,version)
     folder=Path(output_dir).resolve();folder.mkdir(parents=True,exist_ok=True)
     lock=folder/'batch.lock'
-    fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY);os.close(fd)
     try:
+        with lock.open('xb') as file:file.write(LOCK_MARKER)
+    except FileExistsError:
+        try:
+            with lock.open('rb') as file:marker=file.read(len(LOCK_MARKER)+1)
+        except PermissionError:
+            raise RuntimeError('Batch inference is already active or lock is unreadable') from None
+        if marker!=LOCK_MARKER:
+            raise RuntimeError('Legacy or invalid batch.lock; verify the previous process has stopped before removing it')
+    with lease(lock,owner='Batch inference'):
         identity={'task_id':task_id,'version':version,'rows':rows}
         path=folder/'batch-state.json'
         if path.exists():
@@ -75,4 +85,3 @@ def batch(registry, task_id, rows, output_dir, version=None, resume=False):
         summary={'task_id':task_id,'capability_version':version,'total':len(rows),'succeeded':sum(v['status']=='succeeded' for v in state['items'].values()),'failed':sum(v['status']=='failed' for v in state['items'].values()),'output_dir':str(folder)}
         atomic_json(folder/'summary.json',summary)
         return summary
-    finally: lock.unlink()

@@ -1,12 +1,78 @@
 import json
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
+import time
 import unittest
 from unittest.mock import patch
-from vision_rsi.batch import batch,input_rows
+from vision_rsi.batch import batch,input_rows,LOCK_MARKER
+from vision_rsi.campaign import lease
 from vision_rsi.capability import Capabilities
 
+class FixtureRegistry:
+    def __init__(self):self.calls=[]
+    def resolve_version(self,task,version):return version or 'fixture-v1'
+    def infer(self,task,path,version):
+        self.calls.append(Path(path).name)
+        return {'output':{'fixture_text':Path(path).read_text()},'acceptance':{'fixture':True}}
+
 class BatchTests(unittest.TestCase):
+    def test_actual_process_death_releases_lock_and_resume_skips_saved_success(self):
+        with tempfile.TemporaryDirectory() as root:
+            root=Path(root);first=root/'first.txt';second=root/'second.txt'
+            first.write_text('first fixture');second.write_text('second fixture')
+            rows=[{'sample_id':'first','input':str(first)},{'sample_id':'second','input':str(second)}]
+            rows_file=root/'rows.json';rows_file.write_text(json.dumps(rows))
+            ready=root/'ready';output=root/'results'
+            program='''import json,sys,time
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from test_batch import FixtureRegistry
+from vision_rsi.batch import batch
+class Pause(FixtureRegistry):
+ def infer(self,task,path,version):
+  if Path(path).name=='second.txt':
+   Path(sys.argv[4]).write_text('second inference entered')
+   time.sleep(60)
+  return super().infer(task,path,version)
+batch(Pause(),'fixture',json.loads(Path(sys.argv[2]).read_text()),sys.argv[3])
+'''
+            child=subprocess.Popen([sys.executable,'-c',program,str(Path(__file__).parent.resolve()),str(rows_file),str(output),str(ready)],
+                                   stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            try:
+                deadline=time.monotonic()+10
+                while not ready.exists() and child.poll() is None and time.monotonic()<deadline:time.sleep(.02)
+                self.assertTrue(ready.exists(),'Child failed before second inference')
+                child.kill();child.communicate(timeout=5)
+                state=json.loads((output/'batch-state.json').read_text())
+                self.assertEqual(set(state['items']),{'first'})
+                registry=FixtureRegistry()
+                result=batch(registry,'fixture',rows,output,resume=True)
+                self.assertEqual(result['succeeded'],2)
+                self.assertEqual(registry.calls,['second.txt'])
+                self.assertEqual((output/'batch.lock').read_bytes(),LOCK_MARKER)
+                with self.assertRaisesRegex(ValueError,'capability version changed'):
+                    batch(registry,'fixture',rows,output,version='fixture-v2',resume=True)
+            finally:
+                if child.poll() is None:child.kill()
+                child.communicate(timeout=5)
+
+    def test_active_os_lease_and_ambiguous_legacy_lock_are_not_removed(self):
+        with tempfile.TemporaryDirectory() as root:
+            root=Path(root);output=root/'results';output.mkdir();lock=output/'batch.lock'
+            registry=FixtureRegistry();rows=[{'sample_id':'one','input':str(root/'unused')}]
+            lock.write_bytes(b'')
+            with self.assertRaisesRegex(RuntimeError,'Legacy or invalid'):
+                batch(registry,'fixture',rows,output)
+            self.assertEqual(lock.read_bytes(),b'');self.assertEqual(registry.calls,[])
+            lock.write_bytes(LOCK_MARKER)
+            with lease(lock):
+                with self.assertRaisesRegex(RuntimeError,'Batch inference is already active'):
+                    batch(registry,'fixture',rows,output)
+            self.assertEqual(lock.read_bytes(),LOCK_MARKER)
+            self.assertFalse((output/'batch-state.json').exists())
+
     @patch('vision_rsi.capability.revision',return_value='fixture')
     def test_mixed_failure_resume_and_changed_input(self,_):
         with tempfile.TemporaryDirectory() as root:
