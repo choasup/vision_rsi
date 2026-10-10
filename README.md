@@ -318,7 +318,19 @@ PATH_TO_HARNESS\run.cmd test --version VALIDATED_VERSION --input-dir images --ou
 
 执行固定一个已验收能力版本，逐项保存结果及错误。恢复时校验输入和成功输出哈希，跳过成功项；输入变更或能力版本变化会拒绝混用。可用 `--version` 显式指定原版本。强制终止后若留下 `batch.lock`，确认原进程已退出再移除该锁；正常异常会自动释放锁。尚未提供自动回收孤儿锁。
 
-项目可用 `python -m pip install .` 安装，入口为 `vision-rsi`。当前 0.1.0.dev1 为开发版本。已验证 wheel 构建、隔离目录安装、从仓库外调用模块、40 项自动测试及 toy CLI 批处理恢复；完整上线门槛见 RELEASE.md。
+项目可用 `python -m pip install .` 安装，入口为 `vision-rsi`。基础控制器不安装训练框架；图片解码使用 `[media]`（Pillow 12.3.0），本地 COCO 评测/资源校验使用 `[coco]`（另含 pycocotools 2.0.11）。远端 torch/torchvision 仍需单独配置。
+
+Windows 可在项目根目录创建隔离环境，无需激活 PowerShell 脚本：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install ".[coco]"
+.\.venv\Scripts\vision-rsi.exe training --help
+```
+
+已在新建 Python 3.12.14 虚拟环境实际安装 `[coco]`，从仓库外启动安装后的 CLI，并通过7项 COCO评测和图片格式校验测试。安装解析到 NumPy2.5.3（传递依赖尚未全量锁定）；这证明隔离安装和小样本评测可用，不证明真实任务达标。
+
+当前 0.1.0.dev1 为开发版本。已验证 wheel 构建、隔离目录安装、从仓库外调用模块、40 项自动测试及 toy CLI 批处理恢复；完整上线门槛见 RELEASE.md。
 
 ## COCO 官方评测入口
 
