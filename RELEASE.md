@@ -507,3 +507,11 @@
 - 客户端新增可选llm.response_format=json_object并在调用前校验，发送response_format对象，研究请求快照同步记录；默认配置不改变，不自动回退或修补无效JSON。修复探针后续显式使用此选项，其实际服务支持尚未再次验证。本轮不增加第二次API。
 - 本轮真实失败不等于修复闭环通过；未训练/未采用/未证明RSI提升，安装包未更新，完整上线目标未完成。
 - JSON选项及研究控制器/未发送规则39项测试通过（11.298秒），覆盖HTTP载荷、无效选项发送前拒绝和请求快照记录一致。未声称服务端JSON格式保证已验证。
+
+## JSON模式真实修复提案的字段歧义（2026-10-10）
+
+- 新独立上限1探针 runs/research-repair-live/631df81e222641e780fc7ab4331b6478 实际调用JSON模式：服务接收并返回合法JSON，reported prompt6303/completion530/total6833 tokens。初始CPU字典输入TypeError再次确认。
+- 修复闭环仍未通过：响应将修复参数放到candidate_arguments而非arguments，协议ValueError拒绝，未创建/执行修复候选、无自动重试。实际模型源码看似修复不能替代执行结果。
+- 根因是planner schema把不同工具示例分别命名candidate_arguments/synthesis_arguments/check_arguments，模型复制了示例字段。现统一顶层arguments，通过tool_argument_shapes按真实工具名描述其内容，显式禁止替代字段；不接受错误字段别名、不自动改写原响应。前两次失败证据保持。
+- 增加实际提示schema断言，不把提示改动当真实闭环通过。本轮无GPU、未训练/采用、安装包未更新，完整上线目标未完成。
+- 39项controller/llm/not_dispatched回归通过（11.405秒）；修正后的统一参数提示尚未再次真实调用。
