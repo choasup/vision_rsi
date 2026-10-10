@@ -9,6 +9,7 @@ from .runner import revision
 
 
 def build(session, root):
+    if session.get('pending_request'):raise ValueError('Resolve unprocessed task requirements before building a new harness')
     if not session['versions']: raise ValueError('No task interface defined')
     latest=session['versions'][-1];contract=latest['contract']
     if latest.get('review_required'):raise ValueError('Review pending requirements changes before building a new harness')

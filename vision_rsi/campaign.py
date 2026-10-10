@@ -158,6 +158,8 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
         research_rounds=saved_binding.get('research_rounds',0);policy=saved_binding.get('policy')
     if research_rounds is None:research_rounds=0
     if isinstance(research_rounds,bool) or not isinstance(research_rounds,int) or not 0<=research_rounds<=10:raise ValueError('Research rounds must be 0..10')
+    if control not in ('show','pause') and session.get('pending_request'):
+        raise ValueError('Resolve unprocessed task requirements before advancing Training')
     if not session['versions']:raise ValueError('Define the Training contract first')
     if not control and session['versions'][-1].get('review_required'):raise ValueError('Review pending requirements changes before advancing Training; active requirements have not been overwritten')
     binding=campaign_binding(session,config,run_store,policy,research_rounds)

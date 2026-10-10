@@ -6,6 +6,7 @@ import io
 import math
 from pathlib import Path
 import subprocess
+import sqlite3
 import sys
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError, URLError
@@ -14,6 +15,10 @@ from urllib.parse import urlsplit
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_REQUEST_BYTES = 8 * 1024 * 1024
 MAX_OUTPUT_TOKENS = 32768
+
+
+class LLMNotDispatched(ValueError):
+    """A local admission failure proven to occur before HTTP dispatch."""
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -102,8 +107,13 @@ class OpenAICompatibleClient:
         ledger=None
         if 'usage_ledger' in self.config:
             from .llm_usage import UsageLedger
-            ledger=UsageLedger(self.config['usage_ledger'],self.config.get('usage_call_limit'))
-            identity=ledger.reserve(encoded,self.config['model'])
+            try:
+                ledger=UsageLedger(self.config['usage_ledger'],self.config.get('usage_call_limit'))
+                identity=ledger.reserve(encoded,self.config['model'])
+            except ValueError as error:
+                raise LLMNotDispatched('LLM request not dispatched: '+str(error)) from None
+            except (OSError,sqlite3.Error):
+                raise LLMNotDispatched('LLM request not dispatched: usage ledger unavailable') from None
         try:
             result=self._response(request)
         except BaseException:

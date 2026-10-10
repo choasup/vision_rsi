@@ -55,9 +55,12 @@ def interactive_action(message,session,args):
 
 
 def summary(result):
-    labels={'clarifying':'需要补充关键信息','task_defined':'任务已明确；执行条件待补充','ready_for_harness':'接口检查通过','requirements_review':'需求变更待核对，原要求保留'}
+    labels={'clarifying':'需要补充关键信息','task_defined':'任务已明确；执行条件待补充','ready_for_harness':'接口检查通过','requirements_review':'需求变更待核对，原要求保留','requirements_not_dispatched':'需求请求未发送；原要求保留'}
     lines=['任务: '+result['task_id'], '会话: '+result['session_id'], '状态: '+labels.get(result['status'],result['status'])]
-    if result.get('pending_request'):
+    if result.get('clarification_not_dispatched'):
+        lines.append('请求在联网前被拒绝，需求文字已保存。解决准入条件后可再次 reply；无需解除不确定 API 请求。')
+        lines.append('新需求尚未整理，Training 与新 harness 暂停执行。')
+    elif result.get('pending_request'):
         lines.append('API 请求未完成保存；不会自动重发。')
         if result.get('pending_request_id'):
             lines.append('请求 ID: '+result['pending_request_id']+'；已保存响应: '+str(result.get('pending_response_count',0)))

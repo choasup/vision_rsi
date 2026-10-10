@@ -8,7 +8,7 @@ import sqlite3
 import uuid
 
 from .capability import task_id
-from .llm import OpenAICompatibleClient
+from .llm import OpenAICompatibleClient,LLMNotDispatched
 
 TYPES = {'image', 'image_list', 'video', 'text'}
 GPU_BUDGET_QUESTION = '首轮真实训练最多允许多少 GPU 小时？'
@@ -186,6 +186,8 @@ class Sessions:
         with self.db() as db:
             row=db.execute('SELECT * FROM sessions WHERE id=?',(session,)).fetchone()
             pending=db.execute("SELECT id,response_ids FROM clarification_requests WHERE session=? AND state='pending' ORDER BY rowid DESC LIMIT 1",(session,)).fetchone()
+            if row and row[4]==2:
+                pending=db.execute("SELECT id,response_ids FROM clarification_requests WHERE session=? AND state='not_dispatched' ORDER BY rowid DESC LIMIT 1",(session,)).fetchone()
             unsettled=[item[0] for item in db.execute("SELECT id FROM clarification_requests WHERE session=? AND state IN ('abandoned','recovered')",(session,))]
         if not row: raise ValueError('Unknown session')
         versions=json.loads(row[3])
@@ -198,16 +200,21 @@ class Sessions:
                 version['issues']=issues(normalized)
         latest=versions[-1] if versions else None
         status='requirements_review' if latest and latest.get('review_required') else definition_status(latest['contract'],latest['issues']) if latest else 'clarifying'
-        return {'session_id':row[0],'task_id':row[1],'turns':json.loads(row[2]),'versions':versions,'pending_request':bool(row[4]),'pending_request_id':pending[0] if pending else None,'pending_response_count':len(json.loads(pending[1])) if pending else 0,'unsettled_api_request_ids':unsettled,'status':status}
+        if row[4]==2:status='requirements_not_dispatched'
+        return {'session_id':row[0],'task_id':row[1],'turns':json.loads(row[2]),'versions':versions,'pending_request':bool(row[4]),
+                'clarification_not_dispatched':row[4]==2,'api_outcome_uncertain':row[4]==1,
+                'pending_request_id':pending[0] if pending else None,'pending_response_count':len(json.loads(pending[1])) if pending else 0,'unsettled_api_request_ids':unsettled,'status':status}
     def define(self,session,contract,origin='user'):
         contract=normalize_contract(contract)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row=db.execute('SELECT versions,pending FROM sessions WHERE id=?',(session,)).fetchone()
             if not row: raise ValueError('Unknown session')
-            if row[1]: raise ValueError('Request in progress; do not overwrite contract')
-            versions=json.loads(row[0]); versions.append({'version':len(versions)+1,'origin':origin,'contract':contract,'issues':issues(contract)})
-            db.execute('UPDATE sessions SET versions=? WHERE id=?',(json.dumps(versions,ensure_ascii=False,allow_nan=False),session))
+            if row[1] and not (row[1]==2 and origin=='user'): raise ValueError('Request in progress; do not overwrite contract')
+            versions=json.loads(row[0]);version={'version':len(versions)+1,'origin':origin,'contract':contract,'issues':issues(contract)}
+            if row[1]==2:version['supersedes_not_dispatched_requirements']=True
+            versions.append(version)
+            db.execute('UPDATE sessions SET versions=?,pending=0 WHERE id=?',(json.dumps(versions,ensure_ascii=False,allow_nan=False),session))
         return self.show(session)
     def set_gpu_budget(self,session,hours):
         """Record explicit initial authorization without another model call."""
@@ -257,7 +264,7 @@ class Sessions:
             db.execute('BEGIN IMMEDIATE')
             row=db.execute('SELECT turns,versions,pending FROM sessions WHERE id=?',(session,)).fetchone()
             if not row: raise ValueError('Unknown session')
-            if row[2]: raise RuntimeError('Previous API outcome uncertain; no automatic retry')
+            if row[2] not in (0,2): raise RuntimeError('Previous API outcome uncertain; no automatic retry')
             client=OpenAICompatibleClient(dict(config,**({'thinking':'disabled'} if config.get('model')=='deepseek-flash' else {})))
             client.validate_config()
             turns=json.loads(row[0]);versions=json.loads(row[1])
@@ -275,7 +282,22 @@ class Sessions:
         messages=[{'role':'system','content':'You define a visual Agent task interface from the user conversation. Follow these format and scope rules exactly: '+prompt['format_rules']},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}]
         responses=[];response_ids=[];first_draft=None
         for attempt in range(2):
-            response=client.complete(messages,max_tokens=3072)
+            try:response=client.complete(messages,max_tokens=3072)
+            except LLMNotDispatched as error:
+                if responses:
+                    return self._finish_response(session,request_id,turns,versions,responses,response_ids,first_draft,
+                                                 correction_not_dispatched=str(error))
+                with self.db() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    current=db.execute('SELECT turns,versions,pending FROM sessions WHERE id=?',(session,)).fetchone()
+                    if (not current or not current[2] or json.loads(current[0])!=turns
+                            or json.loads(current[1])!=versions):
+                        raise RuntimeError('Session context changed; unsent request remains recorded') from None
+                    changed=db.execute('UPDATE clarification_requests SET state=? WHERE id=? AND session=? AND state=? AND response_ids=?',
+                                       ('not_dispatched',request_id,session,'pending','[]'))
+                    if changed.rowcount!=1:raise RuntimeError('Unsent request identity changed')
+                    db.execute('UPDATE sessions SET pending=2 WHERE id=?',(session,))
+                raise
             response_id=uuid.uuid4().hex
             responses.append(response);response_ids.append(response_id)
             with self.db() as db:
@@ -296,7 +318,7 @@ class Sessions:
                              {'role':'user','content':json.dumps({'instruction':'Correct these interface formatting errors only. Preserve goal, acceptance, budget, explicit input semantics and all user constraints exactly. Do not ask the user about schema fields. Return the complete corrected contract JSON only.','errors':formatting,'format_rules':prompt['format_rules']},ensure_ascii=False)}])
         return self._finish_response(session,request_id,turns,versions,responses,response_ids,first_draft)
 
-    def _finish_response(self,session,request_id,turns,versions,responses,response_ids,first_draft,recovered=False):
+    def _finish_response(self,session,request_id,turns,versions,responses,response_ids,first_draft,recovered=False,correction_not_dispatched=None):
         response=responses[-1]
         review=[];proposed=None
         try:
@@ -339,6 +361,9 @@ class Sessions:
                 raise ValueError('Clarification context changed; recorded response was not applied')
             version={'version':len(versions)+1,'origin':'llm_draft','contract':contract,'issues':errors,'usage':response.get('usage',{})}
             version.update(request_id=request_id,response_ids=response_ids,response_usage=[item.get('usage',{}) for item in responses],format_correction_attempted=len(responses)>1)
+            if correction_not_dispatched:
+                version['format_correction_not_dispatched']=correction_not_dispatched
+                version['issues'].append('格式修正请求未发送: '+correction_not_dispatched)
             if recovered:version.update(recovered_from_pending=True,api_outcome_uncertain=True)
             if review:version.update(review_required=review,proposed_contract=proposed)
             versions.append(version)

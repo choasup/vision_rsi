@@ -631,3 +631,13 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Twenty-four transport/usage regressions and five task-export regressions passed. Actual project's readonly usage report remains1 call/63 reported tokens, no project cap; no new real API or GPU call was required for these cap tests. Full regression is running.
 
 - Full current regression completed:257 tests passed in95.456s, log runs/resource-bootstrap/tests-project-call-admission-full.log. This verifies current software regressions, not real COCO training, AP60, equal-budget held-out RSI improvement or release completion.
+
+
+## Known-not-dispatched clarification recovery (2026-10-10)
+
+- Added typed LLMNotDispatched only around local usage-ledger admission before HTTP. Ledger unavailability and call-cap rejection can be proven unsent; network errors, invalid remote replies and settlement failure after HTTP cannot use this marker. Existing unknown outcomes stay pending and block replay.
+- Clarification journals known rejection as not_dispatched and retains human text/previous versions. Separate pending-state2 means requirements are unprocessed but API outcome is known unsent; explicit reply may try after admission is resolved without abandon or automatic resend. It cannot train/build using stale requirements. prepare/harness/campaign execution now reject all unprocessed requirement requests, including true unknown API states; show/pause remain available. User-authored explicit define may supersede known-unsent requirements, records that fact and leaves project cap untouched; agent defaults cannot clear it.
+- If bounded format correction is denied before dispatch, apply only the already-recorded first draft with original validation errors and correction_not_dispatched metadata, without inventing a second response or unknown service charge. Existing task-change review remains intact. Other method/candidate per-stage admission journals are not yet reconciled automatically.
+- Six focused state-transition tests, ten usage tests,17 contract/format tests and11 campaign tests passed. Actual CLI fixture with cap0 exited1, showed requirements_not_dispatched/API uncertainty false, preserved original text and recorded0 admitted calls; no provider/GPU called. Evidence runs/resource-bootstrap/unsent-cli-smoke/evidence.json. Full regression is running; original real task untouched.
+
+- Full current regression completed:263 tests passed in100.780s, log runs/resource-bootstrap/tests-unsent-clarification-full.log. No real provider or GPU call required for this recovery verification; task quality and full release still unproven.

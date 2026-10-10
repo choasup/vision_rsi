@@ -31,6 +31,7 @@ def prepare(session,config,root):
     if not session['versions']: raise ValueError('Define the task interface before preparing training')
     latest=session['versions'][-1];contract=latest['contract']
     blockers=list(issues(contract))
+    if session.get('pending_request'):blockers.append('需求请求尚未处理；先完成澄清或恢复，不能按旧要求执行。')
     blockers.extend(budget_blockers(contract))
     blockers.extend('待确认需求变更: '+change['path'] for change in latest.get('review_required',[]))
     inputs=contract.get('inputs') or {}

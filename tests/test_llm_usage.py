@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from vision_rsi.llm import OpenAICompatibleClient
+from vision_rsi.llm import OpenAICompatibleClient,LLMNotDispatched
 from vision_rsi.llm_usage import UsageLedger,snapshot
 
 
@@ -127,7 +127,7 @@ class UsageTests(unittest.TestCase):
     @patch('vision_rsi.llm.urlopen')
     def test_unwritable_ledger_or_invalid_path_prevents_network(self,opened):
         self.path.mkdir()
-        with self.assertRaises(sqlite3.Error):OpenAICompatibleClient(self.config).complete([])
+        with self.assertRaises(LLMNotDispatched):OpenAICompatibleClient(self.config).complete([])
         for path in ('relative.sqlite3',''):
             with self.assertRaises(ValueError):OpenAICompatibleClient(dict(self.config,usage_ledger=path)).complete([])
         opened.assert_not_called()
