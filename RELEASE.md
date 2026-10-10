@@ -556,3 +556,10 @@
 - 源码0b71a814245ca21849b541bab0c4398a4f88f72d完整回归394项通过（140.499秒），日志runs/dev4-full-tests.log。wheel runs/release-dev4/wheelhouse/vision_rsi_agent-0.1.0.dev4-py3-none-any.whl，SHA256=103701a781f49c930283a3ef3f8f126cbad57284c5e476b298617b24fe11671a。
 - 新venv按本地wheelhouse和Windows依赖哈希清单离线安装，pip check通过。仓库外201项安装测试通过（30.749秒），6个模块CLI帮助入口通过，安装Python/HTML文件集合及各文件SHA与源码完全一致。证据runs/release-dev4/{installed-evidence.json,installed-tests.log}；控制器身份source-sha256:db6f9f7ac93a49d7e4cbde1258a12d4373f452790f525fd4ee68a795c1aff955。
 - 另在F盘根目录用安装venv的python -m vision_rsi training research-init，显式指向原会话/研究根，成功读取task my-vision-task/v5并复用原研究。未调用API/SSH/GPU；不声称新机器认证、真实训练或上线质量门槛完成。
+
+## 任务研究规划接收真实本地执行前提（2026-10-10）
+
+- 核查候选→test发布路径：COCO注册仍要求训练验收与服务端独立效果验收，研究接口检查不会绕过该门槛。当前无已验证COCO能力，完整链路未完成。
+- training research-step现在在模型调用前执行现有只读task_readiness，带入授权GPU预算/剩余快照/记录数/未结算运行/支持范围/阻塞与建议；task_research核对session/task/接口版本，首次/后续规划及完整请求快照均包含该上下文。保留所有真实训练门槛，不把建议动作当已执行、不把本地快照当实时远端或质量证明。
+- 31项task_research/task_readiness/training_shell/controller测试通过（10.349秒）；补充实际提示含预算null/未结算ID的断言后6项task_research/task_readiness通过（0.378秒）。版本错配拒绝。
+- 实际只读核查现有会话，证据runs/task-research/current-readiness.json；未调用LLM/SSH/GPU。已再次集中询问真实GPU预算但尚无答复，不设置预算、不启动训练。安装包仍是dev4旧源码，完整上线目标未完成。

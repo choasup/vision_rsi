@@ -335,6 +335,9 @@ def research_step(config, directory, steps=1, repository='.'):
                     if config.get('research',{}).get('task_contract'):
                         contract,contract_hash=frozen_contract(config)
                         prompt['frozen_task_contract']={'sha256':contract_hash,'contract':contract}
+                    if '_task_readiness_context' in config:
+                        prompt['task_readiness']=config['_task_readiness_context']
+                        prompt['instruction']+=' Task readiness is a read-only local snapshot, not live remote state or quality proof. Missing GPU budget is not authorization. Unsettled runs must be resolved before proposing another execution; suggested actions are not executed.'
                     if 'check_contract' in available:
                         prompt['tools']['check_contract']='Check staged adapter/harness outputs against configured hash-bound task interface in CPU sandbox; no metric acceptance.'
                         prompt['schema']['tool_argument_shapes']['check_contract']={'candidate_id':'staged candidate identity','module':'vision_rsi.adapter_name or harness_name','function':'function name','samples':['1..16 inputs conforming to frozen_task_contract; total <=12000 characters']}

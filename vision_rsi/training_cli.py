@@ -195,7 +195,11 @@ def main(argv):
         try:
             session=Sessions(args.sessions,read_only=True).show(args.session_id)
             if args.action=='research-init':result=prepare(session,args.research_root)
-            else:result=advance(session,json.loads(Path(args.config).read_text(encoding='utf-8')),args.research_root,args.steps,args.repository)
+            else:
+                from .task_readiness import inspect
+                config=json.loads(Path(args.config).read_text(encoding='utf-8'))
+                context=inspect(args.session_id,config,args.sessions,args.run_store,args.config)
+                result=advance(session,config,args.research_root,args.steps,args.repository,task_context=context)
         except (ValueError,OSError,KeyError,TypeError,RuntimeError) as error:parser.exit(1,str(error)+'\n')
         if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
         else:

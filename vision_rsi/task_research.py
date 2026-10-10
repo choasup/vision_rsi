@@ -47,7 +47,13 @@ def prepare(session,root='runs/task-research'):
                 'task_contract':{'path':str(path),'sha256':expected},'gpu_used':False,'training_performed':False}
 
 
-def advance(session,config,root='runs/task-research',steps=1,repository='.'):
+def advance(session,config,root='runs/task-research',steps=1,repository='.',task_context=None):
     result=prepare(session,root)
     bound=dict(config,research=dict(config.get('research',{}),task_contract=result['task_contract']))
+    if task_context is not None:
+        if (task_context.get('session_id')!=session['session_id'] or task_context.get('task_id')!=session['task_id']
+                or task_context.get('contract_version')!=session['versions'][-1].get('version')):
+            raise ValueError('Task readiness does not match the frozen session version')
+        bound['_task_readiness_context']=task_context
+        result['training_readiness']=task_context
     return dict(result,execution=research_step(bound,result['directory'],steps=steps,repository=repository))

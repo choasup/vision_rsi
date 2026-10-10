@@ -16,10 +16,14 @@ class TaskResearchTests(unittest.TestCase):
             store,session=self.task(folder)
             client.return_value.complete.return_value={'content':json.dumps({'tool':'inspect_repository','summary':'inspect',
                 'question':'q','expected_evidence':'e','refs':['objective']})}
-            result=advance(session,{'llm':{'model':'fixture'}},Path(folder)/'research',steps=1)
+            context={'session_id':session['session_id'],'task_id':session['task_id'],
+                     'contract_version':session['versions'][-1]['version'],'authorized_gpu_hours':None,
+                     'unsettled_run_ids':['uncertain-run'],'task_quality_status':'not_checked'}
+            result=advance(session,{'llm':{'model':'fixture'}},Path(folder)/'research',steps=1,task_context=context)
             prompt=json.loads(client.return_value.complete.call_args.args[0][0]['content'])
             self.assertEqual(prompt['frozen_task_contract']['sha256'],result['task_contract']['sha256'])
             self.assertEqual(prompt['frozen_task_contract']['contract'],session['versions'][-1]['contract'])
+            self.assertEqual(prompt['task_readiness'],context)
 
     def task(self,folder):
         store=Sessions(Path(folder)/'sessions')
@@ -53,6 +57,13 @@ class TaskResearchTests(unittest.TestCase):
             self.assertFalse(called['research']['allow_candidate_writes'])
             self.assertNotIn('task_contract',config['research'])
             with self.assertRaises(ValueError):prepare(dict(session,pending_request=True),Path(folder)/'pending')
+            context={'session_id':session['session_id'],'task_id':session['task_id'],
+                     'contract_version':session['versions'][-1]['version'],'authorized_gpu_hours':None,
+                     'unsettled_run_ids':['training-uncertain'],'task_quality_status':'not_checked'}
+            advance(session,config,Path(folder)/'research',steps=1,task_context=context)
+            self.assertEqual(step.call_args.args[0]['_task_readiness_context'],context)
+            with self.assertRaisesRegex(ValueError,'readiness does not match'):
+                advance(session,config,Path(folder)/'research',task_context=dict(context,contract_version=999))
 
 
 if __name__=='__main__':unittest.main()
