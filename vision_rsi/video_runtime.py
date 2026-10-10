@@ -34,9 +34,11 @@ def compile_plan(processing):
     """Compile supported task semantics during harness build, never at Test."""
     if not isinstance(processing,dict):return {'status':'blocked','reason':'Video processing must be an object'}
     sampling=processing.get('sampling','')
-    match=re.fullmatch(r'([0-9]+(?:\.[0-9]+)?)\s+fps',sampling)
-    if not match or processing.get('audio')!='ignore' or processing.get('temporal') not in ('ordered','preserve timestamps and order'):
-        return {'status':'blocked','reason':'Decoder requires explicit N fps, ordered source timestamps and audio=ignore'}
+    if not isinstance(sampling,str):return {'status':'blocked','reason':'Video sampling must be a string'}
+    match=re.fullmatch(r'([0-9]+(?:\.[0-9]+)?)\s*fps',sampling.strip(),re.IGNORECASE)
+    if not match:match=re.fullmatch(r'每秒\s*([0-9]+(?:\.[0-9]+)?)\s*帧',sampling.strip())
+    if not match or processing.get('audio')!='ignore' or processing.get('temporal') not in ('ordered','preserve timestamps and order','保留原始时间戳和帧顺序','保留时间戳和顺序'):
+        return {'status':'blocked','reason':'Decoder requires explicit N fps / 每秒N帧, ordered source timestamps and audio=ignore'}
     plan=processing.get('decoder') or {'protocol':'source_first_min_interval_v1','fps':float(match[1]),
           'max_frames':64,'max_width':640,'max_height':480,'max_duration_seconds':30,'audio':'ignore'}
     try:

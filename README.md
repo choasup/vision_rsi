@@ -501,7 +501,7 @@ Training 需求理解会在内部对已收到的接口格式错误最多修正�
 
 ### 视频解码执行
 
-新任务包在 build 阶段冻结可支持的视频解码计划，`check` 显示 `video_decoders`。目前支持 `N fps`、`ordered` 或 `preserve timestamps and order`、`audio=ignore`：选择第一张源帧，之后选择与上一张至少相隔 `1/N` 秒的第一张源帧，保留原始 PTS/时间基准；不合成重复帧。未知策略保持 blocked，不在 Test 时猜测。
+新任务包在 build 阶段冻结可支持的视频解码计划，`check` 显示 `video_decoders`。目前支持 `N fps`（也接受 `Nfps` / `每秒N帧`）、`ordered` 或 `preserve timestamps and order`（也接受 `保留原始时间戳和帧顺序` / `保留时间戳和顺序`）、`audio=ignore`：选择第一张源帧，之后选择与上一张至少相隔 `1/N` 秒的第一张源帧，保留原始 PTS/时间基准；不合成重复帧。未知策略保持 blocked，不在 Test 时猜测。
 
 ```powershell
 .\run.cmd decode-input --input C:\samples\packet.json --field clip --output C:\samples\frames.json
@@ -640,3 +640,10 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 
 
 控制轨迹的版本字段必须是受支持的整数：上下文版本1..4，行动版本1或2；行动版本2要求上下文版本4。缺失字段明确按旧版1处理，未知版本、bool、浮点、字符串及不兼容组合被拒绝。执行/恢复前检查已完成历史、待执行意图和停止记录，发现非法版本时不执行工具、不改写控制状态；仍可show/pause以便调查。审计采用相同规则，不将未来版本猜作当前语义。请恢复正确记录或其对应程序版本，不通过删除版本字段绕过错误。
+
+
+### 显式真实需求理解开发探针
+
+`python -X utf8 tests/live_requirements_probe.py --live --config config.local.json` 会产生真实API费用，先固定三份独立开发需求及检查项，再使用独立账本最多准入6次调用（包含内部格式修正）；不调用训练。只有显式`--live`才执行，调用结果不确定时不会自动语义重试。原始结果、契约、账本及预登记均写入忽略的`runs/requirements-live/`。这些是需求理解开发案例，不是隐藏视觉测试集、模型效果或研究效率基准。
+
+首轮实际调用5次，单图缺预算及联合多图通过；视频返回中文采样策略，初版严格英文字面检查失败，执行层也不支持该写法。原结果保留为2/3。已修复执行层的确定性中文同义解析，并使用同一原始契约通过解码计划编译与冻结接口包check，无额外API调用。后续探针评分器v2按实际编译语义检查帧率，预登记包含探针源哈希；不将其用于改写首轮结果。

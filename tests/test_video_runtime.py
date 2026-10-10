@@ -66,3 +66,20 @@ class VideoRuntimeTests(unittest.TestCase):
         changed['frames'][1].update(width=2,sha256=hashlib.sha256(other).hexdigest(),content_base64=base64.b64encode(other).decode())
         changed['decoded_bytes']=len(raw)+len(other)
         with self.assertRaisesRegex(ValueError,'dimensions changed'):validate_result(request,changed)
+
+    def test_natural_chinese_sampling_compiles_without_rewriting_contract(self):
+        for sampling in ('每秒3帧','每秒 3 帧','3fps','3 FPS',' 3 fps '):
+            processing={'sampling':sampling,'temporal':'保留原始时间戳和帧顺序','audio':'ignore'}
+            original=copy.deepcopy(processing)
+            result=compile_plan(processing)
+            self.assertEqual(result['status'],'ready');self.assertEqual(result['plan']['fps'],3)
+            self.assertEqual(processing,original)
+        fractional=compile_plan({'sampling':'每秒0.5帧','temporal':'保留时间戳和顺序','audio':'ignore'})
+        self.assertEqual(fractional['plan']['fps'],.5)
+
+    def test_ambiguous_or_malformed_sampling_remains_blocked(self):
+        base={'sampling':'每秒3帧','temporal':'保留原始时间戳和帧顺序','audio':'ignore'}
+        for sampling in (None,True,[],{},3,'每2秒3帧','3 frames maybe','每秒零帧','每秒0帧','每秒31帧','每秒3帧或5帧'):
+            self.assertEqual(compile_plan(dict(base,sampling=sampling))['status'],'blocked')
+        for change in ({'audio':'保留音频'},{'temporal':'打乱顺序'},{'decoder':dict(self.plan,fps=2)}):
+            self.assertEqual(compile_plan(dict(base,**change))['status'],'blocked')
