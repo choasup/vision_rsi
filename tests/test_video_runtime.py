@@ -7,6 +7,30 @@ from vision_rsi.video_runtime import compile_plan,validate_plan,timestamps,valid
 
 
 class VideoRuntimeTests(unittest.TestCase):
+    def test_candidate_decode_cache_preserves_frames_and_never_retries_unknown(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from vision_rsi.candidate_bundle import decoded_video
+        import vision_rsi.video_runtime as runtime
+        driver=hashlib.sha256(Path(runtime.__file__).read_bytes()).hexdigest()
+        raw=b'P6\n1 1\n255\n\x01\x02\x03'
+        frame={'index':0,'width':1,'height':1,'pts':0,'time_base':{'numerator':1,'denominator':4},'seconds':0,
+               'format':'ppm_rgb24','sha256':hashlib.sha256(raw).hexdigest(),'content_base64':base64.b64encode(raw).decode()}
+        asset={'sha256':'1'*64,'content_base64':'ZmFrZQ=='}
+        result={'status':'video_decoded','input_sha256':asset['sha256'],'plan':self.plan,'frames':[frame],
+                'decoded_bytes':len(raw),'duration_seconds':1,'inference_performed':False,'audio_processed':False,'driver_sha256':driver}
+        with tempfile.TemporaryDirectory() as folder,patch('vision_rsi.remote.decode_video',return_value=result) as decoder:
+            self.assertEqual(decoded_video(asset,self.plan,{},folder,driver),result)
+            self.assertEqual(decoded_video(asset,self.plan,{},folder,driver),result)
+            self.assertEqual(decoder.call_count,1)
+            with self.assertRaisesRegex(ValueError,'driver changed'):decoded_video(asset,self.plan,{},folder,'0'*64)
+            decoder.side_effect=RuntimeError('unknown outcome')
+            changed=dict(asset,sha256='2'*64)
+            with self.assertRaisesRegex(RuntimeError,'unknown'):decoded_video(changed,self.plan,{},folder,driver)
+            with self.assertRaisesRegex(RuntimeError,'Uncertain video'):decoded_video(changed,self.plan,{},folder,driver)
+            self.assertEqual(decoder.call_count,2)
+
     def setUp(self):
         self.plan={'protocol':'source_first_min_interval_v1','fps':2,'max_frames':4,'max_width':64,'max_height':48,'max_duration_seconds':2,'audio':'ignore'}
 

@@ -25,10 +25,16 @@ def verify(path):
         if hashlib.sha256(raw).hexdigest()!=identity['source_hashes'][name]:raise ValueError('Bundle source hash mismatch')
     contract=base64.b64decode(bundle['contract_base64'],validate=True)
     if hashlib.sha256(contract).hexdigest()!=identity['contract_sha256']:raise ValueError('Bundle contract hash mismatch')
+    if identity.get('video_decoders'):
+        from .video_runtime import compile_plan
+        doc=json.loads(contract.decode('utf-8-sig'))
+        plans={name:compile_plan(value.get('processing')) for name,value in doc['inputs'].items() if value.get('type')=='video'}
+        if identity.get('media_transport')!='vision_sample_transport_v1' or any(value['status']!='ready' for value in plans.values()):raise ValueError('Invalid frozen video interface')
+        if identity['video_decoders']!={name:value['plan'] for name,value in plans.items()}:raise ValueError('Video plan differs from contract')
     return bundle
 
 
-def build(store,candidate_id,module,function,contract_path,output,media_input=False):
+def build(store,candidate_id,module,function,contract_path,output,media_input=False,decode_video=False):
     encode_cases(module,function,[{'sample':{}}])
     raw,contract=read_document(contract_path,512*1024)
     if not isinstance(contract,dict) or not isinstance(contract.get('inputs'),dict) or not contract['inputs']:raise ValueError('Bundle requires a task interface')
@@ -40,6 +46,15 @@ def build(store,candidate_id,module,function,contract_path,output,media_input=Fa
               'module':module,'function':function,'contract_sha256':hashlib.sha256(raw).hexdigest(),
               'source_hashes':{name:hashlib.sha256(content).hexdigest() for name,content in files.items()},'production_accepted':False}
     if media_input:identity['media_transport']='vision_sample_transport_v1'
+    if decode_video:
+        from .video_runtime import compile_plan
+        if not media_input:raise ValueError('Video decoding requires media input')
+        plans={name:compile_plan(value.get('processing')) for name,value in contract['inputs'].items() if value.get('type')=='video'}
+        if not plans or any(value['status']!='ready' for value in plans.values()):raise ValueError('Explicit supported video processing required')
+        if any(value['plan']['max_frames']*value['plan']['max_width']*value['plan']['max_height']*3>256*1024 for value in plans.values()):
+            raise ValueError('Candidate video decoded RGB plan exceeds 256 KiB; define explicit smaller bounds')
+        identity['video_decoders']={name:value['plan'] for name,value in plans.items()}
+        identity['video_driver_sha256']=hashlib.sha256(Path(__file__).with_name('video_runtime.py').read_bytes()).hexdigest()
     bundle={'bundle_id':digest(identity),'identity':identity,'files':{name:base64.b64encode(content).decode('ascii') for name,content in files.items()},
             'contract_base64':base64.b64encode(raw).decode('ascii')}
     folder=Path(output).resolve()/bundle['bundle_id'];folder.mkdir(parents=True,exist_ok=True);path=folder/'bundle.json'
@@ -49,6 +64,34 @@ def build(store,candidate_id,module,function,contract_path,output,media_input=Fa
         with path.open('x',encoding='utf-8') as stream:json.dump(bundle,stream,ensure_ascii=False,sort_keys=True,allow_nan=False)
         verify(path)
     return {'bundle_id':bundle['bundle_id'],'directory':str(folder),'path':str(path),'production_accepted':False,'capability_registered':False}
+
+
+def decoded_video(asset,plan,remote,output,driver_hash):
+    from .video_runtime import validate_plan,validate_result
+    from .remote import decode_video
+    from .campaign import lease
+    from .runner import atomic_json
+    validate_plan(plan)
+    if plan['max_frames']*plan['max_width']*plan['max_height']*3>256*1024:raise ValueError('Candidate decoded video exceeds byte budget')
+    if hashlib.sha256(Path(__file__).with_name('video_runtime.py').read_bytes()).hexdigest()!=driver_hash:raise ValueError('Frozen video driver changed')
+    request={'plan':plan,'content_base64':asset['content_base64'],'sha256':asset['sha256']}
+    binding={'request_sha256':digest(request),'remote':remote,'driver_sha256':driver_hash,
+             'controller_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+    folder=Path(output)/'video-decodes'/digest(binding);folder.mkdir(parents=True,exist_ok=True);path=folder/'decode.json'
+    with lease(folder/'decode.lock',owner='Candidate video decode'):
+        if path.exists():
+            _,saved=read_document(path,2*1024*1024)
+            if saved.get('binding')!=binding:raise ValueError('Video decode binding changed')
+            if saved['status']=='reserved':raise RuntimeError('Uncertain video decode; not repeated automatically')
+            if saved.get('record_sha256')!=digest({key:value for key,value in saved.items() if key!='record_sha256'}):raise ValueError('Video decode record changed')
+            result=saved['result'];validate_result(request,result)
+        else:
+            saved={'binding':binding,'status':'reserved'};atomic_json(path,saved)
+            result=decode_video(remote,request)
+            validate_result(request,result)
+            if result.get('driver_sha256')!=driver_hash:raise ValueError('Video runtime driver identity differs')
+            saved.update(status='completed',result=result);saved['record_sha256']=digest(saved);atomic_json(path,saved)
+        return result
 
 
 def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_directory=None):
@@ -67,7 +110,12 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_director
         if media_directory is None:raise ValueError('Media bundle needs an explicit input base directory')
         cases=[]
         for sample in samples:
-            cases.append({'sample':sample,'media':package_sample(contract,sample,media_directory,content_limit=512*1024)})
+            packet=package_sample(contract,sample,media_directory,content_limit=512*1024)
+            case={'sample':sample,'media':packet}
+            if identity.get('video_decoders'):
+                case['video_frames']={asset['field']:decoded_video(asset,identity['video_decoders'][asset['field']],remote,output,identity['video_driver_sha256'])
+                    for asset in packet['assets'] if asset['kind']=='video'}
+            cases.append(case)
             encode_cases(identity['module'],identity['function'],cases)
     encode_cases(identity['module'],identity['function'],cases)
     request={'files':bundle['files'],'source_hashes':identity['source_hashes'],
