@@ -154,3 +154,10 @@
 - `tests/controller_budget_cli_probe.py --deep`在与原失败相同目录结构上实际执行4个独立CLI进程，288字符计划路径创建和JSON读回通过，累计预算仍1，后续停止且无运行创建。证据：`runs/controller-budget-live/fd29b1ced71d44ed8903cd676c0035d1/evidence.json`；原失败证据保留。
 - 43项相关测试通过（2.354秒），包括真实深目录原子写入、原生WindowsUNC词法转换，以及深实验请求SQLite/响应/计划写入和缓存重放；方法LLM为mock，无真实API/GPU/训练调用。测试按所有权逐项清理自身文件/目录，避免普通短路径清理递归失败。
 - 仅证明本机这些原生文件I/O链路，不扩大为所有路径、Shell、Git/外部工具、真实网络共享或新Windows机器均通过；安装包尚未重建，真实训练/AP60与统一预算门槛仍未完成。
+
+## 累计控制预算的实际进程退出验证（2026-10-10）
+
+- 新增可复用 `tests/controller_budget_fault_probe.py`：本地fixture上限1，在prepare返回blocked之后、结果写回campaign之前执行真实 `os._exit(73)`；另三个独立进程验证再次推进、显式恢复、再次推进。
+- 原始started意图逐字段保持，累计占用1、剩余0、无完成历史追加、无免费重试；新进程能取得已释放的进程锁。证据：`runs/resource-bootstrap/budget-fault-e5693915d94346f3a90b87abd28e60b5/evidence.json`。
+- 初始探针fixture缺少contract version而失败；修正探针输入后复验通过，没有将初次失败作为成功证据。31项预算/watch/campaign相关测试通过（5.192秒）。
+- 本次没有API、SSH、GPU或真实训练调用；这不证明断电持久性、远端训练中断恢复或统一费用记账，实际任务GPU预算与AP60验收仍未完成。

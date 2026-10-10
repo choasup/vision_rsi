@@ -672,3 +672,5 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 训练计划及方法实验的本地计划、响应文件和请求SQLite账本在路径较长时使用 [Windows扩展路径命名](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)。返回的`plan_path`可能以`\\?\`开头，供Python原生文件I/O读回；不修改注册表或系统策略，短路径形式不变。已有冻结任务包不会自动获得此修改，需要重新构建新包。
 
 已在本机通过288字符计划路径的真实CLI准备/读回/跨进程预算探针，以及更深实验目录的SQLite/响应/计划缓存复跑测试。这里没有承诺所有Shell、外部工具、网络共享或全部存储路径均支持长路径；UNC目前只验证命名转换，未访问真实网络共享。
+
+本地故障复验（无需API/SSH/GPU）：`python tests/controller_budget_fault_probe.py`。探针使用独立fixture目录，在工具返回后真实退出进程，验证预算占用与待处理意图跨进程保留；结果保存在忽略提交的`runs/resource-bootstrap/budget-fault-*/evidence.json`。它不执行真实训练，也不代表断电或远端GPU恢复已通过。
