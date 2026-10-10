@@ -73,6 +73,11 @@ def execution_summary(result):
         if verdict.get('reason'): lines.append(verdict['reason'])
         lines.extend('- '+reason for reason in verdict.get('reasons',[]))
     if result.get('log') is not None: lines.append(result['log'])
+    if result.get('policy_stop'):
+        stop=result['policy_stop']
+        lines.append('策略停止原因: '+stop['decision']['rationale'])
+        if stop.get('policy_evidence'):lines.append('策略执行证据: '+stop['policy_evidence'])
+        if result.get('run_id'):lines.append('策略停止不取消远端作业；请按运行 ID 继续查询或取消。')
     return '\n'.join(lines)
 
 
@@ -119,6 +124,7 @@ def main(argv):
                 print('GPU小时: 已结算 '+str(result['settled_gpu_hours'])+'，仍预留 '+str(result['held_gpu_hours']))
                 print('LLM tokens: 已知 '+str(result['known_llm_tokens'])+'，记录完整 '+str(result['llm_usage_complete']))
                 print('已核验真实box AP: '+str(result['best_verified_real_box_AP']))
+                print('策略决策轨迹核验: '+str(result['policy_trace']['verified']))
                 for item in result['missing_evidence']:print('- '+item)
                 print('单流程证据审计；未证明RSI提升，未采用候选。')
             return

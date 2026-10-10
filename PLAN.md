@@ -280,3 +280,5 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Persist terminal no-action decisions with candidate evidence, selection timing and source identity. Repeated advance respects the recorded stop instead of restarting policy selection.
 - Policy audit now verifies terminal decisions and checks final plan/run/analysis/research state against a full action replay; changing only final state cannot bypass remaining research.
 - Paused campaigns cannot count as completed study arms. Comparison also checks that the independently audited state hash matches the phase-checked snapshot, rejecting concurrent state changes.
+
+- Actual remote CPU isolation probe at control revision f54e0fe: explicit-stop candidate ced30cf8dd290d0cf6afa69d2b30dd594c869307dc502ea8c765c882826ccbbe produced a durable terminal decision. Second advance reused it, no tools ran, no Training run or GPU reservation was created. Independent audit verified one decision and correctly refused real measurement/RSI claims. Ignored evidence: runs/policy-stop-integration/{first,second,audit,summary}.json and cli-audit.txt. No LLM call or GPU training was performed.
