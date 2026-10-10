@@ -394,3 +394,6 @@ register只创建pending_serving_validation候选，Test拒绝使用。serving-e
 
 
 Training 需求理解会在内部对已收到的接口格式错误最多修正一次，保留目标、验收阈值、预算和输入语义；不会因为格式问题要求用户填写 schema。每次实际 API 响应及用量保存到会话 SQLite，版本中记录 response_ids、response_usage 和 format_correction_attempted。网络结果不确定仍停止，不自动重复调用。输出 schema 支持 minItems/maxItems，可验证四坐标边界框。训练数据、保留集和权重不会被默认要求为逐样本推理输入。
+
+
+需求 API 中断恢复：`training show --session-id SESSION_ID` 会显示待处理请求 ID 和已保存响应数量。原进程退出后，使用 `training recover --session-id SESSION_ID --request-id REQUEST_ID` 从已落盘响应完成接口保存，不调用 API；同一恢复命令可重复执行，不会追加重复版本。若没有收到响应，需显式执行 `training abandon-request --session-id SESSION_ID --request-id REQUEST_ID` 才能解除本地 pending，再自行决定是否发送后续消息。解除不会取消服务端 API，请求结果和费用仍未知，用户原消息及旧契约保留。活跃进程持有会话锁时两种操作均拒绝；恢复要求原请求上下文未变，需求变更仍走接受/拒绝门槛。旧版 pending 请求没有关联标识时不支持自动恢复，不会猜测其响应。自定义存储需同时传入原 `--sessions` 路径。

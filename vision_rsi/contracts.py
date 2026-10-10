@@ -166,6 +166,7 @@ class Sessions:
             with db:
                 db.execute('CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,task TEXT,turns TEXT,versions TEXT,pending INTEGER)')
                 db.execute('CREATE TABLE IF NOT EXISTS clarification_responses(id TEXT PRIMARY KEY,session TEXT,response TEXT)')
+                db.execute('CREATE TABLE IF NOT EXISTS clarification_requests(id TEXT PRIMARY KEY,session TEXT,context TEXT,state TEXT,response_ids TEXT)')
                 yield db
         finally: db.close()
     def list(self):
@@ -181,7 +182,10 @@ class Sessions:
         with self.db() as db: db.execute('INSERT INTO sessions VALUES (?,?,?,?,0)',(session,name,json.dumps([{'role':'user','content':goal}],ensure_ascii=False),'[]'))
         return self.show(session)
     def show(self,session):
-        with self.db() as db: row=db.execute('SELECT * FROM sessions WHERE id=?',(session,)).fetchone()
+        with self.db() as db:
+            row=db.execute('SELECT * FROM sessions WHERE id=?',(session,)).fetchone()
+            pending=db.execute("SELECT id,response_ids FROM clarification_requests WHERE session=? AND state='pending' ORDER BY rowid DESC LIMIT 1",(session,)).fetchone()
+            unsettled=[item[0] for item in db.execute("SELECT id FROM clarification_requests WHERE session=? AND state IN ('abandoned','recovered')",(session,))]
         if not row: raise ValueError('Unknown session')
         versions=json.loads(row[3])
         for version in versions:
@@ -193,7 +197,7 @@ class Sessions:
                 version['issues']=issues(normalized)
         latest=versions[-1] if versions else None
         status='requirements_review' if latest and latest.get('review_required') else definition_status(latest['contract'],latest['issues']) if latest else 'clarifying'
-        return {'session_id':row[0],'task_id':row[1],'turns':json.loads(row[2]),'versions':versions,'pending_request':bool(row[4]),'status':status}
+        return {'session_id':row[0],'task_id':row[1],'turns':json.loads(row[2]),'versions':versions,'pending_request':bool(row[4]),'pending_request_id':pending[0] if pending else None,'pending_response_count':len(json.loads(pending[1])) if pending else 0,'unsettled_api_request_ids':unsettled,'status':status}
     def define(self,session,contract,origin='user'):
         contract=normalize_contract(contract)
         with self.db() as db:
@@ -204,7 +208,17 @@ class Sessions:
             versions=json.loads(row[0]); versions.append({'version':len(versions)+1,'origin':origin,'contract':contract,'issues':issues(contract)})
             db.execute('UPDATE sessions SET versions=? WHERE id=?',(json.dumps(versions,ensure_ascii=False,allow_nan=False),session))
         return self.show(session)
+    @contextmanager
+    def request_lock(self,session):
+        import hashlib
+        from .campaign import lease
+        path=self.root/('clarification-'+hashlib.sha256(str(session).encode()).hexdigest()+'.lock')
+        with lease(path):yield
+
     def clarify(self,session,config,message=None):
+        with self.request_lock(session):return self._clarify(session,config,message)
+
+    def _clarify(self,session,config,message=None):
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row=db.execute('SELECT turns,versions,pending FROM sessions WHERE id=?',(session,)).fetchone()
@@ -213,6 +227,9 @@ class Sessions:
             turns=json.loads(row[0]);versions=json.loads(row[1])
             if message: turns.append({'role':'user','content':message})
             db.execute('UPDATE sessions SET turns=?,pending=1 WHERE id=?',(json.dumps(turns,ensure_ascii=False),session))
+            request_id=uuid.uuid4().hex
+            context={'turns':turns,'versions':versions}
+            db.execute('INSERT INTO clarification_requests VALUES (?,?,?,?,?)',(request_id,session,json.dumps(context,ensure_ascii=False),'pending','[]'))
         prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask at most five critical questions per turn, record secondary choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output. Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum,minItems,maxItems. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
         prompt['change_policy']='Preserve established goal wording, input/output interface, acceptance values and budget exactly unless the user explicitly requests a change. Put implementation choices in assumptions. Do not paraphrase unchanged goal/protocol descriptions. Structural changes are reviewed separately before execution.'
         prompt['format_rules']='output_schema MUST have type=object and nonempty properties; place detection lists inside a detections property, never at the root. assumptions and open_questions MUST be lists of strings, never dictionaries. Video processing sampling, temporal, audio MUST each be nonempty strings; use audio="ignore" for no audio, never false. Missing budget is null, never invented. Examples must satisfy the exact interface. Batch means multiple samples, not image_list. Do not ask for batch size limits, model confidence filters, optimizer or architectural choices unless explicitly constrained by the user; record implementation defaults in assumptions. The inputs section describes INFERENCE-time per-sample inputs only. Training/validation/held-out datasets, annotation files, budgets, weights and evaluation protocols are training resources, NEVER required inference input fields unless the user explicitly requests them as per-sample inputs. Select conventional box coordinates as an assumption, never ask about JSON field names or coordinate syntax. Ask only unresolved task semantics (such as defect class taxonomy or event matching needed to define a metric), not internal representation choices. Resolve schema formatting internally; never ask the user to write JSON schemas.'
@@ -224,9 +241,10 @@ class Sessions:
         for attempt in range(2):
             response=client.complete(messages,max_tokens=3072)
             response_id=uuid.uuid4().hex
+            responses.append(response);response_ids.append(response_id)
             with self.db() as db:
                 db.execute('INSERT INTO clarification_responses VALUES (?,?,?)',(response_id,session,json.dumps(response,ensure_ascii=False)))
-            responses.append(response);response_ids.append(response_id)
+                db.execute('UPDATE clarification_requests SET response_ids=? WHERE id=? AND state=?',(json.dumps(response_ids),request_id,'pending'))
             # A bounded correction of a received schema is not a network retry.
             # Missing task facts and resource authorization must never be invented.
             try:
@@ -240,6 +258,10 @@ class Sessions:
             if not formatting or attempt:break
             messages.extend([{'role':'assistant','content':response['content']},
                              {'role':'user','content':json.dumps({'instruction':'Correct these interface formatting errors only. Preserve goal, acceptance, budget, explicit input semantics and all user constraints exactly. Do not ask the user about schema fields. Return the complete corrected contract JSON only.','errors':formatting,'format_rules':prompt['format_rules']},ensure_ascii=False)}])
+        return self._finish_response(session,request_id,turns,versions,responses,response_ids,first_draft)
+
+    def _finish_response(self,session,request_id,turns,versions,responses,response_ids,first_draft,recovered=False):
+        response=responses[-1]
         review=[];proposed=None
         try:
             if not isinstance(response.get('content'),str):raise ValueError('Model response has no contract text')
@@ -274,13 +296,55 @@ class Sessions:
             contract=normalize_contract(versions[-1]['contract']) if versions else first_draft or {}
             errors=issues(contract)+['解析失败: '+type(error).__name__+'；已保留上一版需求']
         with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current=db.execute('SELECT turns,versions,pending FROM sessions WHERE id=?',(session,)).fetchone()
+            request=db.execute('SELECT state FROM clarification_requests WHERE id=? AND session=?',(request_id,session)).fetchone()
+            if not current or not request or request[0]!='pending' or not current[2] or json.loads(current[0])!=turns or json.loads(current[1])!=versions:
+                raise ValueError('Clarification context changed; recorded response was not applied')
             version={'version':len(versions)+1,'origin':'llm_draft','contract':contract,'issues':errors,'usage':response.get('usage',{})}
-            version.update(response_ids=response_ids,response_usage=[item.get('usage',{}) for item in responses],format_correction_attempted=len(responses)>1)
+            version.update(request_id=request_id,response_ids=response_ids,response_usage=[item.get('usage',{}) for item in responses],format_correction_attempted=len(responses)>1)
+            if recovered:version.update(recovered_from_pending=True,api_outcome_uncertain=True)
             if review:version.update(review_required=review,proposed_contract=proposed)
             versions.append(version)
             turns.append({'role':'assistant','content':json.dumps({'contract':contract,'issues':errors},ensure_ascii=False)})
             db.execute('UPDATE sessions SET turns=?,versions=?,pending=0 WHERE id=?',(json.dumps(turns,ensure_ascii=False),json.dumps(versions,ensure_ascii=False),session))
+            db.execute('UPDATE clarification_requests SET state=? WHERE id=?',('recovered' if recovered else 'completed',request_id))
         return self.show(session)
+
+    def resolve_request(self,session,request_id,abandon=False):
+        if not isinstance(request_id,str) or not re.fullmatch('[0-9a-f]{32}',request_id):raise ValueError('Specify the exact pending request ID')
+        with self.request_lock(session):
+            with self.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                row=db.execute('SELECT context,state,response_ids FROM clarification_requests WHERE id=? AND session=?',(request_id,session)).fetchone()
+                if not row:raise ValueError('Unknown clarification request for this session')
+                if row[1]!='pending':
+                    already_resolved=row[1]=='abandoned' if abandon else row[1] in ('completed','recovered')
+                    if already_resolved:return self.show(session)
+                    raise ValueError('Request already resolved differently')
+                context=json.loads(row[0]);ids=json.loads(row[2])
+                current=db.execute('SELECT turns,versions,pending FROM sessions WHERE id=?',(session,)).fetchone()
+                if not current or not current[2] or json.loads(current[0])!=context['turns'] or json.loads(current[1])!=context['versions']:
+                    raise ValueError('Request context changed; resolution refused')
+                if abandon:
+                    db.execute("UPDATE clarification_requests SET state='abandoned' WHERE id=?",(request_id,))
+                    db.execute('UPDATE sessions SET pending=0 WHERE id=?',(session,))
+                else:
+                    if not ids:raise ValueError('No recorded response to recover; use abandon-request to explicitly release local pending state. Remote API outcome/cost remains unknown.')
+                    responses=[]
+                    for identity in ids:
+                        response=db.execute('SELECT response FROM clarification_responses WHERE id=? AND session=?',(identity,session)).fetchone()
+                        if not response:raise ValueError('Recorded response missing')
+                        responses.append(json.loads(response[0]))
+            if abandon:return self.show(session)
+            first=None
+            try:
+                text=responses[0]['content'].strip()
+                if text.startswith('```'):text=text.split('\n',1)[1].rsplit('```',1)[0]
+                first=normalize_contract(json.loads(text));json.dumps(first,allow_nan=False)
+                if not isinstance(first,dict):first=None
+            except (ValueError,TypeError,KeyError,AttributeError):first=None
+            return self._finish_response(session,request_id,context['turns'],context['versions'],responses,ids,first,recovered=True)
 
     def accept(self,session,version):
         return self.review(session,version,True)

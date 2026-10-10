@@ -257,3 +257,11 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Real DeepSeek Flash probes reproduced array-root detection schemas, boolean video audio policies, dictionary assumptions, and evaluation resources incorrectly added to inference inputs. Failures retained under ignored runs/semantic-live-check.
 - Added bounded one-pass formatting correction, durable raw-response records and per-response usage, task/acceptance/budget/input preservation checks, explicit training-resource versus inference-input scope and adapter defaults. Added array length validation and checked all sparse COCO IDs before planning.
 - Final three development regression probes passed input shape, original threshold and missing-budget preservation; COCO schema also passed adapter compatibility. These are visible development cases, not held-out semantic or RSI quality evidence. No real training was started.
+
+
+## Clarification crash recovery (2026-10-10)
+
+- Added per-request context and response association plus OS-held session locks across clarification and resolution. Received responses and request IDs are committed together.
+- CLI recover applies received responses without API calls, checks the original context, preserves change review, and is idempotent. Explicit abandon-request preserves user turns and known contracts; unknown remote outcome/cost remains visible, never zeroed.
+- Actual child process forced exit after response persistence followed by a new CLI process recovered the contract using a nonexistent API config, proving recovery does not depend on API access. Added live-lock, context tamper, no-response and duplicate-resolution tests.
+- Legacy pending requests lack response association and remain unrecoverable automatically. No claims about remote API cancellation or billing reconciliation.

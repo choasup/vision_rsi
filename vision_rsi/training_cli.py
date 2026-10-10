@@ -12,7 +12,16 @@ from .contracts import Sessions, validate_sample, validate_schema, validate_mani
 def summary(result):
     labels={'clarifying':'需要补充关键信息','task_defined':'任务已明确；执行条件待补充','ready_for_harness':'接口检查通过','requirements_review':'需求变更待核对，原要求保留'}
     lines=['任务: '+result['task_id'], '会话: '+result['session_id'], '状态: '+labels.get(result['status'],result['status'])]
-    if not result['versions']: return '\n'.join(lines+['请描述你要完成的任务。'])
+    if result.get('pending_request'):
+        lines.append('API 请求未完成保存；不会自动重发。')
+        if result.get('pending_request_id'):
+            lines.append('请求 ID: '+result['pending_request_id']+'；已保存响应: '+str(result.get('pending_response_count',0)))
+            action='recover' if result.get('pending_response_count') else 'abandon-request'
+            lines.append('若原进程已退出：training '+action+' --session-id '+result['session_id']+' --request-id '+result['pending_request_id'])
+            if action=='abandon-request':lines.append('abandon-request 仅显式解除本地待处理状态；不取消服务端请求，结果及费用仍未知。')
+        else:lines.append('旧版请求缺少恢复标识；原需求保留，请勿直接清除账本。')
+    if result.get('unsettled_api_request_ids'):lines.append('存在已恢复/已解除请求的未知 API 结果或费用；未计为零。')
+    if not result['versions']: return '\n'.join(lines+([] if result.get('pending_request') else ['需求描述已保存；尚未形成接口。']))
     latest=result['versions'][-1];contract=latest['contract']
     lines+=['已理解: '+str(contract.get('goal','正在整理你的需求'))]
     inputs=contract.get('inputs') or {}
@@ -69,7 +78,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','accept','reject','list','build','prepare','advance','watch','campaigns','audit','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -80,6 +89,7 @@ def main(argv):
     parser.add_argument('--json',action='store_true',help='Emit full structured records')
     parser.add_argument('--registry',default='runs/capabilities')
     parser.add_argument('--version')
+    parser.add_argument('--request-id',help='Exact pending clarification request ID shown by training show')
     parser.add_argument('--wall-seconds-budget',type=float)
     parser.add_argument('--chunk-size',type=int,default=10)
     parser.add_argument('--run-id');parser.add_argument('--run-store',default='runs/training-runs')
@@ -221,6 +231,8 @@ def main(argv):
             elif args.action=='reply':
                 if not args.message: raise ValueError('--message required')
                 result=clarify(session,args.message)
+            elif args.action in ('recover','abandon-request'):
+                result=store.resolve_request(session,args.request_id,abandon=args.action=='abandon-request')
             elif args.action in ('accept','reject'):
                 if not args.version:raise ValueError('Specify --version with the exact pending requirements draft number')
                 result=getattr(store,args.action)(session,int(args.version))
@@ -266,7 +278,12 @@ def main(argv):
                 if message=='/show': result=store.show(session)
                 elif message: result=clarify(session,message)
         else:
-            if not args.json and args.action in ('start','reply','show','define','accept','reject'):print(summary(result))
+            if not args.json and args.action in ('start','reply','show','define','accept','reject','recover','abandon-request'):print(summary(result))
             else:print(execution_summary(result) if args.action in ('prepare','run') and not args.json else json.dumps(result,ensure_ascii=False,indent=2))
     except (ValueError,TypeError,KeyError,OSError,RuntimeError,subprocess.SubprocessError) as error:
+        if args.action in ('start','reply') and 'session' in locals():
+            try:
+                pending=store.show(session)
+                if pending.get('pending_request'):print(summary(pending),file=sys.stderr)
+            except (ValueError,OSError):pass
         parser.exit(1,str(error)+'\n')
