@@ -1,5 +1,9 @@
 # Vision RSI Agent
 
+当前源码的通用研究控制器支持 `evaluate_contract`：候选代码通过隔离 CPU 执行后，按冻结合同计算开发集指标，将结果写入研究账本供后续迭代使用。目前此工具仅实现 `event_micro_f1` 协议，尚未提供通用视觉模型后端，也不自动发布推理能力。
+
+启用方式：在研究配置中设置 `research.allow_candidate_checks: true`，并同时绑定 `research.task_contract` 和 `research.validation_dataset`。两项均为 `{"path":"绝对文件路径","sha256":"文件原始字节的 SHA256"}`。开发集文件包含 `purpose: "development_validation"`、1 至 16 个 `samples` 和 ID 完全对应的 `ground_truth`；隐藏测试不可用于该入口。控制器只允许评测当前研究账本已生成并引用的候选，模型不能替换数据、阈值或评测协议。修改文件后需显式更新绑定；旧哈希会拒绝执行。此功能尚未包含在 dev6 离线安装包中。
+
 最新本地可安装开发包为 `0.1.0.dev6`，位于 `runs/release-dev6/wheelhouse/vision_rsi_agent-0.1.0.dev6-py3-none-any.whl`。源码全量 420 项测试、安装器单独 1 项测试与独立安装环境 225 项回归通过；这些验证覆盖软件交付，不代表 COCO AP≥60 或 RSI 效率已验收。本机已验证的独立安装入口：
 
 ```powershell

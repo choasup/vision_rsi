@@ -7,9 +7,13 @@ from .event_eval import PROTOCOL, evaluate as evaluate_events, read_document
 from .runner import atomic_json,digest
 
 
-def evaluate(store,candidate_id,remote,module,function,contract_path,dataset_path):
+def evaluate(store,candidate_id,remote,module,function,contract_path,dataset_path,expected_contract_sha256=None,expected_dataset_sha256=None):
     contract_raw,contract=read_document(contract_path,512*1024)
     dataset_raw,dataset=read_document(dataset_path,2*1024*1024)
+    if expected_contract_sha256 is not None and hashlib.sha256(contract_raw).hexdigest()!=expected_contract_sha256:
+        raise ValueError('Frozen research contract changed before evaluation')
+    if expected_dataset_sha256 is not None and hashlib.sha256(dataset_raw).hexdigest()!=expected_dataset_sha256:
+        raise ValueError('Frozen validation dataset changed before evaluation')
     if not isinstance(contract,dict) or not isinstance(contract.get('acceptance'),dict) or contract['acceptance'].get('evaluation_protocol')!=PROTOCOL:
         raise ValueError('Adapter metric evaluation currently requires the fixed event_micro_f1 protocol')
     if not isinstance(dataset,dict) or set(dataset)!={'purpose','samples','ground_truth'} or dataset['purpose']!='development_validation':

@@ -12,7 +12,7 @@ from .observatory import dashboard
 from .remote import probe
 from .runner import digest
 
-TOOLS = {'inspect_repository', 'read_source', 'remote_environment', 'synthesize','stage_candidate','check_candidate','check_contract','read_training_run'}
+TOOLS = {'inspect_repository', 'read_source', 'remote_environment', 'synthesize','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run'}
 
 
 def observation_context(value):
@@ -150,6 +150,20 @@ def frozen_contract(config):
     return json.loads(raw.decode('utf-8-sig')),binding['sha256']
 
 
+def evaluation_arguments(value):
+    if not isinstance(value,dict) or set(value)!={'candidate_id','module','function'}:
+        raise ValueError('evaluate_contract requires exactly candidate_id,module,function')
+    check_arguments(dict(value,cases=[{'sample':{}}]))
+    return value
+
+
+def frozen_validation(config):
+    binding=config.get('research',{}).get('validation_dataset')
+    if not isinstance(binding,dict) or set(binding)!={'path','sha256'} or not isinstance(binding['sha256'],str) or not re.fullmatch('[0-9a-f]{64}',binding['sha256']):
+        raise ValueError('Evaluation needs a configured validation_dataset path/SHA256')
+    return binding
+
+
 def validate_check_binding(arguments,events,refs=None):
     actions={event['key'] for event in events if event['kind']=='action' and event['payload'].get('tool')=='stage_candidate'}
     if not any(event['kind']=='result' and event['payload'].get('action') in actions
@@ -177,6 +191,7 @@ def parse_plan(content, known):
     if plan['tool']=='read_training_run':
         from .research_training import arguments
         result['arguments']=arguments(plan.get('arguments'))
+    if plan['tool']=='evaluate_contract':result['arguments']=evaluation_arguments(plan.get('arguments'))
     if plan['tool']=='synthesize':result['arguments']=synthesis_arguments(plan.get('arguments'))
     if plan['tool']=='check_candidate':result['arguments']=check_arguments(plan.get('arguments'))
     if plan['tool']=='check_contract':result['arguments']=contract_check_arguments(plan.get('arguments'))
@@ -192,6 +207,21 @@ def parse_plan(content, known):
 
 
 def execute(tool, config, repository,arguments=None):
+    if tool=='evaluate_contract':
+        from .adapter_evaluation import evaluate
+        from .candidates import Candidates
+        context=config.get('_research_candidate_context')
+        if not isinstance(context,dict) or config.get('research',{}).get('allow_candidate_checks') is not True:
+            raise ValueError('Candidate metric evaluation is not enabled')
+        args=evaluation_arguments(arguments);_,contract_hash=frozen_contract(config);dataset=frozen_validation(config)
+        store=Candidates(context['store'],repository)
+        try:report=evaluate(store,args['candidate_id'],config['remote'],args['module'],args['function'],
+                            config['research']['task_contract']['path'],dataset['path'],contract_hash,dataset['sha256'])
+        finally:store.close()
+        return {'candidate_id':args['candidate_id'],'runtime_status':report['status'],'metric_report':report['metric_report'],
+                'acceptance_evaluated':report['acceptance_evaluated'],'report_path':report['report_path'],
+                'report_sha256':hashlib.sha256(Path(report['report_path']).read_bytes()).hexdigest(),
+                'evaluation_identity':report['identity'],'quality_verified':False,'adopted':False,'gpu_used':False}
     if tool=='read_training_run':
         from .research_training import inspect,arguments as validate_arguments
         context=config.get('_training_evidence_context')
@@ -344,12 +374,14 @@ def research_step(config, directory, steps=1, repository='.'):
             if pending is None:
                 completed_actions = {e['payload']['action'] for e in events if e['kind'] == 'result' and e['payload']['status'] == 'completed'}
                 completed_tools = {e['payload'].get('tool') for e in events if e['key'] in completed_actions}
-                available = TOOLS - (completed_tools-{'read_source','stage_candidate','check_candidate','check_contract','read_training_run'})
+                available = TOOLS - (completed_tools-{'read_source','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run'})
                 if not config.get('_training_evidence_context') or not config.get('_task_readiness_context',{}).get('recent_run_ids'):
                     available.discard('read_training_run')
                 if config.get('research',{}).get('allow_candidate_checks') is not True or 'stage_candidate' not in completed_tools:
-                    available-= {'check_candidate','check_contract'}
+                    available-= {'check_candidate','check_contract','evaluate_contract'}
                 if not config.get('research',{}).get('task_contract'):available.discard('check_contract')
+                if not config.get('research',{}).get('task_contract') or not config.get('research',{}).get('validation_dataset'):
+                    available.discard('evaluate_contract')
                 if config.get('research',{}).get('allow_candidate_writes') is not True or 'inspect_repository' not in completed_tools:
                     available.discard('stage_candidate')
                 if 'inspect_repository' not in completed_tools:available.discard('read_source')
@@ -420,6 +452,12 @@ def research_step(config, directory, steps=1, repository='.'):
                         prompt['tools']['check_contract']='Check staged adapter/harness outputs against configured hash-bound task interface in CPU sandbox; no metric acceptance.'
                         prompt['schema']['tool_argument_shapes']['check_contract']={'candidate_id':'staged candidate identity','module':'vision_rsi.adapter_name or harness_name','function':'function name','samples':['1..16 inputs conforming to frozen_task_contract; total <=12000 characters']}
                         prompt['schema']['arguments_rule']+=' check_contract requires arguments exactly candidate_id,module,function,samples, and refs citing its staged result. The contract is fixed by configuration, never supplied or modified by the model.'
+                    if 'evaluate_contract' in available:
+                        dataset=frozen_validation(config)
+                        prompt['tools']['evaluate_contract']='Run staged adapter against configured frozen development inputs and deterministic event F1 metric; no hidden-test feedback, production acceptance or adoption.'
+                        prompt['validation_dataset']={'sha256':dataset['sha256'],'purpose':'development_validation','labels_disclosed_to_candidate':False}
+                        prompt['schema']['tool_argument_shapes']['evaluate_contract']={'candidate_id':'staged candidate identity','module':'vision_rsi.adapter_name or harness_name','function':'function name'}
+                        prompt['schema']['arguments_rule']+=' evaluate_contract arguments are EXACTLY candidate_id,module,function; cite its staged result. The dataset/ground truth/threshold are configured outside your arguments and must not be overridden.'
                     original_history_count=len(history)
                     while True:
                         prompt['history_projection']={'original_count':original_history_count,'included_count':len(history),
@@ -455,12 +493,12 @@ def research_step(config, directory, steps=1, repository='.'):
                     if plan['tool'] not in available:
                         raise ValueError('Tool already completed or not yet eligible')
                     if plan['tool']=='synthesize':validate_synthesis_evidence(plan['arguments'],ledger.events())
-                    if plan['tool'] in ('check_candidate','check_contract'):validate_check_binding(plan['arguments'],events,plan['refs'])
+                    if plan['tool'] in ('check_candidate','check_contract','evaluate_contract'):validate_check_binding(plan['arguments'],events,plan['refs'])
                     if plan['tool']=='stage_candidate' and not any(e['kind']=='result' and e['payload'].get('status')=='completed'
                             and e['payload'].get('observation',{}).get('git_revision')==plan['arguments']['base_revision']
                             for e in events if e['key'] in plan['refs']):
                         raise ValueError('Candidate must cite the observed base revision result')
-                    if plan['tool'] in ('read_source','stage_candidate','check_candidate','check_contract','read_training_run') and any(e['kind']=='action' and e['key'] in completed_actions
+                    if plan['tool'] in ('read_source','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run') and any(e['kind']=='action' and e['key'] in completed_actions
                             and e['payload'].get('tool')==plan['tool'] and e['payload'].get('arguments')==plan['arguments'] for e in events):
                         raise ValueError('Identical research action already completed')
                 except (ValueError, KeyError, TypeError, AttributeError) as error:
@@ -474,21 +512,21 @@ def research_step(config, directory, steps=1, repository='.'):
                 dashboard(ledger)
             try:
                 execution_config=config
-                if pending['payload']['tool'] in ('check_candidate','check_contract'):validate_check_binding(pending['payload']['arguments'],events,pending['payload']['refs'])
-                if pending['payload']['tool'] in ('stage_candidate','check_candidate','check_contract'):
+                if pending['payload']['tool'] in ('check_candidate','check_contract','evaluate_contract'):validate_check_binding(pending['payload']['arguments'],events,pending['payload']['refs'])
+                if pending['payload']['tool'] in ('stage_candidate','check_candidate','check_contract','evaluate_contract'):
                     execution_config=dict(config,_research_candidate_context={
                         'store':str(ledger.directory/'candidates'),
                         'binding':{'action_key':pending['key'],'objective_sha256':digest(events[0]['payload'])}})
                 if pending['payload']['tool']=='synthesize':validate_synthesis_evidence(pending['payload'].get('arguments'),ledger.events())
                 observation = (execute(pending['payload']['tool'],execution_config,repository,pending['payload'].get('arguments'))
-                               if pending['payload']['tool'] in ('read_source','synthesize','stage_candidate','check_candidate','check_contract','read_training_run') else execute(pending['payload']['tool'], config, repository))
+                               if pending['payload']['tool'] in ('read_source','synthesize','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run') else execute(pending['payload']['tool'], config, repository))
                 status = 'completed'
                 summary = '研究工具已执行：' + pending['payload']['tool']
             except Exception as error:
                 observation = {'error_type': type(error).__name__, 'message': str(error)[:2000]}
                 status, summary = 'failed', '研究工具失败，已保留失败证据。'
             ledger.append(pending['key'] + ':result', 'result', {'summary': summary, 'action': pending['key'], 'status': status,
-                          'observation': observation, 'synthetic': False, 'read_only': pending['payload']['tool'] not in ('stage_candidate','check_candidate','check_contract')})
+                          'observation': observation, 'synthetic': False, 'read_only': pending['payload']['tool'] not in ('stage_candidate','check_candidate','check_contract','evaluate_contract')})
             last_step_status = 'tool_completed' if status == 'completed' else 'tool_failed'
             dashboard(ledger)
             print(summary, flush=True)
