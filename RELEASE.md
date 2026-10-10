@@ -515,3 +515,10 @@
 - 根因是planner schema把不同工具示例分别命名candidate_arguments/synthesis_arguments/check_arguments，模型复制了示例字段。现统一顶层arguments，通过tool_argument_shapes按真实工具名描述其内容，显式禁止替代字段；不接受错误字段别名、不自动改写原响应。前两次失败证据保持。
 - 增加实际提示schema断言，不把提示改动当真实闭环通过。本轮无GPU、未训练/采用、安装包未更新，完整上线目标未完成。
 - 39项controller/llm/not_dispatched回归通过（11.405秒）；修正后的统一参数提示尚未再次真实调用。
+
+## 真实CPU失败→一次模型修复→复测通过（2026-10-10）
+
+- 统一arguments提示后，新独立上限1探针通过：runs/research-repair-live/564b2ff507cb4c9cabff0d03129075cd/{preregistered.json,evidence.json,research/research.sqlite3}。真实DeepSeek Flash JSON模式一次responded，reported prompt6361/completion555/total6916 tokens，额度剩0，无语义重试。
+- 初始候选7fba5aa08527a186cc4b2d36ced8e0fea7cbdbe7e0b2c79a42e2597b1f04d332实际CPU沙箱dict*int报TypeError；模型看到源码/失败结果后提出独立候选d1bfd68f14307264ca7f1c3de3cc45a736a07b34ebc754b640c73bad7b019417，predict增加dict取value键分支。控制器创建独立Git候选，原定输入1和{"value":3}复测输出value2/6、uid65534，原用例未改。
+- 这是固定公开开发用例的真实反馈修正联调，不是独立保留质量或同预算RSI效率提升证明；设置/复测动作由固定探针安排，不能称全流程自主选择。无GPU/训练，候选未采用，前两次失败证据保留。
+- 移除observatory中早期Demo固定COCO阻塞/GPU成本文字，改为明确需查看所选账本结果与审计；从原始成功账本重新生成观测页。3项ledger测试通过（0.124秒）。安装包未更新，完整上线目标未完成。

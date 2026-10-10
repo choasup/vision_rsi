@@ -10,7 +10,7 @@ def dashboard(ledger):
 <main><h1>Vision RSI · 研究观测台</h1><small>持久目标 · 证据链 · 行动与结果 · 自我改进提案</small>
 <p class="notice">研究记录快照：可包含真实只读研究行动与历史合成实验。以每条记录的类型和产物为准；尚无 RSI 效果证据。</p>
 <div id="objective"></div><div class="cards"><div class="card">研究状态<b id="status"></b></div><div class="card">事件数<b id="count"></b></div><div class="card">待回收行动<b id="pending"></b></div><div class="card">自我修改已采用<b>0</b></div></div>
-<p>当前阻塞：COCO 数据路径、真实训练预算及训练与代码修改执行器尚未接入。预算：此历史 Demo 实际 GPU 小时为 0；未配置研究总预算。</p>
+<p>本页展示所选研究账本的事件快照。任务达标、预算消耗和阻塞原因需查看对应结果与审计记录；不从页面存在或行动完成推断训练成功、候选已采用或 RSI 效果。</p>
 <nav><button data-view="all" aria-pressed="true">研究时间线</button><button data-view="knowledge">证据与假设</button><button data-view="execution">行动与结果</button><button data-view="self">自我改进</button></nav>
 <label>搜索摘要、任务或证据 <input id="search" placeholder="输入关键词" aria-label="搜索事件"></label><div id="events"></div>
 <p><small>详情包含完整结构化记录和引用。暂停只改变研究调度意图，不取消已启动任务。本页为只读快照；CLI 更新后重新生成并刷新页面。无后台自主循环。</small></p></main>
