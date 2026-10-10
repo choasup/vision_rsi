@@ -148,3 +148,28 @@ class ExperimentTests(unittest.TestCase):
         result=propose_next(self.record,self.runs,self.llm,self.root/'research','request-four')
         self.assertEqual(result['status'],'proposal_rejected')
         self.assertFalse(result['training_performed'])
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_deep_method_database_response_and_plan_replay(self,client):
+        from vision_rsi.filesystem import native_path
+        client.return_value.complete.return_value={'content':json.dumps(proposal())}
+        root=self.root;owned=[]
+        for i in range(8):
+            root=root/('owned-segment-'+str(i)+'-'+'x'*22);owned.append(root)
+        root=native_path(root)
+        try:
+            first=propose_next(self.record,self.runs,self.llm,root,'deep-request')
+            self.assertGreater(len(first['plan_path']),260)
+            self.assertEqual(json.loads(Path(first['plan_path']).read_text())['status'],'ready_to_submit')
+            self.assertEqual(first,propose_next(self.record,self.runs,self.llm,root,'deep-request'))
+            self.assertEqual(client.return_value.complete.call_count,1)
+            self.assertTrue(native_path(root/'deep-request/response.json').is_file())
+        finally:
+            if root.exists():
+                for path in sorted(root.rglob('*'),key=lambda p:len(p.parts),reverse=True):
+                    if path.is_file():path.unlink()
+                    elif path.is_dir():path.rmdir()
+                root.rmdir()
+            for directory in reversed(owned[:-1]):
+                directory=native_path(directory)
+                if directory.exists():directory.rmdir()

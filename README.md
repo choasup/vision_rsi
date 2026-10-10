@@ -665,3 +665,10 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 每次工具调用前先持久化`started`，再执行；完成、不确定、中断和已确定未发送的尝试都占用一次，恢复重试另占一次。完整历史及待执行意图用于累计，不依赖压缩后的策略视图。达到上限后返回`controller_budget_exhausted`，保留运行ID、原始意图及记录，不取消已经运行的远端作业；`agent-resume`不重置计数。可用`training agent-status --campaign-id ...`查看`controller_tool_budget`，远端作业仍可通过独立`training status/logs/cancel`人工处理。
 
 冻结任务包保留该配置，损坏或缺失的计数证据不会自动补零。该上限只限制控制工具尝试数，不计算策略决策调用、Token、GPU小时、墙钟时长或实际费用；这些统一资源约束仍待完善。
+
+
+### Windows 训练计划的深路径
+
+训练计划及方法实验的本地计划、响应文件和请求SQLite账本在路径较长时使用 [Windows扩展路径命名](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)。返回的`plan_path`可能以`\\?\`开头，供Python原生文件I/O读回；不修改注册表或系统策略，短路径形式不变。已有冻结任务包不会自动获得此修改，需要重新构建新包。
+
+已在本机通过288字符计划路径的真实CLI准备/读回/跨进程预算探针，以及更深实验目录的SQLite/响应/计划缓存复跑测试。这里没有承诺所有Shell、外部工具、网络共享或全部存储路径均支持长路径；UNC目前只验证命名转换，未访问真实网络共享。

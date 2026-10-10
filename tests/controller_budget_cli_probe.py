@@ -1,4 +1,5 @@
 """Local independent-process budget probe; fixture config cannot submit training."""
+import argparse
 import json
 from pathlib import Path
 import subprocess
@@ -10,8 +11,10 @@ from vision_rsi.runner import atomic_json
 
 
 def main():
+    parser=argparse.ArgumentParser();parser.add_argument('--deep',action='store_true');args=parser.parse_args()
     repo=Path(__file__).resolve().parents[1]
-    folder=repo/'runs'/('cb-'+uuid.uuid4().hex[:8]);folder.mkdir(parents=True)
+    folder=repo/'runs/controller-budget-live'/uuid.uuid4().hex if args.deep else repo/'runs'/('cb-'+uuid.uuid4().hex[:8])
+    folder.mkdir(parents=True)
     contract=json.loads((repo/'examples/interface-contract.json').read_text(encoding='utf-8'))
     contract['budget']=None
     store=Sessions(folder/'sessions');session=store.create('budget-fixture','Synthetic interface only; no training authorization')
@@ -24,6 +27,9 @@ def main():
         assert result.returncode==0,result.stderr
         return json.loads(result.stdout)
     first=call('advance','--steps','10');assert first['status']=='blocked'
+    plan_path=Path(first['plan']['plan_path'])
+    assert json.loads(plan_path.read_text(encoding='utf-8'))['status']=='blocked'
+    if args.deep:assert len(str(plan_path))>260
     second=call('advance','--steps','10');assert second['status']=='controller_budget_exhausted'
     before=Path(second['state_path']).read_bytes()
     third=call('advance');assert Path(second['state_path']).read_bytes()==before
@@ -33,7 +39,7 @@ def main():
     assert all(len(row['history'])==1 and row['history'][0]['action']['kind']=='prepare' for row in (first,second,third,watched))
     assert not any(row.get('run_id') for row in (first,second,third,watched))
     evidence={'fixture':True,'directory':str(folder),'session_id':session['session_id'],'campaign_id':second['campaign_id'],
-              'independent_cli_processes':4,'tool_attempt_limit':1,'admitted_attempts_after_each_process':[1,1,1,1],
+              'deep_path_probe':args.deep,'plan_path':str(plan_path),'plan_path_characters':len(str(plan_path)),'plan_readback_passed':True,'independent_cli_processes':4,'tool_attempt_limit':1,'admitted_attempts_after_each_process':[1,1,1,1],
               'statuses':[row['status'] for row in (first,second,third,watched)],'watch_stop_reason':watched['watch']['stop_reason'],
               'repeated_advance_state_unchanged':True,'run_created':False,'gpu_used':False,'llm_called':False,
               'scope':'Per-campaign tool attempts only, not whole-session resources or policy call cost.'}

@@ -7,6 +7,7 @@ import sqlite3
 
 from .acceptance import review
 from .coco_train import validate_recipe
+from .filesystem import native_path
 from .runner import atomic_json,digest
 
 MUTABLE={'learning_rate','weight_decay','epochs','batch_size_per_gpu','min_size','max_size','checkpoint_steps'}
@@ -34,7 +35,7 @@ def compile_plan(parent,record,proposal,remaining,root,research_brief=None):
                 status='ready_to_submit',blockers=[])
     if research_brief is not None:
         plan['experiment'].update(strategy_research_brief=research_brief,strategy_brief_sha256=digest(research_brief))
-    identity=digest(plan);folder=Path(root)/identity;folder.mkdir(parents=True,exist_ok=True);path=folder/'plan.json'
+    identity=digest(plan);folder=native_path(Path(root)/identity);folder.mkdir(parents=True,exist_ok=True);path=native_path(folder/'plan.json')
     if path.exists():
         if json.loads(path.read_text(encoding='utf-8'))!=plan:raise ValueError('Experiment plan changed')
     else:atomic_json(path,plan)
@@ -56,13 +57,13 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None):
     if verdict['passed']:raise ValueError('Training target met; validate serving instead of searching further')
     remaining=runs.remaining(parent['session_id'],parent['contract']['budget']['gpu_hours'])
     if remaining*3600/parent['recipe']['world_size']<6:return {'status':'budget_exhausted','remaining_gpu_hours':remaining}
-    root=Path(root);root.mkdir(parents=True,exist_ok=True)
+    root=native_path(root);root.mkdir(parents=True,exist_ok=True)
     context={'run_id':record['run_id'],'parent_plan_id':record['plan_id'],'receipt_sha256':digest(receipt),
              'llm':{key:llm[key] for key in ('model','base_url')}}
     for key in ('usage_ledger','usage_call_limit','thinking'):
         if key in llm:context['llm'][key]=llm[key]
     if research_brief is not None:context['strategy_research_brief']=research_brief
-    db=sqlite3.connect(root/'requests.sqlite3',timeout=10)
+    db=sqlite3.connect(native_path(root/'requests.sqlite3'),timeout=10)
     try:
         db.execute('CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY,context TEXT,state TEXT,response TEXT)');db.commit()
         row=db.execute('SELECT context,state,response FROM requests WHERE id=?',(request_id,)).fetchone()
@@ -97,7 +98,7 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None):
                 with db:db.execute('UPDATE requests SET state=? WHERE id=?',('not_dispatched',request_id))
                 raise
             with db:db.execute('UPDATE requests SET state=?,response=? WHERE id=?',('responded',json.dumps(response),request_id))
-        folder=root/request_id;folder.mkdir(exist_ok=True);atomic_json(folder/'response.json',response)
+        folder=native_path(root/request_id);folder.mkdir(exist_ok=True);atomic_json(native_path(folder/'response.json'),response)
         saved=folder/'experiment.json'
         if saved.exists():
             result=json.loads(saved.read_text(encoding='utf-8'))

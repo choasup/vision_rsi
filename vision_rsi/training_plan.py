@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .contracts import issues, validate_schema
 from .coco_train import validate_recipe
+from .filesystem import native_path
 from .runner import atomic_json, digest, revision
 
 
@@ -84,8 +85,8 @@ def prepare(session,config,root):
           'status':'blocked' if blockers else 'ready_to_submit','blockers':blockers,
           'limitations':['Frozen baseline only; method research and Agent RSI loop still pending.','Baseline performance is measured, never assumed to meet the target.']}
     identity=digest(plan)
-    folder=Path(root)/session['task_id']/identity;folder.mkdir(parents=True,exist_ok=True)
-    destination=folder/'plan.json'
+    folder=native_path(Path(root)/session['task_id']/identity);folder.mkdir(parents=True,exist_ok=True)
+    destination=native_path(folder/'plan.json')
     if destination.exists():
         if json.loads(destination.read_text(encoding='utf-8'))!=plan: raise ValueError('Training plan hash conflict')
     else: atomic_json(destination,plan)
