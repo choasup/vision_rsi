@@ -16,7 +16,7 @@ from .runner import atomic_json, digest
 from .task_acceptance import pending_candidate
 
 
-def infer(registry, session, version, request_id, samples, media_directory, remote):
+def infer(registry, session, version, request_id, samples, media_directory, remote, *, expected_input_manifest=None):
     if not isinstance(request_id,str) or not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,63}',request_id):
         raise ValueError('Require a stable safe request ID of 1..64 characters')
     name,artifact,task_binding,bundle=pending_candidate(registry,session,version)
@@ -43,6 +43,8 @@ def infer(registry, session, version, request_id, samples, media_directory, remo
     if len({sample['sample_id'] for sample in samples})!=len(samples):raise ValueError('Duplicate sample IDs in batch')
     encode_cases(bundle['identity']['module'],bundle['identity']['function'],cases)
     rows=manifest(contract,cases)
+    if expected_input_manifest is not None and rows!=expected_input_manifest:
+        raise ValueError('Input media changed before candidate dispatch')
     binding={'task_binding':task_binding,'version':version,'request_id':request_id,'samples':samples,
              'input_manifest':rows,'remote':remote,'runtime_identity_sha256':runtime_hash,
              'serving_record_sha256':serving['record_sha256'],

@@ -221,6 +221,10 @@ class Capabilities:
             path=self.root/name/candidate/'manifest.json'
             if sha(path)!=expected:raise ValueError('Manifest integrity failure')
             manifest=json.loads(path.read_text())
+            if manifest['spec']['kind']=='candidate_bundle':
+                from .candidate_delivery import verify
+                verify(self,manifest)
+                return candidate
             if manifest['spec']['kind'] not in ('toy_threshold_detection','coco_detection'):continue
             if manifest['spec']['kind']=='coco_detection' and manifest.get('validation',{}).get('serving_accuracy_verified') is not True:continue
             return candidate
@@ -232,6 +236,9 @@ class Capabilities:
         path=self.root/name/version/'manifest.json'
         if sha(path)!=expected:raise ValueError('Manifest integrity failure')
         manifest=json.loads(path.read_text())
+        if manifest['spec']['kind']=='candidate_bundle':
+            from .candidate_delivery import sample_input
+            return sample_input(self,manifest,input_path)[1]
         if manifest['spec']['kind']=='coco_detection':
             from .media import image_request
             return image_request(manifest['endpoint']['contract'],input_path)['input_fingerprint']
@@ -244,6 +251,9 @@ class Capabilities:
         version,expected=row; folder=self.root/name/version
         if sha(folder/'manifest.json')!=expected: raise ValueError('Manifest integrity failure')
         manifest=json.loads((folder/'manifest.json').read_text())
+        if manifest['spec']['kind']=='candidate_bundle':
+            from .candidate_delivery import infer
+            return infer(self,manifest,input_path,expected_input_fingerprint,sample_id)
         allowed=('plan.json','receipt.json','inference.py','serving-report.json') if manifest['spec']['kind']=='coco_detection' else ('model.json','harness.py')
         if set(manifest['artifacts'])!=set(allowed):raise ValueError('Capability artifact set mismatch')
         for file,expected_hash in manifest['artifacts'].items():

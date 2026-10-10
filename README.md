@@ -1,5 +1,20 @@
 # Vision RSI Agent
 
+## 通用候选的固定版本交付（当前源码）
+
+候选需先通过任务绑定、已暂停研究账本的独立验收（`accept-candidate --from-research`）及 `candidate-serving-check`，再执行：
+
+```powershell
+.\vision-rsi.cmd training promote-candidate --session-id SESSION --version CANDIDATE_VERSION --sessions SESSIONS_DIR --research-root RESEARCH_DIR --registry REGISTRY_DIR --config config.local.json
+.\vision-rsi.cmd test --task-id TASK --input sample.json --registry REGISTRY_DIR
+.\vision-rsi.cmd test --task-id TASK --manifest samples.jsonl --output-dir results --registry REGISTRY_DIR
+```
+
+晋升生成独立固定版本，不修改原候选。支持合同样本的单输入、JSONL 批量及合同内联合多图/视频；当前通用后端为隔离 CPU bundle，验收指标仅支持固定事件 F1 协议，不代表通用学习模型已经实现。推理复核冻结历史、验收指标、服务记录和运行环境；源程序或证据变化会拒绝调用。结果注明验收范围仅覆盖选定研究账本与冻结验收集，完整开发历史及任意输入质量没有保证，也不代表整个 Agent 已上线。原验收标注、输入媒体、研究账本和候选产物需要保留；中断且结果不确定的请求不自动重发。批量恢复使用 `--resume`。
+
+此功能在当前源码，既有 dev8 离线包不包含本轮晋升入口。最新已验证安装包与说明见 [INSTALL.md](INSTALL.md)。
+
+
 当前源码的通用研究控制器支持 `evaluate_contract`：候选代码通过隔离 CPU 执行后，按冻结合同计算开发集指标，将结果写入研究账本供后续迭代使用。目前此工具仅实现 `event_micro_f1` 协议，尚未提供通用视觉模型后端，也不自动发布推理能力。
 
 启用方式：在研究配置中设置 `research.allow_candidate_checks: true`，并同时绑定 `research.task_contract` 和 `research.validation_dataset`。两项均为 `{"path":"绝对文件路径","sha256":"文件原始字节的 SHA256"}`。开发集文件包含 `purpose: "development_validation"`、1 至 16 个 `samples` 和 ID 完全对应的 `ground_truth`；隐藏测试不可用于该入口。控制器只允许评测当前研究账本已生成并引用的候选，模型不能替换数据、阈值或评测协议。修改文件后需显式更新绑定；旧哈希会拒绝执行。此功能尚未包含在 dev6 离线安装包中。
