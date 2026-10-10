@@ -2,6 +2,7 @@
 import json
 import math
 from pathlib import Path
+import stat
 import sys
 import time
 
@@ -28,6 +29,7 @@ def split_check(root, split, expected_images):
     directory=root/f'{split}2017'
     try:
         data=json.loads(annotation.read_text())
+        resolved_directory=directory.resolve(strict=True)
         categories=data['categories'];images=data['images'];annotations=data['annotations']
         category_ids=[row['id'] for row in categories]
         if len(category_ids)!=80 or set(category_ids)!=set(COCO_IDS):
@@ -42,8 +44,13 @@ def split_check(root, split, expected_images):
                 raise ValueError('Invalid image filename')
             if name in names:raise ValueError('Duplicate image filename')
             names.add(name)
-            path=directory/name
-            if path.is_symlink() or not path.resolve().is_relative_to(directory.resolve()) or not path.is_file() or path.stat().st_size==0:
+            # Names are flat, so a regular non-reparse file under the resolved
+            # directory cannot traverse elsewhere. Avoid repeated Windows
+            # realpath calls for each of the 118287 training files.
+            path=resolved_directory/name
+            info=path.lstat()
+            if (not stat.S_ISREG(info.st_mode) or info.st_size==0
+                    or getattr(info,'st_file_attributes',0)&getattr(stat,'FILE_ATTRIBUTE_REPARSE_POINT',1024)):
                 raise ValueError('Missing, empty or escaping image file')
             if any(type(image[k]) is not int or image[k]<=0 for k in ('width','height')):
                 raise ValueError('Invalid image dimensions')
@@ -62,6 +69,8 @@ def split_check(root, split, expected_images):
                 # the original bytes; CocoImages excludes degenerate targets.
                 if split!='train':raise ValueError('Invalid annotation box')
                 zero_area_annotations.append(row['id'])
+        if directory.resolve(strict=True)!=resolved_directory:
+            raise ValueError('Image directory changed during coverage check')
         import hashlib
         return {'ready':True,'images':len(images),'annotations':len(annotations),
                 'annotation_sha256':hashlib.sha256(annotation.read_bytes()).hexdigest(),

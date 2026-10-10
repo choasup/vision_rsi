@@ -9,9 +9,15 @@ import warnings
 from .detector import split_check
 
 
-def verify_images(root, split, expected_images):
+def verify_images(root, split, expected_images, progress=None):
     from PIL import Image, ImageFile
     root=Path(root)
+    def report(status,count):
+        if progress is not None:
+            progress({'status':status,'split':split,'decoded_images':count,'total_images':expected_images,
+                      'verification_complete':status=='completed','dataset_ready':False,
+                      'training_started':False,'gpu_used':False})
+    report('checking_coverage',0)
     checked=split_check(root,split,expected_images)
     if not checked['ready']:
         raise ValueError(checked['reason'])
@@ -22,7 +28,8 @@ def verify_images(root, split, expected_images):
     data=json.loads(raw); fingerprint=hashlib.sha256();total=0
     Image.MAX_IMAGE_PIXELS=40_000_000
     ImageFile.LOAD_TRUNCATED_IMAGES=False
-    for item in sorted(data['images'],key=lambda row:row['id']):
+    report('decoding_images',0)
+    for count,item in enumerate(sorted(data['images'],key=lambda row:row['id']),1):
         path=root/f'{split}2017'/item['file_name']
         if not 0<path.stat().st_size<=20*1024*1024:
             raise ValueError('Image exceeds byte limit')
@@ -37,8 +44,10 @@ def verify_images(root, split, expected_images):
         image_sha=hashlib.sha256(content).hexdigest()
         fingerprint.update(json.dumps([item['id'],item['file_name'],image_sha],separators=(',',':')).encode()+b'\n')
         total+=len(content)
+        if count%1000==0:report('decoding_images',count)
     if hashlib.sha256(annotation.read_bytes()).hexdigest()!=checked['annotation_sha256']:
         raise ValueError('Annotations changed during verification')
+    report('completed',expected_images)
     return {'split':split,'images':expected_images,'annotations':checked['annotations'],
             'zero_area_annotation_ids':checked['zero_area_annotation_ids'],
             'training_box_policy':checked['training_box_policy'],
@@ -50,5 +59,14 @@ def verify_images(root, split, expected_images):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root',required=True)
+    parser.add_argument('--split',choices=('train','val'),default='val')
+    parser.add_argument('--progress',help='New JSON sidecar outside the dataset; progress is not a resume receipt')
     args=parser.parse_args()
-    print(json.dumps(verify_images(args.root,'val',5000),indent=2))
+    callback=None
+    if args.progress:
+        from .runner import atomic_json
+        original=Path(args.progress);sidecar=original.resolve()
+        if original.is_symlink() or sidecar.exists() or sidecar.is_relative_to(Path(args.root).resolve()):
+            parser.error('Progress path must be new and outside the dataset')
+        callback=lambda value:atomic_json(sidecar,value)
+    print(json.dumps(verify_images(args.root,args.split,118287 if args.split=='train' else 5000,callback),indent=2))

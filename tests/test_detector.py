@@ -2,6 +2,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import stat
+from types import SimpleNamespace
+from unittest.mock import patch
 from vision_rsi.detector import COCO_IDS, detections, dataset_check, split_check
 
 class DetectorTests(unittest.TestCase):
@@ -57,6 +60,9 @@ class DetectorTests(unittest.TestCase):
             self.assertTrue(result['ready']);self.assertFalse(result['pixel_decode_verified'])
             self.assertFalse(split_check(root,'val',5000)['ready'])
             self.assertFalse(dataset_check(root)['evaluation_ready'])
+            for mode,attributes,size in ((stat.S_IFLNK,0,1),(stat.S_IFREG,1024,1),(stat.S_IFREG,0,0)):
+                with patch.object(Path,'lstat',return_value=SimpleNamespace(st_mode=mode,st_size=size,st_file_attributes=attributes)):
+                    self.assertFalse(split_check(root,'val',1)['ready'])
             for mutation in ('missing_image','unknown_category','duplicate_annotation','duplicate_image','escape'):
                 bad=json.loads(json.dumps(data))
                 if mutation=='missing_image':bad['images'][0]['file_name']='missing.jpg'

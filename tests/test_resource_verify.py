@@ -18,7 +18,12 @@ class VerifyTests(unittest.TestCase):
                   'images':[{'id':1,'file_name':'a.jpg','width':10,'height':12}],
                   'annotations':[]}
             annotation=root/'annotations/instances_val2017.json';annotation.write_text(json.dumps(data))
-            first=verify_images(root,'val',1)
+            progress=[]
+            first=verify_images(root,'val',1,progress.append)
+            self.assertEqual([r['status'] for r in progress],['checking_coverage','decoding_images','completed'])
+            self.assertEqual(progress[-1]['decoded_images'],1)
+            self.assertTrue(progress[-1]['verification_complete'])
+            self.assertTrue(all(not r['dataset_ready'] and not r['gpu_used'] for r in progress))
             self.assertTrue(first['pixel_decode_verified']);self.assertFalse(first['coco_evaluated'])
             self.assertEqual(first,verify_images(root,'val',1))
             Image.new('RGB',(10,12),(0,50,100)).save(path)
@@ -27,4 +32,6 @@ class VerifyTests(unittest.TestCase):
             with self.assertRaises(ValueError):verify_images(root,'val',1)
             data['images'][0]['height']=12;annotation.write_text(json.dumps(data))
             path.write_bytes(b'not-a-jpeg')
-            with self.assertRaises(OSError):verify_images(root,'val',1)
+            failed=[]
+            with self.assertRaises(OSError):verify_images(root,'val',1,failed.append)
+            self.assertFalse(any(r['verification_complete'] for r in failed))
