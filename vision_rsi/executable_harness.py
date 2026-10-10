@@ -14,7 +14,7 @@ ROOT=Path(__file__).resolve().parent
 
 def main():
     p=argparse.ArgumentParser(description='Frozen task controls; quality requires validated capability evidence')
-    p.add_argument('mode',choices=['check','validate-input','validate-output','prepare-input','training','test'])
+    p.add_argument('mode',choices=['check','validate-input','validate-output','prepare-input','verify-input','training','test'])
     p.add_argument('--action',choices=['prepare','advance','watch','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate'],default='prepare')
     p.add_argument('--input');p.add_argument('--input-dir');p.add_argument('--samples-manifest');p.add_argument('--output');p.add_argument('--output-dir')
     p.add_argument('--version');p.add_argument('--run-id');p.add_argument('--campaign-id');p.add_argument('--steps',type=int,default=3)
@@ -40,6 +40,13 @@ def main():
     contract=json.loads((ROOT/'contract.json').read_text(encoding='utf-8'))
     from interface_runtime import validate_sample,validate_schema
     try:
+        if a.mode=='verify-input':
+            if not a.input:raise ValueError('verify-input requires --input packet.json')
+            from vision_rsi.media import verify_sample_request
+            with Path(a.input).open('rb') as stream:raw=stream.read(90*1024*1024+1)
+            if len(raw)>90*1024*1024:raise ValueError('Media packet exceeds 90 MiB')
+            result=verify_sample_request(contract,json.loads(raw.decode('utf-8-sig')))
+            print(json.dumps(result,ensure_ascii=False,indent=2));return 0
         if a.mode=='prepare-input':
             if not a.input or not a.output:raise ValueError('prepare-input requires --input sample.json and --output packet.json')
             from vision_rsi.media import sample_request

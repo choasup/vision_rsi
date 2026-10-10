@@ -334,3 +334,9 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - Executable harness prepare-input packages one validated sample with named images, ordered joint image lists, video bytes/declared processing policy, and text. Content SHA-256 and contract/sample fingerprint bind bytes and semantics; local-only reads, per-file/aggregate/asset-count bounds, no output overwrite or writes into frozen package.
 - Standalone subprocess verification outside the source repository covers joint grouping, exported CLI packaging and overwrite rejection. Transport tests cover byte preservation, changed media/policy fingerprints, missing/network/empty/oversized media. Fixture bytes are explicitly not decoded or inferred; actual joint/video adapters and quality remain incomplete.
+
+
+## Joint media receiver integrity (2026-10-10)
+
+- Shared verifier checks embedded strict base64 bytes against exact declared size/SHA-256, per-field count/order/type, video processing against frozen contract, aggregate limits and contract-bound input fingerprint. No sender path reopened and no decoding/inference claims accepted. JSON object field order is immaterial; joint image list order remains material.
+- New exported verify-input CLI enforces a 90 MiB serialized packet read bound. Packaging self-verifies before writing. Standalone CLI tests reject modified hashes; transport tests reject reordered/missing media, content/policy/text/fingerprint changes and false execution flags; original packet remains verifiable after source media deletion. No media model quality claim.

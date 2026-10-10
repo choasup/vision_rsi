@@ -28,6 +28,13 @@ class ExecutableHarnessTests(unittest.TestCase):
         self.assertEqual(packet['sample'],sample)
         self.assertEqual(len(packet['assets']),3)
         self.assertFalse(json.loads(result.stdout)['inference_performed'])
+        verified=self.run_harness('verify-input','--input',str(output))
+        self.assertEqual(verified.returncode,0,verified.stderr)
+        self.assertEqual(json.loads(verified.stdout)['input_fingerprint'],packet['input_fingerprint'])
+        tampered=json.loads(json.dumps(packet));tampered['assets'][0]['sha256']='0'*64
+        corrupted=self.root/'tampered.json';corrupted.write_text(json.dumps(tampered))
+        rejected=self.run_harness('verify-input','--input',str(corrupted))
+        self.assertNotEqual(rejected.returncode,0);self.assertIn('hash',rejected.stderr)
         original=output.read_bytes()
         result=self.run_harness('prepare-input','--input',str(path),'--output',str(output))
         self.assertNotEqual(result.returncode,0);self.assertIn('already exists',result.stderr)

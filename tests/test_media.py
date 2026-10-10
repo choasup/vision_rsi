@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from vision_rsi.media import image_request,sample_request
+from vision_rsi.media import image_request,sample_request,verify_sample_request
 
 
 class JointMediaTransportTests(unittest.TestCase):
@@ -24,11 +24,27 @@ class JointMediaTransportTests(unittest.TestCase):
             self.assertEqual([base64.b64decode(a['content_base64']) for a in packet['assets']],[b'left',b'right',b'video-fixture'])
             self.assertEqual(packet['video_processing']['clip'],contract['inputs']['clip']['processing'])
             self.assertFalse(packet['media_decoded']);self.assertFalse(packet['inference_performed'])
+            self.assertEqual(verify_sample_request(contract,packet)['sample_id'],'joint-one')
+            reordered=json.loads(json.dumps(packet,sort_keys=True))
+            self.assertTrue(verify_sample_request(contract,reordered)['valid'])
+            mutations=[lambda p:p['assets'].reverse(),lambda p:p['assets'].pop(),
+                       lambda p:p['assets'][0].update(content_base64=base64.b64encode(b'fake').decode()),
+                       lambda p:p['assets'][0].update(index=True),lambda p:p.update(content_bytes=True),
+                       lambda p:p['video_processing']['clip'].update(sampling='99 fps'),
+                       lambda p:p['sample']['inputs']['question'].update(value='changed question'),
+                       lambda p:p.update(media_decoded=True),lambda p:p.update(input_fingerprint='0'*64)]
+            for mutate in mutations:
+                changed_packet=json.loads(json.dumps(packet));mutate(changed_packet)
+                with self.assertRaises(ValueError):verify_sample_request(contract,changed_packet)
             self.assertEqual(sample_request(contract,path)['input_fingerprint'],packet['input_fingerprint'])
             (root/'right.jpg').write_bytes(b'changed')
             self.assertNotEqual(sample_request(contract,path)['input_fingerprint'],packet['input_fingerprint'])
             changed=json.loads(json.dumps(contract));changed['inputs']['clip']['processing']['sampling']='1 fps'
             self.assertNotEqual(sample_request(changed,path)['input_fingerprint'],sample_request(contract,path)['input_fingerprint'])
+            for media in root.glob('*.jpg'):media.unlink()
+            (root/'clip.mp4').unlink()
+            # Receiving only the packet must not consult sender filesystem paths.
+            self.assertTrue(verify_sample_request(contract,packet)['valid'])
 
     def test_unreadable_remote_empty_and_oversized_media_fail_before_packet(self):
         contract={'inputs':{'photo':{'type':'image','required':True}}}
