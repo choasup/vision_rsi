@@ -12,6 +12,36 @@ from test_event_eval import event
 
 class AdapterEvaluationTests(unittest.TestCase):
     @patch('vision_rsi.remote.check_candidate')
+    def test_media_bundle_transports_joint_bytes_and_changed_content_changes_execution(self,remote):
+        import base64
+        from vision_rsi.candidate_bundle import build,run
+        contract=json.loads(self.contract.read_text());sample=json.loads(json.dumps(contract['example_input']))
+        for field,value in sample['inputs'].items():
+            items=value['items'] if value['type']=='image_list' else [value]
+            for index,item in enumerate(items):
+                if 'uri' in item:
+                    name=field+str(index)+'.bin';item['uri']=name;(self.root/name).write_bytes((field+str(index)).encode())
+        bundle=build(self.store,self.candidate,'vision_rsi.adapter_fixture','predict',self.contract,self.root/'bundles',media_input=True)
+        remote.side_effect=lambda endpoint,request:{'status':'executed_unverified','source_hashes':request['source_hashes'],
+            'limits':{'gpu':False,'network':False},'observation':{'results':[{'events':[]}]}}
+        with self.assertRaisesRegex(ValueError,'base directory'):run(bundle['path'],[sample],{},self.root/'executions')
+        first=run(bundle['path'],[sample],{},self.root/'executions',media_directory=self.root)
+        packet=remote.call_args.args[1]['cases'][0]['media']
+        self.assertEqual(len(packet['assets']),3)
+        self.assertFalse(packet['media_decoded'])
+        for asset in packet['assets']:
+            uri=sample['inputs'][asset['field']]
+            uri=uri['items'][asset['index']]['uri'] if uri['type']=='image_list' else uri['uri']
+            self.assertEqual(base64.b64decode(asset['content_base64']),(self.root/uri).read_bytes())
+        changed=self.root/sample['inputs']['views']['items'][0]['uri'];changed.write_bytes(b'new bytes')
+        second=run(bundle['path'],[sample],{},self.root/'executions',media_directory=self.root)
+        self.assertNotEqual(first['binding']['request_sha256'],second['binding']['request_sha256'])
+        self.assertEqual(remote.call_count,2)
+        changed.write_bytes(b'x'*(512*1024+1))
+        with self.assertRaises(ValueError):run(bundle['path'],[sample],{},self.root/'executions',media_directory=self.root)
+        self.assertEqual(remote.call_count,2)
+
+    @patch('vision_rsi.remote.check_candidate')
     def test_portable_bundle_runs_single_and_batch_without_git_store(self,remote):
         from vision_rsi.candidate_bundle import build,run
         bundle=build(self.store,self.candidate,'vision_rsi.adapter_fixture','predict',self.contract,self.root/'bundles')

@@ -80,6 +80,13 @@ def sample_request(contract,input_path):
     with path.open('rb') as stream:raw=stream.read(1024*1024+1)
     if len(raw)>1024*1024:raise ValueError('Sample JSON exceeds 1 MiB')
     sample=json.loads(raw.decode('utf-8-sig'))
+    return package_sample(contract,sample,path.parent)
+
+
+def package_sample(contract,sample,base_directory,content_limit=64*1024*1024):
+    """Package one already parsed sample, retaining explicit relative-path base."""
+    if type(content_limit) is not int or not 0<content_limit<=64*1024*1024:raise ValueError('Invalid media content limit')
+    base_directory=Path(base_directory).resolve()
     validate_sample(contract,sample)
     assets=[];total=0;policies={}
     for name,value in sample['inputs'].items():
@@ -98,16 +105,16 @@ def sample_request(contract,input_path):
                 if parts.netloc not in ('','localhost') or parts.query or parts.fragment:raise ValueError('Only local file URIs supported')
                 local=Path(url2pathname(parts.path))
             else:local=Path(uri)
-            if not local.is_absolute():local=path.parent/local
+            if not local.is_absolute():local=base_directory/local
             if not local.is_file():raise ValueError('Media must be a readable local file: '+str(local))
             limit=64*1024*1024 if kind=='video' else 20*1024*1024
             if len(assets)>=128:raise ValueError('Sample exceeds 128 media assets')
-            remaining=64*1024*1024-total
+            remaining=content_limit-total
             if remaining<=0:raise ValueError('Sample exceeds 64 MiB total content')
             with local.open('rb') as stream:content=stream.read(min(limit,remaining)+1)
             if not content or len(content)>limit:raise ValueError('Media is empty or exceeds per-file limit')
             total+=len(content)
-            if total>64*1024*1024:raise ValueError('Sample exceeds 64 MiB total content')
+            if total>content_limit:raise ValueError('Sample exceeds media content limit')
             assets.append({'field':name,'index':index,'kind':'image' if kind=='image_list' else kind,
                            'sha256':hashlib.sha256(content).hexdigest(),'bytes':len(content),
                            'content_base64':base64.b64encode(content).decode()})

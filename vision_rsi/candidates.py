@@ -300,6 +300,7 @@ def main(argv):
     parser.add_argument('--dataset',help='Frozen development_validation JSON; never a hidden-test feedback dataset')
     parser.add_argument('--report')
     parser.add_argument('--output',help='Directory for content-addressed candidate bundles')
+    parser.add_argument('--media-input',action='store_true',help='Bundle entry accepts sample and verified media packet')
     parser.add_argument('--json',action='store_true')
     parser.add_argument('--config',default='config.local.json')
     args=parser.parse_args(argv);store=Candidates(args.store,args.repository)
@@ -307,7 +308,7 @@ def main(argv):
         if args.action=='bundle':
             if not all((args.candidate_id,args.module,args.function,args.contract,args.output)):parser.error('bundle requires candidate-id, module, function, contract and output')
             from .candidate_bundle import build
-            result=build(store,args.candidate_id,args.module,args.function,args.contract,args.output)
+            result=build(store,args.candidate_id,args.module,args.function,args.contract,args.output,args.media_input)
         elif args.action=='create':
             if not args.proposal:parser.error('create requires --proposal')
             result=store.create(json.loads(Path(args.proposal).read_text(encoding='utf-8-sig')),{'origin':'explicit-local-proposal'})

@@ -16,6 +16,7 @@ def verify(path):
     identity=bundle['identity']
     if digest(identity)!=bundle['bundle_id'] or identity.get('format')!='vision-rsi/development-candidate/v1':raise ValueError('Bundle identity mismatch')
     if identity.get('production_accepted') is not False:raise ValueError('Development bundle cannot approve production')
+    if identity.get('media_transport','json_only') not in ('json_only','vision_sample_transport_v1'):raise ValueError('Unsupported bundle media transport')
     encode_cases(identity['module'],identity['function'],[{'sample':{}}])
     if set(bundle['files'])!=set(identity['source_hashes']):raise ValueError('Bundle source set mismatch')
     for name,content in bundle['files'].items():
@@ -27,7 +28,7 @@ def verify(path):
     return bundle
 
 
-def build(store,candidate_id,module,function,contract_path,output):
+def build(store,candidate_id,module,function,contract_path,output,media_input=False):
     encode_cases(module,function,[{'sample':{}}])
     raw,contract=read_document(contract_path,512*1024)
     if not isinstance(contract,dict) or not isinstance(contract.get('inputs'),dict) or not contract['inputs']:raise ValueError('Bundle requires a task interface')
@@ -38,6 +39,7 @@ def build(store,candidate_id,module,function,contract_path,output):
     identity={'format':'vision-rsi/development-candidate/v1','candidate_id':candidate_id,'git_revision':record['git_revision'],
               'module':module,'function':function,'contract_sha256':hashlib.sha256(raw).hexdigest(),
               'source_hashes':{name:hashlib.sha256(content).hexdigest() for name,content in files.items()},'production_accepted':False}
+    if media_input:identity['media_transport']='vision_sample_transport_v1'
     bundle={'bundle_id':digest(identity),'identity':identity,'files':{name:base64.b64encode(content).decode('ascii') for name,content in files.items()},
             'contract_base64':base64.b64encode(raw).decode('ascii')}
     folder=Path(output).resolve()/bundle['bundle_id'];folder.mkdir(parents=True,exist_ok=True);path=folder/'bundle.json'
@@ -49,7 +51,7 @@ def build(store,candidate_id,module,function,contract_path,output):
     return {'bundle_id':bundle['bundle_id'],'directory':str(folder),'path':str(path),'production_accepted':False,'capability_registered':False}
 
 
-def run(bundle_path,samples,remote,output,expected_bundle_id=None):
+def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_directory=None):
     from .contracts import validate_sample,validate_schema
     from .campaign import lease
     from .runner import atomic_json
@@ -60,6 +62,13 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None):
     if not isinstance(samples,list) or not 1<=len(samples)<=16:raise ValueError('Require 1..16 samples')
     for sample in samples:validate_sample(contract,sample)
     cases=[{'sample':sample} for sample in samples]
+    if identity.get('media_transport')=='vision_sample_transport_v1':
+        from .media import package_sample
+        if media_directory is None:raise ValueError('Media bundle needs an explicit input base directory')
+        cases=[]
+        for sample in samples:
+            cases.append({'sample':sample,'media':package_sample(contract,sample,media_directory,content_limit=512*1024)})
+            encode_cases(identity['module'],identity['function'],cases)
     encode_cases(identity['module'],identity['function'],cases)
     request={'files':bundle['files'],'source_hashes':identity['source_hashes'],
              'module':identity['module'],'function':identity['function'],'cases':cases}
@@ -104,5 +113,5 @@ def main(argv=None):
         _,samples=read_document(args.input,512*1024)
         if isinstance(samples,dict):samples=[samples]
         config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
-        print(json.dumps(run(args.bundle,samples,config['remote'],args.output,args.bundle_id),ensure_ascii=False,indent=2))
+        print(json.dumps(run(args.bundle,samples,config['remote'],args.output,args.bundle_id,Path(args.input).resolve().parent),ensure_ascii=False,indent=2))
     except (ValueError,TypeError,KeyError,OSError,RuntimeError) as error:parser.exit(1,str(error)+'\n')

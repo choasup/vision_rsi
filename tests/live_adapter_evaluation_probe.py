@@ -18,9 +18,11 @@ def main():
     parser.add_argument('--live-remote',action='store_true');parser.add_argument('--config',default='config.local.json')
     parser.add_argument('--lineage',action='store_true',help='Also verify inherited-module execution in a child candidate')
     parser.add_argument('--bundle-execution',action='store_true',help='Also execute an independent copy of the child bundle')
+    parser.add_argument('--media-bundle',action='store_true',help='Verify raw local media bytes reach isolated candidate code')
     args=parser.parse_args()
     if not args.live_remote:parser.error('--live-remote required; two bounded CPU sandbox checks, no GPU/API')
     if args.bundle_execution and not args.lineage:parser.error('--bundle-execution requires --lineage')
+    if args.media_bundle and not args.bundle_execution:parser.error('--media-bundle requires --bundle-execution')
     repo=Path(__file__).resolve().parents[1]
     remote=json.loads(Path(args.config).read_text(encoding='utf-8'))['remote']
     folder=repo/'runs/adapter-evaluation-live'/uuid.uuid4().hex;folder.mkdir(parents=True)
@@ -47,7 +49,7 @@ def main():
               'evaluation_plan':'Fixed matching/nonmatching event fixtures; repeated context must reuse runtime evidence',
               'edits':[{'path':'vision_rsi/adapter_metric_probe.py','base_sha256':None,
                         'content':'import os\ndef predict(sample):\n    events = [{"label":"action", "start_seconds":0, "end_seconds":1}] if os.getuid() == 65534 else []\n    return {"events":events}\n'}]}
-    atomic_json(folder/'preregistered.json',{'scope':__doc__,'llm_calls':0,'gpu_allowed':False,'expected_remote_checks':4 if args.bundle_execution else (3 if args.lineage else 2),
+    atomic_json(folder/'preregistered.json',{'scope':__doc__,'llm_calls':0,'gpu_allowed':False,'expected_remote_checks':5 if args.media_bundle else (4 if args.bundle_execution else (3 if args.lineage else 2)),
         'probe_source_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'expected_f1':[1,0],'criteria':['actual UID65534-dependent adapter output','matching metric met','different metric not met',
         'exact duplicate reuses saved runtime','network and GPU disabled','no capability registration or agent adoption']})
@@ -93,6 +95,21 @@ def main():
                 assert execution['outputs']==[{'events':[event]}]
                 assert run(portable,sample,remote,folder/'bundle-executions',bundle['bundle_id'])==execution
                 assert len(calls)==4 and not execution['quality_verified']
+                if args.media_bundle:
+                    media_source='import base64\ndef predict(sample, media):\n    raw=base64.b64decode(media["assets"][0]["content_base64"])\n    ok=raw==b"P6\\n1 1\\n255\\n\\xff\\x00\\x00" and len(media["assets"])==3\n    return {"events":[{"label":"action","start_seconds":0,"end_seconds":1}] if ok else []}\n'
+                    media_proposal=dict(proposal,edits=[{'path':'vision_rsi/adapter_media_probe.py','base_sha256':None,'content':media_source}])
+                    media_candidate=store.create(media_proposal,{'fixture':True,'scope':'raw media transport only'})
+                    media_bundle=build(store,media_candidate['candidate_id'],'vision_rsi.adapter_media_probe','predict',folder/'contract.json',folder/'bundles',media_input=True)
+                    media_sample=json.loads(json.dumps(sample[0]))
+                    for field,value in media_sample['inputs'].items():
+                        items=value['items'] if value['type']=='image_list' else [value]
+                        for index,item in enumerate(items):
+                            name=field+str(index)+'.bin';item['uri']=name
+                            (folder/name).write_bytes(b'P6\n1 1\n255\n\xff\x00\x00' if field=='views' else b'raw video transport fixture, not decoded')
+                    actual=run(media_bundle['path'],[media_sample],remote,folder/'media-executions',media_directory=folder)
+                    assert actual['outputs']==[{'events':[event]}] and len(calls)==5
+                    assert run(media_bundle['path'],[media_sample],remote,folder/'media-executions',media_directory=folder)==actual
+                    assert len(calls)==5
         passed=True
     except Exception as error:failure=type(error).__name__+': '+str(error)[:500]
     finally:
