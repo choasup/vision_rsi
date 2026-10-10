@@ -418,3 +418,10 @@
 - 发现通用research_step仍使用O_EXCL锁文件，异常进程退出后永久阻塞。改用与campaign相同的OS lease，锁文件保留但仅OS持有状态决定活跃；不自动删除其它进程的锁，不改变不确定API停止重试规则。
 - 25项controller/campaign/ledger测试通过（4.844秒）。真实子进程在execute内os._exit(73)后，保留pending事件和锁文件，新控制器成功完成原动作且不调用API；活跃lease阻止第二控制器进入，事件不增加。
 - 此测试只读mock工具，不证明写工具的崩溃幂等性。旧版仅文件锁的控制器须停止后再升级，不能与新版跨版本并发；无真实API/SSH/GPU，安装包未更新，完整上线目标仍未完成。
+## 通用仓库研究证据绑定（2026-10-10）
+
+- inspect_repository此前用Git HEAD标注当前工作区片段、未提供内容哈希。现明确Working-tree bytes，每文件SHA、读取前后tracked clean状态、HEAD是否变化；atomic_snapshot_verified始终false，不把两次Git检查当原子快照。
+- 固定源码白名单保持，路径resolve不得越界/不得最终symlink，单文件读取≤1MiB、最多128个片段/总UTF8≤128KiB、每片段≤2500字符，跳过源和列表截断明确记录。Git查询timeout10秒，ls-files -z避免换行文件名误拆。
+- 7项controller测试通过（2.246秒），含真实临时Git仓库：tracked .env内容不读取，未提交源码变化保持同HEAD但内容SHA变化且clean=false，超1MiB源码跳过；既有崩溃恢复仍通过。
+- 提交2b8b1abb808bc1236ac02f01c714e5d3391e152c后实际检查本仓库成功：170 tracked files，HEAD未变、前后clean=true，17源码因边界未收入片段。证据runs/repository-observation-current.json；不是全仓库内容完整性或运行正确性证明。
+- 无API/SSH/GPU/训练，安装包未重建，真实训练和完整上线门槛仍未完成。
