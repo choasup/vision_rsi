@@ -13,12 +13,16 @@ def read_memory(session_id,campaign_id,root='runs/campaigns',source_index=None,c
     if not isinstance(campaign_id,str) or not re.fullmatch('[0-9a-f]{64}',campaign_id):raise ValueError('Invalid campaign ID')
     path=Path(root)/session_id/campaign_id/'state.json'
     raw=path.read_bytes();state=json.loads(raw)
+    if not isinstance(state,dict) or not isinstance(state.get('binding'),dict) or not isinstance(state.get('history'),list):
+        raise ValueError('Invalid stored research memory structure')
     if state.get('campaign_id')!=campaign_id or digest(state['binding'])!=campaign_id or state['binding'].get('session_id')!=session_id:
         raise ValueError('Campaign memory identity changed')
     rows=state['history']
     count=len(rows) if history_rows is None else history_rows
     if type(count) is not int or not 0<=count<=len(rows):raise ValueError('Memory snapshot row count is outside retained history')
-    full=history_context(rows[:count],3)
+    try:full=history_context(rows[:count],3)
+    except (KeyError,TypeError,AttributeError,OverflowError) as error:
+        raise ValueError('Invalid stored research observation structure') from error
     checksum=hashlib.sha256(encoded(full)).hexdigest()
     if context_sha256 is not None and context_sha256!=checksum:raise ValueError('Research memory snapshot hash changed; no observation returned')
     result={'session_id':session_id,'campaign_id':campaign_id,'history_rows':count,'context_sha256':checksum,
@@ -72,6 +76,9 @@ def retrieve_page(rows,action):
     if checksum!=action.get('source_sha256'):raise ValueError('Memory source hash changed')
     expected='retrieve-'+str(index)+'-'+checksum[:24]+'-'+str(offset)
     if action.get('id')!=expected or action.get('kind')!='retrieve_memory' or offset>=len(raw):raise ValueError('Invalid memory page reference')
+    if (action.get('source_action_id')!=source['id'] or type(action.get('total_chars')) is not int
+            or action['total_chars']!=len(raw) or type(action.get('page_chars')) is not int
+            or action['page_chars']!=PAGE_CHARS):raise ValueError('Memory page metadata changed')
     return {'source_index':index,'source_action_id':source['id'],'source_sha256':checksum,
             'offset':offset,'total_chars':len(raw),'page_chars':PAGE_CHARS,
             'text':raw.decode('ascii')[offset:offset+PAGE_CHARS],

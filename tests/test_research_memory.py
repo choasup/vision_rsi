@@ -104,7 +104,7 @@ class ResearchMemoryTests(unittest.TestCase):
     def test_memory_cannot_read_arbitrary_records_or_unbounded_offsets(self):
         from vision_rsi.research_memory import memory_actions,retrieve_page
         rows=self.state['history'];action=memory_actions(rows)[0]
-        for updates in ({'source_index':True},{'source_index':0},{'offset':-1},{'offset':1},{'offset':1000000},{'id':'invented'},{'source_sha256':'0'*64}):
+        for updates in ({'source_index':True},{'source_index':0},{'offset':-1},{'offset':1},{'offset':1000000},{'id':'invented'},{'source_sha256':'0'*64},{'source_action_id':'different'},{'total_chars':True},{'total_chars':1},{'page_chars':2048}):
             with self.assertRaises(ValueError):retrieve_page(rows,dict(action,**updates))
         self.assertEqual(memory_actions(rows[:5]),[])
 
@@ -132,3 +132,50 @@ class ResearchMemoryTests(unittest.TestCase):
         self.assertEqual(row['controller_action_version'],2)
         self.assertEqual(row['tool_attempts'][0]['status'],'completed')
         self.assertEqual(row['result']['offset'],0)
+
+    def test_interrupted_memory_read_reuses_intent_and_does_not_skip_page(self):
+        from vision_rsi.campaign import advance,execute
+        from vision_rsi.runner import atomic_json
+        session={'session_id':'session','task_id':'fixture','versions':[{'contract':{}}]}
+        config={'remote':{'ssh_host':'fixture','workspace':'/workspace'}}
+        root=self.root/'controller';runs=self.root/'runs'
+        with patch('vision_rsi.campaign.prepare',return_value={'status':'blocked','blockers':['fixture']}):
+            initial=advance(session,config,root,runs,steps=1,research_rounds=1)
+        path=Path(initial['state_path']);state=json.loads(path.read_text(encoding='utf-8'))
+        state.update(history=self.state['history'],plan={'status':'ready_to_submit'},run_id='fixture',run_status='completed',
+                     receipt_collected=True,analysis={'quality_verified':False},status='needs_research')
+        atomic_json(path,state);returned=[]
+        def choose_memory(state,actions,*args):
+            action=next(a for a in actions if a['kind']=='retrieve_memory')
+            return {'action_id':action['id'],'rationale':'Read omitted diagnosis before planning'},None
+        def interrupted(*args):
+            returned.append(execute(*args))
+            raise RuntimeError('fixture interruption after read before persistence')
+        with patch('vision_rsi.campaign.choose',side_effect=choose_memory) as choose:
+            with patch('vision_rsi.campaign.execute',side_effect=interrupted):
+                with self.assertRaisesRegex(RuntimeError,'fixture interruption'):
+                    advance(session,config,root,runs,steps=1,research_rounds=1)
+            pending=json.loads(path.read_text(encoding='utf-8'))
+            self.assertEqual(len(pending['history']),len(state['history']))
+            self.assertEqual(pending['intent']['action']['offset'],0)
+            resumed=advance(session,config,root,runs,steps=1,research_rounds=1)
+            self.assertEqual(choose.call_count,1)
+        row=resumed['history'][-1]
+        self.assertEqual(row['result'],returned[0]);self.assertIsNone(resumed['intent'])
+        self.assertEqual([a['status'] for a in row['tool_attempts']],['uncertain','completed'])
+        from vision_rsi.research_memory import memory_actions
+        self.assertEqual(memory_actions(resumed['history'])[0]['offset'],1024)
+
+    def test_malformed_stored_memory_returns_explicit_cli_error_without_writes(self):
+        from contextlib import redirect_stderr
+        malformed=[[],{},dict(self.state,binding=[]),dict(self.state,history={}),
+                   dict(self.state,history=[None]),dict(self.state,history=[{'action':{},'status':'completed'}]),
+                   dict(self.state,history=[{'action':{'id':'bad','kind':'analyze'},'status':'completed','result':{'acceptance_review':'invalid'}}])]
+        for state in malformed:
+            self.path.write_text(json.dumps(state),encoding='utf-8');before=self.path.read_bytes()
+            with self.assertRaises(ValueError):self.read()
+            errors=io.StringIO()
+            with redirect_stderr(errors),self.assertRaises(SystemExit) as raised:
+                main(['memory','--session-id','session','--campaign-id',self.cid,'--campaign-store',str(self.root/'campaigns'),'--json'])
+            self.assertEqual(raised.exception.code,1)
+            self.assertNotIn('Traceback',errors.getvalue());self.assertEqual(self.path.read_bytes(),before)
