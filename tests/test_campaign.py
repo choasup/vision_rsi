@@ -17,6 +17,27 @@ class CampaignTests(unittest.TestCase):
     def advance(self,**kwargs):
         return advance(self.session,self.config,self.root/'campaigns',self.root/'runs',**kwargs)
 
+    def test_analysis_budget_snapshot_includes_other_failed_session_runs(self):
+        from vision_rsi.campaign import execute
+        from vision_rsi.training_runs import TrainingRuns
+        session=dict(self.session,versions=[{'contract':{'budget':{'gpu_hours':1}}}])
+        runs=TrainingRuns(self.root/'actual-ledger')
+        try:
+            plan={'status':'ready_to_submit','plan_id':'a'*64,'plan_path':str(self.root/'plan.json'),
+                  'session_id':session['session_id'],'contract':session['versions'][0]['contract'],
+                  'scheduler':{'gpu_devices':[0],'timeout_seconds':355}}
+            first,_=runs.reserve(plan,self.config['remote'])
+            details=dict(first['details'],acceptance_review={'passed':False,'box_AP':40,'threshold':60})
+            runs.update(first['run_id'],'completed',details,actual=.2)
+            other,_=runs.reserve(dict(plan,plan_id='b'*64),self.config['remote'])
+            runs.update(other['run_id'],'failed',other['details'],actual=.3)
+            result=execute({'kind':'analyze'},{'run_id':first['run_id']},session,self.config,self.root,runs)
+            self.assertEqual(result['actual_gpu_hours'],.2)
+            self.assertEqual(result['authorized_gpu_hours'],1)
+            self.assertAlmostEqual(result['remaining_gpu_hours'],.5)
+            self.assertEqual(len(runs.list(session['session_id'])),2)
+        finally:runs.close()
+
     @patch('vision_rsi.campaign.prepare')
     def test_selected_campaign_rejects_ledger_changes_on_resume_and_advance(self,prepare):
         prepare.return_value={'status':'blocked','blockers':['fixture']}

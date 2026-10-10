@@ -16,6 +16,24 @@ class StrategyContextTests(unittest.TestCase):
         self.assertNotIn('private',str(context));self.assertNotIn('NEVER_INCLUDE',str(context));self.assertEqual(rows,original)
         legacy=history_context(rows,1);self.assertNotIn('observation',legacy[1])
 
+    def test_run_snapshots_can_be_deduplicated_and_legacy_context_is_unchanged(self):
+        rows=[{'action':{'id':'observe-0','kind':'observe'},'status':'completed',
+               'result':{'run_id':'train-one','status':'running','actual_gpu_hours':None,'reserved_gpu_hours':.5}},
+              {'action':{'id':'collect-1','kind':'collect'},'status':'completed',
+               'result':{'run_id':'train-one','status':'completed','actual_gpu_hours':.2,'reserved_gpu_hours':.5}},
+              {'action':{'id':'analyze-2','kind':'analyze'},'status':'completed',
+               'result':{'run_id':'train-one','actual_gpu_hours':.2,'authorized_gpu_hours':2,'remaining_gpu_hours':1.3}}]
+        original=copy.deepcopy(rows);context=history_context(rows,3)
+        self.assertEqual({row['observation']['run_id'] for row in context},{'train-one'})
+        self.assertEqual(context[0]['observation']['held_gpu_hours'],.5)
+        self.assertEqual(context[1]['observation']['held_gpu_hours'],0)
+        self.assertEqual(context[2]['observation']['gpu_cost_scope'],'whole_run_snapshot_not_incremental')
+        self.assertEqual(context[2]['observation']['gpu_budget_scope'],'whole_session_snapshot')
+        self.assertEqual(context[2]['observation']['remaining_gpu_hours'],1.3)
+        for row in history_context(rows,2):
+            self.assertNotIn('run_id',row['observation']);self.assertNotIn('gpu_cost_scope',row['observation'])
+        self.assertEqual(rows,original)
+
     def test_research_brief_only_controls_research_hypothesis(self):
         action={'id':'next','kind':'propose_experiment','estimated_cost':1,'expected_gain':2,'uncertainty':.1}
         decision={'action_id':'next','rationale':'Use measured failure','research_brief':'Test whether lower LR helps; instability is unproven.'}

@@ -1,6 +1,7 @@
 """Restartable Training control loop; policy code never executes tools directly."""
 from contextlib import contextmanager
 import json
+import math
 import hashlib
 import os
 import re
@@ -110,6 +111,13 @@ def execute(action,state,session,config,folder,runs):
                   'acceptance_review':verdict,'quality_verified':bool(verdict and verdict.get('passed')),
                   'next_requirement':'Register and evaluate actual serving backend' if verdict and verdict.get('passed') else 'Investigate measured failure and propose a separately tracked experiment',
                   'method_or_agent_improvement_verified':False}
+        declared_budget=session['versions'][-1]['contract'].get('budget')
+        budget=declared_budget.get('gpu_hours') if isinstance(declared_budget,dict) else None
+        if not isinstance(budget,bool) and isinstance(budget,(int,float)) and math.isfinite(budget) and budget>0:
+            remaining=runs.remaining(session['session_id'],budget)
+            if isinstance(remaining,bool) or not isinstance(remaining,(int,float)) or not math.isfinite(remaining) or not 0<=remaining<=budget:
+                raise ValueError('Invalid session GPU budget snapshot; analysis not persisted')
+            analysis.update(authorized_gpu_hours=budget,remaining_gpu_hours=remaining)
         if verdict and isinstance(verdict.get('box_AP'),(int,float)):
             analysis['metric_gap']=max(0,verdict['threshold']-verdict['box_AP'])
         return analysis
@@ -206,11 +214,11 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                     policy_elapsed=time.monotonic()-choice_started
                     if decision['action_id'] is None:
                         state['policy_stop']={'decision':decision,'policy_evidence':evidence,'policy_elapsed_seconds':policy_elapsed,
-                                              'control_sources':control_sources,'git_revision':revision(),'created_at_unix':time.time(),'strategy_context_version':2}
+                                              'control_sources':control_sources,'git_revision':revision(),'created_at_unix':time.time(),'strategy_context_version':3}
                         state['status']='policy_stopped';atomic_json(path,state);break
                     action=next(row for row in actions if row['id']==decision['action_id'])
                     intent={'action':action,'decision':decision,'policy_evidence':evidence,'status':'reserved',
-                            'strategy_context_version':2,
+                            'strategy_context_version':3,
                             'control_sources':control_sources,'git_revision':revision(),'policy_elapsed_seconds':policy_elapsed,
                             'created_at_unix':time.time(),'tool_attempts':[]}
                     state['intent']=intent;atomic_json(path,state)

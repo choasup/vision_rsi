@@ -610,3 +610,5 @@ Image integrity verification identifies static JPEG/PNG from decoded content rat
 CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依赖安装版本及模块构建版本、PyTorch 构建摘要、线程数、确定性与矩阵精度设置）。每个分段评测和后续推理都重新计算并匹配该摘要；评测报告必须携带同一摘要才能晋级。旧的无摘要候选/后端需重新注册并完成完整 serving 验收，不自动继承通过状态。这不保证任意输入效果，也不代替模型 AP 验收。远端 CPU 指纹采集已实测通过，CUDA 未初始化；本机记录位于 `runs/resource-bootstrap/cpu-serving-runtime-live.json`。
 
 维护验证：`tests/serving_fault_probe.py` 为 Linux-only 真实进程故障探针，通过标准输入读取 workspace、serving_source（当前 serving.py 的 base64）及 category_ids。它在独立 fixture 目录验证 SIGKILL 后保留预留、缓存复用和预算不可扩大，不加载模型或计算效果指标。当前远端执行记录见 `runs/resource-bootstrap/serving-crash-probe.json`，详见 RELEASE.md 的验证范围。
+
+研究策略上下文 v3 为运行成本快照增加 run_id、预留是否仍占用、整次运行累计值的口径标记，以及会话授权/剩余 GPU 小时。重复查询、收集、分析中的同一运行耗时不能相加。分析时的余额由完整会话账本计算，包含其他流程和失败运行的已用/未释放成本；数值 budget 参数仍表示控制步数。新决策记录上下文版本，历史 v1/v2 的审计重放保留原语义。此为策略可用证据的改进，尚未证明 RSI 效率提升。
