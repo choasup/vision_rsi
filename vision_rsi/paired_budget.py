@@ -25,10 +25,10 @@ def api_quota(bound, campaign_root, limit, registered_at):
         db.execute('BEGIN')
         cap=db.execute('SELECT calls FROM api_call_cap WHERE singleton=1').fetchone()
         if cap!=(limit,) or not admission_trigger_verified(db):raise ValueError('Arm API cap or admission trigger differs')
-        rows=db.execute('SELECT id,request_sha256,model,created_ns,status,prompt_tokens,completion_tokens,total_tokens FROM api_usage').fetchall()
+        rows=db.execute('SELECT id,request_sha256,model,created_ns,status,prompt_tokens,completion_tokens,total_tokens,ended_ns FROM api_usage').fetchall()
     finally:db.close()
     if len(rows)>limit:raise ValueError('Arm API admissions exceed preregistered cap')
-    records={row[0]:row for row in rows};linked=set();tokens=0;unsent=0
+    records={row[0]:row for row in rows};linked=set();tokens=0;unsent=0;elapsed_ns=0
     requests=Path(campaign_root)/bound['session_id']/bound['campaign_id']/'experiments/requests.sqlite3'
     if requests.exists():
         db=sqlite3.connect(requests.resolve().as_uri()+'?mode=ro',uri=True,timeout=10)
@@ -43,6 +43,10 @@ def api_quota(bound, campaign_root, limit, registered_at):
         if not isinstance(key,str) or key not in records or key in linked:raise ValueError('Missing, duplicated or foreign API usage receipt')
         linked.add(key);row=records[key];snapshot=context.get('request_snapshot')
         if not isinstance(snapshot,dict) or digest(snapshot)!=context.get('request_snapshot_sha256'):raise ValueError('API request snapshot differs')
+        from .llm import MAX_OUTPUT_TOKENS
+        maximum=snapshot.get('max_tokens')
+        if type(maximum) is not int or not 1<=maximum<=MAX_OUTPUT_TOKENS:
+            raise ValueError('API request output token cap is invalid')
         if context.get('llm')!={key:settings[key] for key in ('model','base_url','usage_ledger','usage_call_limit','thinking') if key in settings}:
             raise ValueError('API proposal model or ledger differs from registered arm')
         effective=dict(settings)
@@ -52,11 +56,15 @@ def api_quota(bound, campaign_root, limit, registered_at):
         usage=response.get('usage') or {};numbers=[usage.get(key) for key in ('prompt_tokens','completion_tokens','total_tokens')]
         if any(type(value) is not int or not 0<=value<=2**53 for value in numbers) or numbers[0]+numbers[1]!=numbers[2]:raise ValueError('API token evidence incomplete')
         if (row[1]!=expected or row[2]!=settings['model'] or type(row[3]) is not int or row[3]/1e9<registered_at
-                or row[4]!='responded' or tuple(numbers)!=row[5:]):raise ValueError('API receipt payload, model, time or token linkage differs')
+                or row[4]!='responded' or tuple(numbers)!=row[5:8]):raise ValueError('API receipt payload, model, time or token linkage differs')
+        if type(row[8]) is not int or row[8]<row[3]:raise ValueError('API receipt settlement time missing or reversed')
+        if numbers[1]>maximum:raise ValueError('API response exceeds request output token cap')
+        elapsed_ns+=row[8]-row[3]
         tokens+=numbers[2]
     if linked!=set(records):raise ValueError('Unattributed or uncertain API ledger admissions')
     return {'ledger':str(path.resolve()),'call_limit':limit,'admitted_calls':len(rows),'known_tokens':tokens,
             'not_dispatched_proposals':unsent,'linked_usage_ids':sorted(linked),'receipt_linkage_verified':True,
+            'observed_api_elapsed_seconds':elapsed_ns/1e9,'settlement_timing_verified':True,
             'admission_rule_verified':True,'scope':'Registered arm campaign experiment proposals only'}
 
 

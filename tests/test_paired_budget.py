@@ -12,6 +12,35 @@ from vision_rsi.runner import digest
 
 
 class PairedBudgetTests(unittest.TestCase):
+    def test_settlement_timing_missing_or_reversed_blocks_comparison(self):
+        ledger=self.ledgers['candidate']
+        with ledger.connect() as db:
+            created,ended=db.execute('SELECT created_ns,ended_ns FROM api_usage').fetchone()
+        for value in (None,created-1,'invalid'):
+            with ledger.connect() as db:db.execute('UPDATE api_usage SET ended_ns=?',(value,))
+            self.assertFalse(self.compare()['registered_dimensions_verified'])
+            with self.assertRaisesRegex(ValueError,'settlement time'):
+                api_quota(self.pair['candidate'],self.root,1,0)
+        with ledger.connect() as db:db.execute('UPDATE api_usage SET ended_ns=?',(ended,))
+        receipt=api_quota(self.pair['candidate'],self.root,1,0)
+        self.assertEqual(receipt['observed_api_elapsed_seconds'],(ended-created)/1e9)
+        self.assertTrue(receipt['settlement_timing_verified'])
+
+    def test_linked_receipt_over_output_cap_is_not_valid_budget_evidence(self):
+        bound=self.pair['candidate']
+        requests=self.root/'candidate'/bound['campaign_id']/'experiments/requests.sqlite3'
+        usage={'prompt_tokens':2,'completion_tokens':129,'total_tokens':131}
+        with self.ledgers['candidate'].connect() as db:
+            db.execute('UPDATE api_usage SET prompt_tokens=2,completion_tokens=129,total_tokens=131')
+        with closing(sqlite3.connect(requests)) as db,db:
+            response=json.loads(db.execute('SELECT response FROM requests').fetchone()[0])
+            response['usage']=usage
+            db.execute('UPDATE requests SET response=?',(json.dumps(response),))
+        self.audits['candidate']['known_llm_tokens']=131
+        with self.assertRaisesRegex(ValueError,'exceeds request output token cap'):
+            api_quota(bound,self.root,1,0)
+        self.assertFalse(self.compare()['registered_dimensions_verified'])
+
     def setUp(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup);self.root=Path(temp.name)
         self.pair={};self.audits={};self.ledgers={}

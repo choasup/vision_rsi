@@ -1,5 +1,11 @@
 # Vision RSI Agent 实施计划
 
+## 外层 API 成本收据检查（2026-10-11）
+
+- 配对研究的只读 API 预算审计现在要求每份响应有整数结束时间且不早于预留时间，并检查输出 token 不超过对应已关联请求的合法 max_tokens。缺失、倒置时间或超限响应令预算证据不完整，阻止进入完整比较。
+- 报告新增 observed_api_elapsed_seconds 和 settlement_timing_verified，仅表示本地账本记录的 API 调用耗时；不是整项研究的墙钟、CPU 或费用预算，也不证明资源公平或 RSI 提升。
+- 新增异常时间、两边一致但超过请求输出上限的 token 收据回归；未调用真实 LLM/GPU。新检查为源码版，dev9 离线包未更新。历史配对研究仍要求使用其冻结控制版本，不改写旧注册身份。
+
 ## 导出包实际交付记录复验（2026-10-11）
 
 - 新增 `tests/exported_delivery_probe.py`：从指定已保存的真实 CPU 交付记录构建冻结包，在仓库外执行固定版本单样本 Test、原批量结果断点恢复、release-status 和 delivery-status；禁止新候选远端调用与 socket 网络连接。
