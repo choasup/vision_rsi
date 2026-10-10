@@ -458,3 +458,4 @@
 - 当前产品代码完整回归384项通过（129.292秒），日志 runs/current-full-tests.log。开发版本更新为0.1.0.dev3，包含dev2之后的源码研究、事件评测和恢复改动。
 - 新wheel runs/release-dev3/wheelhouse/vision_rsi_agent-0.1.0.dev3-py3-none-any.whl，SHA256=9a607d1aced6165df8b3d5d565f116e109a14e10bd23c8e120a093ee01f3b21d。新venv使用本地wheelhouse与哈希依赖锁离线安装，pip check通过；仓库外安装包回归尚待完成。
 - GPU预算仍未设置，未启动真实COCO训练；完整上线目标尚未完成。
+- dev3仓库外安装包验证已完成：192项测试通过，6个模块CLI帮助入口通过，安装文件集合及每个Python/HTML文件SHA与源码一致；证据 runs/release-dev3/installed-evidence.json 和 installed-tests.log。源码提交 f11edcd195b3e8371ff42bcb4ca7b85d74e0bcb9，安装控制器身份 source-sha256:bc6245be94709e18f3df4c698ea84f3a5796f15a56d442a60214f31c93257aa1。无API/SSH/GPU；不代表新机器验收或COCO质量达标。
