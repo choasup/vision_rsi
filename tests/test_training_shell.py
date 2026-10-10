@@ -63,7 +63,7 @@ class TrainingShellTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);sessions=root/'sessions';store=Sessions(sessions)
             session=store.create('inspection','Joint inspection')
-            contract=json.loads(Path('examples/interface-contract.json').read_text(encoding='utf-8'))
+            contract=json.loads((Path(__file__).resolve().parents[1]/'examples/interface-contract.json').read_text(encoding='utf-8'))
             session=store.define(session['session_id'],contract)
             config=root/'config.json';config.write_text(json.dumps({'remote':{},'llm':{}}))
             output=io.StringIO()

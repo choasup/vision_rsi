@@ -60,3 +60,14 @@
 - 新增 `training memory`：重建 v4 策略视图，使用上下文哈希、快照行数和源行索引取回完整的字段筛选观察。查询不创建会话、不调用远端或 LLM、不改写控制历史。
 - 测试覆盖20KB诊断取回、追加后的旧快照、被改动记录拒绝、非法引用，以及实际模块 CLI 路由；现有任务记录实际查询退出0，状态字节未变。证据：`runs/resource-bootstrap/research-memory-cli-live.json`。
 - 这是人工审计入口；尚不构成自主检索工具、研究效率提升或上线通过。
+
+
+## 最新安装版回归（2026-10-10，226498d）
+
+- 将源码226498d构建为新wheel，在新Windows CPython3.12虚拟环境中离线安装带哈希锁的媒体/COCO依赖；`pip check`通过。
+- 在仓库外临时目录执行安装版`training memory --help`及58项控制/研究记忆/审计/运行时/Serving相关测试，全部通过。逐项比较安装包Python/HTML文件与当前源码哈希，全部一致；运行时控制身份使用`source-sha256:`。
+- 首次回归暴露一项测试按当前目录读取示例文件，已改为按测试源码位置读取后复验；未改动产品行为来绕过失败。
+- wheel SHA256：`ae70102f2216156c413bbc8f0e9d53d89502f37e585082488e8c5bfebc074f47`。本地安装证据：`runs/release-current-226498d/installed-evidence.json`及`installed-tests.log`。
+- 仍是本机隔离安装证据，未证明新Windows机器、全部平台、真实训练或AP>=60达标，也未证明RSI效率提升。
+
+- 同轮源码全量回归292项通过（112.505秒），产品源码未改；记录：`runs/release-current-226498d/source-regression.json`。
