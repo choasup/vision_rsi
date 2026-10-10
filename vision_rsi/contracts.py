@@ -158,10 +158,20 @@ def validate_sample(contract,sample):
 
 
 class Sessions:
-    def __init__(self,root):
-        self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)
+    def __init__(self,root,read_only=False):
+        self.root=Path(root);self.read_only=read_only
+        if read_only:
+            if not (self.root/'sessions.sqlite3').is_file():raise ValueError('Session ledger missing')
+        else:self.root.mkdir(parents=True,exist_ok=True)
     @contextmanager
     def db(self):
+        if self.read_only:
+            from urllib.parse import quote
+            path=quote(str((self.root/'sessions.sqlite3').resolve()).replace('\\','/'),safe='/:')
+            db=sqlite3.connect('file:'+path+'?mode=ro',uri=True,timeout=10)
+            try:yield db
+            finally:db.close()
+            return
         db=sqlite3.connect(self.root/'sessions.sqlite3',timeout=10)
         try:
             with db:

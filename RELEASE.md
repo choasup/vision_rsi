@@ -241,3 +241,11 @@
 - 安装验证器增加task_adapters模块，在仓库外临时目录核对Python/HTML完整文件集合及哈希、3个模块CLI入口和132项相关测试通过（12.387秒）。证据`runs/release-adapters/{installed-evidence.json,installed-tests.log}`，控制包identity `source-sha256:fd2a2b519559e762c059b5f34e8decdb5dd6459615df688b427228a6aefc04cb`。
 - 另用安装解释器在仓库外工作目录的3个独立CLI进程实跑toy阈值训练→固定版本双样本batch→resume，2成功/0失败，恢复状态字节不变。证据`runs/release-adapters/cli-demo/evidence.json`及`cli_demo_probe.py`；明确不是实际视觉模型或COCO质量验收。
 - 本轮无真实API/SSH/GPU调用。安装模块不包含仓库根的cmd启动器（该入口已单独验证）；旧安装包和冻结任务包保留。实际GPU预算、COCO AP60、8GPU长训恢复、跨任务模型能力、统一资源公平性和RSI效率门槛仍未完成。
+
+## 只读实际任务就绪检查（2026-10-10）
+
+- 新增training readiness及交互/readiness，在构造可写Sessions之前分派。Sessions新增显式read_only模式，SQLite mode=ro、不创建根目录/表；缺失账本拒绝，写入由SQLite拒绝。
+- 汇总契约/待确认变更、COCO适配器兼容性、本地doctor配置、真实GPU预算、已有训练账本剩余快照/未结算运行；检查非法GPU账目，状态仅blocked或ready_for_prepare。后者不是运行环境或质量验收。
+- 28项就绪/契约/需求/shell相关测试通过（.974秒）；交互入口补充后10项相关复验通过（.204秒）。覆盖缺失库不创建、原库字节不变、只读连接写拒绝、缺预算阻止及授权兼容fixture只允许继续prepare。
+- 用源码Windows启动器实际检查用户session df8e8f8991ee496d859e35fab2085d8f：状态blocked，真实GPU预算None，当前阻塞为GPU小时预算尚未提供。未替用户填写预算，未调用API/SSH或启动训练。
+- task_quality_status=not_checked、release_verified=false；不覆盖已有历史质量证据，也不据本地检查推断上线。安装包尚不含本轮命令，完整目标未完成。

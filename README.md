@@ -712,3 +712,11 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 任务包`check`和新训练计划现在输出`training_adapter`，区分接口有效与训练实现兼容。`implementation_supported=true`仅表示契约匹配现有COCO单图检测后端，不代表配置、预算、训练或质量已经通过。联合多图、视频或其它指标仍可定义接口和准备媒体，但当前训练后端返回不支持，不自动转换为COCO任务。旧冻结任务包保持原行为；需要重新build才能包含此字段。
 
 当前最新本机开发安装位于 `runs/release-adapters/venv/Scripts/python.exe`，已离线安装并通过仓库外132项相关回归、3个模块CLI入口和toy训练/批量/恢复链路；对应源码全量338项通过。可使用该解释器的`-m vision_rsi`入口。证据见`runs/release-adapters/installed-evidence.json`及`cli-demo/evidence.json`。toy示例不代表真实视觉训练达标，完整上线门槛仍见RELEASE.md。
+
+### 实际任务的只读本地就绪检查
+
+```powershell
+.\vision-rsi.cmd training readiness --session-id SESSION --config config.local.json
+```
+
+交互会话内可输入`/readiness`。该命令只读原需求及已有训练账本，不创建缺失账本、不修改预算、不调用LLM/SSH，不启动训练。报告任务接口、适配器兼容性、本地配置、GPU授权及本地剩余快照和未结算运行。`ready_for_prepare`仅表示可以继续准备计划，未检查运行环境、真实任务效果或上线质量；`--json`提供完整结构。

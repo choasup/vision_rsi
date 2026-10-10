@@ -39,7 +39,7 @@ class TrainingShellTests(unittest.TestCase):
     def test_execution_reuses_scope_and_frozen_campaign_settings(self):
         args=self.settings()
         with patch('vision_rsi.training_cli.main') as invoke:
-            for command,action in (('/prepare','prepare'),('/run','advance'),('/watch','watch'),
+            for command,action in (('/readiness','readiness'),('/prepare','prepare'),('/run','advance'),('/watch','watch'),
                     ('/status','agent-status'),('/job','status'),('/logs','logs'),
                     ('/pause','agent-pause'),('/resume','agent-resume')):
                 with contextlib.redirect_stdout(io.StringIO()):

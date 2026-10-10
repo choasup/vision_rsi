@@ -11,7 +11,7 @@ from .contracts import Sessions, validate_sample, validate_schema, validate_mani
 
 def interactive_action(message,session,args):
     """Reuse the durable CLI actions; never send unknown slash commands to LLM."""
-    actions={'/prepare':'prepare','/run':'advance','/watch':'watch','/status':'agent-status',
+    actions={'/readiness':'readiness','/prepare':'prepare','/run':'advance','/watch':'watch','/status':'agent-status',
              '/job':'status','/logs':'logs','/pause':'agent-pause','/resume':'agent-resume'}
     budget_value=None
     if message.split()[:1]==['/budget']:
@@ -21,7 +21,7 @@ def interactive_action(message,session,args):
             return True
         budget_value=parts[1];actions[message]='budget'
     if message=='/help':
-        print('/budget N 设置初始GPU小时上限；/prepare 检查训练计划；/run 推进有界执行；/watch 持续推进与观察；\n'
+        print('/readiness 只读检查本地任务条件；/budget N 设置初始GPU小时上限；/prepare 检查训练计划；/run 推进有界执行；/watch 持续推进与观察；\n'
               '/status 查看本地控制记录；/job 实时查询远端作业；/logs 读取作业日志；\n'
               '/pause 暂停继续决策；/resume 恢复决策；/show 需求摘要；/contract 完整接口；/quit 保存退出。\n'
               '执行沿用当前会话的预算、研究轮数和时限。暂停或退出不取消已提交作业。')
@@ -157,7 +157,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -187,6 +187,20 @@ def main(argv):
     args=parser.parse_args(argv)
     if args.interactive and args.action not in ('start','show','reply','define'):
         parser.error('--interactive is supported for start/show/reply/define')
+    if args.action=='readiness':
+        import sqlite3
+        from .task_readiness import inspect
+        if not args.session_id:parser.error('readiness requires --session-id')
+        try:result=inspect(args.session_id,json.loads(Path(args.config).read_text(encoding='utf-8')),args.sessions,args.run_store)
+        except (ValueError,OSError,KeyError,TypeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
+        if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
+        else:
+            print('只读本地就绪检查: '+result['status'])
+            print('任务: '+result['task_id']+'；会话: '+result['session_id'])
+            print('GPU小时预算: '+str(result['authorized_gpu_hours'])+'；本地剩余快照: '+str(result['remaining_gpu_hours_snapshot']))
+            for blocker in result['blockers']:print('- '+blocker)
+            print('未调用API/SSH或启动训练；任务效果未检查。ready_for_prepare仅表示可继续准备计划。')
+        return
     if args.action=='memory':
         from .research_memory import read_memory
         if not args.session_id or not args.campaign_id:parser.error('memory requires --session-id and --campaign-id')
