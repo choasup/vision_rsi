@@ -485,3 +485,10 @@
 - 候选写入研究目录/candidates，绑定持久动作ID及目标SHA；执行时重核主仓库tracked clean和HEAD，Candidates.create按内容身份复用。结果标read_only=false、code_executed=false、adopted=false，不将语法检查称为行为验收。允许不同提案继续研究，完全相同成功提案拒绝，仍受原6次规划上限。
 - 33项controller/controller_budget/ledger/not_dispatched测试通过（9.173秒），真实临时Git创建/提交/父提交核查/重复恢复通过，提案顶层raise未被执行，主仓库文件与HEAD未改变。LLM为mock，未调用真实API/SSH/GPU；尚未把远端沙箱检查接入此控制器，未声称完整代码RSI闭环或上线完成。
 - 更新配置示例、README及应用目标能力说明。安装包未重建，真实训练和质量验证仍待完成。
+
+## 通用研究控制器连接候选CPU沙箱（2026-10-10）
+
+- 新增check_candidate动作，allow_candidate_checks显式开启后才开放；只接受同研究账本stage_candidate成功结果中的候选，规划/恢复阶段重核绑定。模块函数与1..16个keyword用例复用既有候选runtime校验，研究请求另限12000字符。
+- 通过Candidates.check调用现有远端CPU沙箱；原始检查报告保留，研究账本记录runtime_status、报告路径/digest及有界response投影。质量验证/采用始终false，模型开发用例不能替代独立验收。
+- 稳定check ID绑定目标SHA与完整候选/模块/函数/用例参数，跨新动作也复用已完成收据，已有reserved不确定检查拒绝重发；每轮新的开发用例可继续观察。未接入GPU训练或自动采用。
+- 33项controller/controller_budget/ledger/not_dispatched测试通过（10.614秒），包含真实临时Git候选通过mock远端运输写回账本、同动作/新动作相同检查只调用一次运输、其它候选ID拒绝。此轮未实际调用SSH/LLM/GPU，不能声称新的控制器链真实沙箱已通过。配置/文档/应用能力说明同步，安装包未重建；完整上线目标未完成。

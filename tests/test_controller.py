@@ -16,6 +16,7 @@ class ControllerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             repo=Path(folder)/'repo';repo.mkdir()
             git(repo,'init');(repo/'README.md').write_text('fixture')
+            (repo/'vision_rsi').mkdir();(repo/'vision_rsi/research.py').write_text('# fixture\n')
             git(repo,'add','.');git(repo,'-c','user.name=Fixture','-c','user.email=fixture@local.invalid','commit','-m','base')
             base=git(repo,'rev-parse','HEAD')
             ledger=Ledger(Path(folder)/'research');ledger.append('goal','objective',{'summary':'improve harness'})
@@ -47,6 +48,28 @@ class ControllerTests(unittest.TestCase):
             repeated=execute('stage_candidate',dict(config,_research_candidate_context=context),repo,plan['arguments'])
             self.assertEqual(repeated['candidate_id'],result['observation']['candidate_id'])
             with self.assertRaises(ValueError):execute('stage_candidate',{},repo,plan['arguments'])
+            candidate_id=result['observation']['candidate_id']
+            check_args={'candidate_id':candidate_id,'module':'vision_rsi.harness_fixture','function':'predict','cases':[{'sample':1}]}
+            check_plan={'tool':'check_candidate','summary':'check','question':'q','expected_evidence':'sandbox response',
+                        'refs':[ledger.events()[-1]['key']],'arguments':check_args}
+            client.return_value.complete.return_value={'content':json.dumps(check_plan)}
+            config['research']['allow_candidate_checks']=True
+            with patch('vision_rsi.remote.check_candidate',side_effect=lambda remote,request:{
+                    'status':'executed_unverified','source_hashes':request['source_hashes'],'observation':{'results':[{'fixture':True}]}}) as remote:
+                research_step(config,ledger.directory,repository=repo)
+                checked=ledger.events()[-1]['payload']
+                self.assertEqual(checked['status'],'completed')
+                self.assertEqual(checked['observation']['runtime_status'],'executed_unverified')
+                self.assertFalse(checked['observation']['quality_verified'])
+                check_action=next(e for e in ledger.events() if e['kind']=='action' and e['payload'].get('tool')=='check_candidate')
+                context['binding']['action_key']=check_action['key']
+                recovered=execute('check_candidate',dict(config,_research_candidate_context=context),repo,check_args)
+                self.assertEqual(recovered['report_sha256'],checked['observation']['report_sha256'])
+                context['binding']['action_key']='another-action-same-check'
+                execute('check_candidate',dict(config,_research_candidate_context=context),repo,check_args)
+                self.assertEqual(remote.call_count,1)
+            from vision_rsi.controller import validate_check_binding
+            with self.assertRaises(ValueError):validate_check_binding(dict(check_args,candidate_id='f'*64),ledger.events())
 
     @patch('vision_rsi.controller.execute',return_value={'observed':True})
     @patch('vision_rsi.controller.OpenAICompatibleClient')

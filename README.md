@@ -792,3 +792,5 @@ AP 比较完整性与成本完整性分别显示：`comparison_complete` 不代�
 配置 `research.allow_candidate_writes=true` 后，`research-step` 在仓库检查成功后可选择 `stage_candidate`，将策略、harness或adapter源码提案写入研究目录下的 `candidates` 独立Git仓库。默认关闭；允许的源码范围沿用candidate模块，不开放任意主仓库修改。
 
 模型必须引用已观察的Git基线结果，主仓库必须保持tracked clean且HEAD匹配。动作先写账本，候选ID绑定动作、目标和提案；重复恢复复用已有候选。此步骤只检查语法并保存源码，不导入、执行或采用候选；沙箱运行、真实任务验收及同预算RSI效果评估仍是后续独立门槛。该入口尚未接通完整训练/推理能力发布流程。
+
+设置 `research.allow_candidate_checks=true` 可让同一控制器选择 `check_candidate`，引用本研究已暂存候选，提供模块、函数及1–16个JSON关键字参数用例。它调用既有远端CPU沙箱，不使用GPU；原始报告单独保存，研究账本保留报告摘要、身份与路径。相同目标/候选/用例使用稳定检查ID，已完成结果复用、不确定发送拒绝重发。模型选择的开发用例不构成独立质量验收，更不构成RSI提升证据。

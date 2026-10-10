@@ -48,6 +48,9 @@ class TaskService:
             capability=('研究准备与隔离代码提案：源码检查、环境检查、证据总结、独立Git候选；不执行候选、不训练、不自动采用。'
                         if self.config.get('research',{}).get('allow_candidate_writes') is True
                         else '只读研究准备：源码检查、远端环境检查、证据总结；不训练或修改代码。')
+            if self.config.get('research',{}).get('allow_candidate_checks') is True:
+                capability='研究准备、证据总结及本研究已暂存候选的远端CPU沙箱开发用例检查；不训练、不使用GPU、不自动采用。'
+                if self.config.get('research',{}).get('allow_candidate_writes') is True:capability+=' 允许创建独立Git候选。'
             ledger.append('objective', 'objective', {'summary': objective, 'capability': capability})
             db.execute('INSERT INTO tasks VALUES (?,?,?,?,?,?)', (task_id, request_key, objective, 'queued', '', time.time()))
             return task_id
