@@ -6,6 +6,7 @@ from .runner import doctor
 from .task_adapters import training_adapter
 from .training_plan import budget_blockers
 from .training_runs import TrainingRuns
+from .runner import digest
 
 
 def inspect(session_id,config,sessions,runs,config_path='config.local.json'):
@@ -56,6 +57,7 @@ def inspect(session_id,config,sessions,runs,config_path='config.local.json'):
             'training_adapter':adapter,'configuration':configuration,'authorized_gpu_hours':budget if authorized else None,
             'remaining_gpu_hours_snapshot':remaining,'recorded_runs':len(records),'unsettled_run_ids':unsettled,
             'recent_run_ids':[record['run_id'] for record in records[-10:]],
+            'recent_run_snapshots':[{'run_id':record['run_id'],'record_sha256':digest(record),'recorded_status':record['status']} for record in records[-10:]],
             'run_list_truncated':len(records)>10,
             'suggested_actions':actions,
             'read_only':True,'remote_called':False,'llm_called':False,'training_performed':False,

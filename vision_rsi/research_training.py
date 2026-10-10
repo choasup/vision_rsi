@@ -8,10 +8,12 @@ from .training_runs import TrainingRuns
 
 
 def arguments(value):
-    if not isinstance(value,dict) or set(value)!={'run_id'}:
-        raise ValueError('read_training_run requires exactly run_id')
+    if not isinstance(value,dict) or set(value)!={'run_id','expected_record_sha256'}:
+        raise ValueError('read_training_run requires exactly run_id and expected_record_sha256')
     if not isinstance(value['run_id'],str) or not re.fullmatch('train-[0-9a-f]{32}',value['run_id']):
         raise ValueError('Invalid Training run ID')
+    if not isinstance(value['expected_record_sha256'],str) or not re.fullmatch('[0-9a-f]{64}',value['expected_record_sha256']):
+        raise ValueError('Invalid expected training record SHA256')
     return value
 
 
@@ -21,17 +23,21 @@ def read_json(path,limit):
     return json.loads(raw.decode('utf-8-sig'))
 
 
-def inspect(binding,run_id,contract):
-    arguments({'run_id':run_id})
+def inspect(binding,run_id,contract,expected_record_sha256=None):
+    if not isinstance(run_id,str) or not re.fullmatch('train-[0-9a-f]{32}',run_id):raise ValueError('Invalid Training run ID')
     store=TrainingRuns(binding['run_store'],read_only=True)
     try:record=store.get(run_id)
     finally:store.close()
     if record['session_id']!=binding['session_id']:raise ValueError('Training run belongs to another task session')
+    checksum=digest(record)
+    if expected_record_sha256 is not None:
+        arguments({'run_id':run_id,'expected_record_sha256':expected_record_sha256})
+        if checksum!=expected_record_sha256:raise ValueError('Training record changed since readiness snapshot; refresh before planning')
     plan=read_json(record['details']['plan_path'],1024*1024)
     if digest(plan)!=record['plan_id']:raise ValueError('Frozen Training plan changed')
     if plan['session_id']!=binding['session_id'] or digest(plan['contract'])!=digest(contract):
         raise ValueError('Training plan does not match frozen research task')
-    report={'run_id':run_id,'plan_id':record['plan_id'],'recorded_status':record['status'],
+    report={'run_id':run_id,'record_sha256':checksum,'plan_id':record['plan_id'],'recorded_status':record['status'],
             'reserved_gpu_hours':record['reserved_gpu_hours'],'actual_gpu_hours':record['actual_gpu_hours'],
             'receipt_available':False,'receipt_review':None,'quality_verified':False,
             'read_only':True,'remote_called':False,'training_performed':False,

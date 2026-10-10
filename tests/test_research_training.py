@@ -23,8 +23,12 @@ class ResearchTrainingTests(unittest.TestCase):
             config={'llm':{'model':'fixture'},'_training_evidence_context':binding,
                     '_task_readiness_context':{'recent_run_ids':[run]},
                     'research':{'task_contract':{'path':str(contract),'sha256':hashlib.sha256(contract.read_bytes()).hexdigest()}}}
-            client.return_value.complete.return_value={'content':json.dumps({'tool':'read_training_run',
-                'summary':'read','question':'q','expected_evidence':'recorded metrics','refs':['goal'],'arguments':{'run_id':run}})}
+            store=TrainingRuns(binding['run_store'],read_only=True)
+            try:checksum=digest(store.get(run))
+            finally:store.close()
+            action={'tool':'read_training_run','summary':'read','question':'q','expected_evidence':'recorded metrics',
+                    'refs':['goal'],'arguments':{'run_id':run,'expected_record_sha256':checksum}}
+            client.return_value.complete.return_value={'content':json.dumps(action)}
             research_step(config,ledger.directory)
             prompt=json.loads(client.return_value.complete.call_args.args[0][0]['content'])
             self.assertIn('read_training_run',prompt['available_tools'])
@@ -33,6 +37,22 @@ class ResearchTrainingTests(unittest.TestCase):
             self.assertTrue(observed['read_only'])
             self.assertEqual(observed['observation']['receipt_review']['box_AP'],42)
             self.assertFalse(observed['observation']['receipt_review']['passed'])
+            self.assertEqual(observed['observation']['record_sha256'],checksum)
+            # A later state of the same run is a distinct, hash-bound observation.
+            store=TrainingRuns(binding['run_store'])
+            try:
+                record=store.get(run)
+                updated=store.update(run,'failed',record['details'],record['actual_gpu_hours'])
+            finally:store.close()
+            with self.assertRaisesRegex(ValueError,'record changed'):
+                inspect(binding,run,plan['contract'],checksum)
+            action['arguments']['expected_record_sha256']=digest(updated)
+            client.return_value.complete.return_value={'content':json.dumps(action)}
+            research_step(config,ledger.directory)
+            latest=ledger.events()[-1]['payload']
+            self.assertEqual(latest['status'],'completed')
+            self.assertEqual(latest['observation']['recorded_status'],'failed')
+            self.assertNotEqual(latest['observation']['record_sha256'],checksum)
 
     def fixture(self,root):
         plan,receipt=evidence(score=42)

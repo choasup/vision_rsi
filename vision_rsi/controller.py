@@ -170,7 +170,8 @@ def execute(tool, config, repository,arguments=None):
         context=config.get('_training_evidence_context')
         if not isinstance(context,dict):raise ValueError('Training evidence store is not bound')
         contract,_=frozen_contract(config)
-        return inspect(context,validate_arguments(arguments)['run_id'],contract)
+        args=validate_arguments(arguments)
+        return inspect(context,args['run_id'],contract,args['expected_record_sha256'])
     if tool in ('check_candidate','check_contract'):
         from .candidates import Candidates
         args=(contract_check_arguments(arguments) if tool=='check_contract' else check_arguments(arguments));context=config.get('_research_candidate_context')
@@ -367,8 +368,8 @@ def research_step(config, directory, steps=1, repository='.'):
                         prompt['frozen_task_contract']={'sha256':contract_hash,'contract':contract}
                     if 'read_training_run' in available:
                         prompt['tools']['read_training_run']='Read an existing run from this task session, verify frozen plan identity and re-review any collected receipt locally. No SSH or training, no automatic acceptance/adoption.'
-                        prompt['schema']['tool_argument_shapes']['read_training_run']={'run_id':'exact recent_run_ids entry from task_readiness'}
-                        prompt['schema']['arguments_rule']+=' read_training_run requires arguments exactly run_id; never supply a path or session ID.'
+                        prompt['schema']['tool_argument_shapes']['read_training_run']={'run_id':'exact recent_run_snapshots run_id from task_readiness','expected_record_sha256':'matching record_sha256 from that same snapshot'}
+                        prompt['schema']['arguments_rule']+=' read_training_run requires arguments exactly run_id,expected_record_sha256; never supply a path or session ID. An updated record has a new hash and may be inspected again; do not repeat the same run/hash.'
                         prompt['instruction']+=' A successful read_training_run result is also eligible synthesis evidence. Locally re-reviewed receipts are not independent authenticity, serving availability or RSI evidence.'
                     prompt['response_contract']={
                         'required_keys':['tool','summary','question','expected_evidence','refs'],
