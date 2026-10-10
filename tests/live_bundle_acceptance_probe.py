@@ -1,0 +1,59 @@
+"""Two real remote CPU fixture executions; no learned-model acceptance claim."""
+import argparse
+import base64
+import hashlib
+import json
+from pathlib import Path
+import sys
+import uuid
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from vision_rsi.bundle_acceptance import accept
+from vision_rsi.candidate_bundle import verify, run
+from vision_rsi.runner import atomic_json
+import vision_rsi.remote as transport
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--live-remote',action='store_true');parser.add_argument('--bundle',required=True)
+    parser.add_argument('--config',default='config.local.json');args=parser.parse_args()
+    if not args.live_remote:parser.error('--live-remote required; two CPU calls, no LLM/GPU')
+    bundle=verify(args.bundle)
+    contract=json.loads(base64.b64decode(bundle['contract_base64']))
+    remote=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))['remote']
+    root=Path(__file__).resolve().parents[1]/'runs/bundle-acceptance-live'/uuid.uuid4().hex
+    root.mkdir(parents=True);print(str(root),flush=True)
+    samples=[]
+    for split in ('development','holdout'):
+        sample=json.loads(json.dumps(contract['example_input']));sample['sample_id']=split
+        for name,value in sample['inputs'].items():
+            for index,item in enumerate(value['items'] if value['type']=='image_list' else [value]):
+                filename=split+'-'+name+str(index)+'.bin';item['uri']=filename
+                content=(b'P6\n1 1\n255\n'+bytes([index,0,255 if split=='development' else 254])) if name=='views' else (split+' raw nondecoded video fixture').encode()
+                (root/filename).write_bytes(content)
+        samples.append(sample)
+    event={'label':'action','start_seconds':0,'end_seconds':1}
+    dataset=root/'holdout.json';atomic_json(dataset,{'purpose':'independent_acceptance','samples':[samples[1]],
+        'ground_truth':{'labels':['action'],'samples':[{'sample_id':'holdout','events':[event]}]}})
+    atomic_json(root/'preregistered.json',{'scope':__doc__,'bundle_id':bundle['bundle_id'],'expected_remote_calls':2,
+        'expected_fixture_f1':1,'llm_calls':0,'gpu_used':False,'quality_verified':False,
+        'probe_source_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
+    calls=[];original=transport.check_candidate;passed=False;failure=None;result=None
+    def counted(*values):calls.append(True);return original(*values)
+    transport.check_candidate=counted
+    try:
+        development=run(args.bundle,[samples[0]],remote,root/'development',media_directory=root)
+        values=(args.bundle,dataset,[development['execution_path']],remote,root/'acceptance')
+        result=accept(*values)
+        assert result['status']=='holdout_metric_met' and result['metric_report']['event_micro_f1']==1
+        assert accept(*values)==result and len(calls)==2
+        assert not result['production_accepted'] and not result['complete_development_history_verified']
+        passed=True
+    except Exception as error:failure=type(error).__name__+': '+str(error)[:500]
+    finally:transport.check_candidate=original
+    evidence={'passed':passed,'failure':failure,'remote_calls':len(calls),'result':result,
+        'gpu_used':False,'llm_calls':0,'quality_verified':False,'scope':__doc__}
+    atomic_json(root/'evidence.json',evidence);print(json.dumps(evidence,ensure_ascii=False,indent=2));return int(not passed)
+
+
+if __name__=='__main__':raise SystemExit(main())

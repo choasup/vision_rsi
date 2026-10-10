@@ -94,7 +94,7 @@ def decoded_video(asset,plan,remote,output,driver_hash):
         return result
 
 
-def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_directory=None):
+def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_directory=None,expected_input_manifest=None):
     from .contracts import validate_sample,validate_schema
     from .campaign import lease
     from .runner import atomic_json
@@ -112,17 +112,20 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_director
         for sample in samples:
             packet=package_sample(contract,sample,media_directory,content_limit=512*1024)
             case={'sample':sample,'media':packet}
-            if identity.get('video_decoders'):
-                case['video_frames']={asset['field']:decoded_video(asset,identity['video_decoders'][asset['field']],remote,output,identity['video_driver_sha256'])
-                    for asset in packet['assets'] if asset['kind']=='video'}
             cases.append(case)
             encode_cases(identity['module'],identity['function'],cases)
     encode_cases(identity['module'],identity['function'],cases)
     from .input_provenance import manifest
     input_manifest=manifest(contract,cases)
+    if expected_input_manifest is not None and input_manifest!=expected_input_manifest:raise ValueError('Frozen acceptance input content changed')
+    if identity.get('video_decoders'):
+        for case in cases:
+            case['video_frames']={asset['field']:decoded_video(asset,identity['video_decoders'][asset['field']],remote,output,identity['video_driver_sha256'])
+                for asset in case['media']['assets'] if asset['kind']=='video'}
+    encode_cases(identity['module'],identity['function'],cases)
     request={'files':bundle['files'],'source_hashes':identity['source_hashes'],
              'module':identity['module'],'function':identity['function'],'cases':cases}
-    binding={'bundle_id':bundle['bundle_id'],'request_sha256':digest(request),'input_sha256':digest(cases),'remote':remote,
+    binding={'bundle_id':bundle['bundle_id'],'contract_sha256':identity['contract_sha256'],'request_sha256':digest(request),'input_sha256':digest(cases),'remote':remote,
              'provenance_sha256':hashlib.sha256(Path(__file__).with_name('input_provenance.py').read_bytes()).hexdigest(),
              'executor_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
              'validator_sha256':hashlib.sha256(Path(__file__).with_name('contracts.py').read_bytes()).hexdigest()}

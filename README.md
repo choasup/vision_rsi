@@ -955,3 +955,13 @@ python -m vision_rsi training release-status --session-id SESSION --json
 ```
 
 `--development` 可重复指定（最多 128 条）。新执行记录包含实际媒体 SHA256、去除路径及样本 ID 的内容指纹；多图中任一媒体复用也会报重叠。纯文本支持内容比较；仅 URI 的媒体执行和缺少指纹的旧记录无法作为分离证据。命令只读取所提供记录，不调用 API 或远程服务，也不授予验收资格。无重叠不证明开发历史完整、数据独立、模型质量或生产可用；SHA256 校验用于发现修改，不构成签名认证。
+
+通用事件候选可在开发结束后进行一次固定输入的留出指标验收：
+
+```powershell
+.\vision-rsi.cmd candidate-accept --bundle bundle.json --dataset heldout.json --development dev-execution.json --output runs/acceptance/task-v1 --config config.local.json
+```
+
+验收集格式与开发集相同，但 `purpose` 必须为 `independent_acceptance`。执行前检查与所提供全部开发记录的重叠（允许不同候选，要求相同合同），冻结候选、实际输入内容、标注数据文件、开发记录身份及控制端实现。一个 `--output` 目录对应一个验收槽；更换输入或候选会拒绝，重复请求复用结果，不确定的远程执行不会自动重发。换目录并不获得重复搜索隐藏测试的许可；当前尚无跨目录的任务级验收次数锁。
+
+目前只支持合同定义的事件 micro-F1，CPU 夹具可验证链路。输出 `holdout_metric_met` 仅表示这份留出数据的指标达标；开发历史完整性、真实模型泛化及服务验收仍需补齐，因此不会自动注册或开放正式 `test`。留出分数不要反馈给研究规划器继续搜索。

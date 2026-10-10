@@ -57,13 +57,31 @@ def _read(path):
     return record, rows
 
 
-def audit(development_paths, acceptance_path):
+def audit(development_paths, acceptance_path, same_bundle=True):
     if not development_paths or len(development_paths) > 128:
         raise ValueError('Require 1..128 development execution records')
     acceptance, heldout = _read(acceptance_path)
     records = [_read(path) for path in development_paths]
-    if any(record['binding'].get('bundle_id') != acceptance['binding'].get('bundle_id') for record, _ in records):
+    return _compare(records, acceptance, heldout, same_bundle)
+
+
+def audit_manifest(development_paths, bundle_id, contract_sha256, rows):
+    """Preflight verified media manifest before executing proposed holdout samples."""
+    if not development_paths or len(development_paths) > 128:
+        raise ValueError('Require 1..128 development execution records')
+    if not rows or any(row.get('media_coverage_complete') is not True for row in rows):
+        raise ValueError('Actual media content coverage required')
+    records = [_read(path) for path in development_paths]
+    return _compare(records, {'binding': {'bundle_id': bundle_id, 'contract_sha256': contract_sha256}}, rows, False)
+
+
+def _compare(records, acceptance, heldout, same_bundle):
+    if same_bundle and any(record['binding'].get('bundle_id') != acceptance['binding'].get('bundle_id') for record, _ in records):
         raise ValueError('Audit requires the same frozen bundle')
+    if not same_bundle:
+        contract = acceptance['binding'].get('contract_sha256')
+        if not isinstance(contract, str) or not re.fullmatch('[0-9a-f]{64}', contract) or any(record['binding'].get('contract_sha256') != contract for record, _ in records):
+            raise ValueError('Development executions must bind the same task contract')
     if not isinstance(acceptance['binding'].get('bundle_id'), str) or not re.fullmatch('[0-9a-f]{64}', acceptance['binding']['bundle_id']):
         raise ValueError('Missing frozen bundle identity')
     development = [row for _, rows in records for row in rows]
@@ -75,7 +93,7 @@ def audit(development_paths, acceptance_path):
                 'media_sha256': sorted(media & {h for r in heldout for h in r['media_sha256']})}
     return {'status': 'overlap_detected' if any(overlaps.values()) else 'no_overlap_in_supplied_records',
             'overlaps': overlaps, 'development_records': len(records),
-            'record_sha256': [r['record_sha256'] for r, _ in records] + [acceptance['record_sha256']],
+            'record_sha256': [r['record_sha256'] for r, _ in records] + ([acceptance['record_sha256']] if 'record_sha256' in acceptance else []),
             'scope': 'supplied_records_only', 'complete_development_history_verified': False,
             'quality_verified': False, 'production_accepted': False}
 

@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from vision_rsi.input_provenance import manifest, audit
+from vision_rsi.input_provenance import manifest, audit, audit_manifest
 from vision_rsi.media import package_sample
 from vision_rsi.runner import digest
 
@@ -70,3 +70,14 @@ class InputProvenanceTests(unittest.TestCase):
         result = audit([self.save('a.json', a)], self.save('b.json', b))
         self.assertEqual(result['status'], 'overlap_detected')
         self.assertEqual(result['overlaps']['input_content_sha256'], [])
+
+    def test_preflight_checks_other_candidates_on_same_contract(self):
+        rows = manifest(self.contract, [self.sample('a', b'one', 'a')])
+        path = self.save('development.json', rows)
+        record = json.loads(path.read_text()); record['binding']['contract_sha256'] = 'c'*64
+        del record['record_sha256']; record['record_sha256'] = digest(record)
+        path.write_text(json.dumps(record))
+        result = audit_manifest([path], 'b'*64, 'c'*64, rows)
+        self.assertEqual(result['status'], 'overlap_detected')
+        with self.assertRaisesRegex(ValueError, 'same task contract'):
+            audit_manifest([path], 'b'*64, 'd'*64, rows)
