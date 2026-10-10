@@ -710,3 +710,5 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 批量恢复会先核查整批当前输入指纹和所有已成功缓存的输出哈希，再派发失败/未完成样本。若后面的样本输入或缓存发生变化，本次恢复会在推理之前拒绝，避免先消耗前面样本的重试预算。派发时现有能力后端的expected_input_fingerprint校验仍保留；这不把校验后发生的并发文件修改声称为不可能。
 
 任务包`check`和新训练计划现在输出`training_adapter`，区分接口有效与训练实现兼容。`implementation_supported=true`仅表示契约匹配现有COCO单图检测后端，不代表配置、预算、训练或质量已经通过。联合多图、视频或其它指标仍可定义接口和准备媒体，但当前训练后端返回不支持，不自动转换为COCO任务。旧冻结任务包保持原行为；需要重新build才能包含此字段。
+
+当前最新本机开发安装位于 `runs/release-adapters/venv/Scripts/python.exe`，已离线安装并通过仓库外132项相关回归、3个模块CLI入口和toy训练/批量/恢复链路；对应源码全量338项通过。可使用该解释器的`-m vision_rsi`入口。证据见`runs/release-adapters/installed-evidence.json`及`cli-demo/evidence.json`。toy示例不代表真实视觉训练达标，完整上线门槛仍见RELEASE.md。

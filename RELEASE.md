@@ -233,3 +233,11 @@
 - 新可执行任务包check同时报告训练适配器兼容性，避免仅控制接口检查通过被解读为任意视觉任务已有训练实现。现有COCO单图后端仍是唯一已实现训练路径；这次抽取没有新增多图/视频模型。
 - 27项适配器/可执行harness/COCO训练配置/需求/交互shell相关测试通过（5.788秒），包括兼容契约不变更、joint/video/text/F1/不兼容输出拒绝，以及冻结包check明确不支持其联合任务。
 - 无真实API/SSH/GPU调用。旧冻结任务包不自动升级，安装包尚未重建；真实COCO AP60及跨任务训练/模型效果、RSI效率与完整上线门槛仍未完成。
+
+## 近期改动的全量与新安装包复验（2026-10-10）
+
+- 产品源码b794156全量338项测试通过（113.619秒），日志`runs/release-adapters-full-tests.log`。覆盖近期谱系/拒绝反馈、配对预算/符号检验、启动路径、批量预检查和适配器职责变化。
+- 新wheel SHA-256 `3a50e8e5716c5d2534d4ce9e3dbb9dc3f8163a461fb2662803f3bb44d51bfaa7`，位于`runs/release-adapters/wheelhouse/vision_rsi_agent-0.1.0.dev1-py3-none-any.whl`。新venv使用既有哈希依赖清单离线安装，pip check通过；本机构建工具未锁定，不声称可复现构建或新机器验收已完成。
+- 安装验证器增加task_adapters模块，在仓库外临时目录核对Python/HTML完整文件集合及哈希、3个模块CLI入口和132项相关测试通过（12.387秒）。证据`runs/release-adapters/{installed-evidence.json,installed-tests.log}`，控制包identity `source-sha256:fd2a2b519559e762c059b5f34e8decdb5dd6459615df688b427228a6aefc04cb`。
+- 另用安装解释器在仓库外工作目录的3个独立CLI进程实跑toy阈值训练→固定版本双样本batch→resume，2成功/0失败，恢复状态字节不变。证据`runs/release-adapters/cli-demo/evidence.json`及`cli_demo_probe.py`；明确不是实际视觉模型或COCO质量验收。
+- 本轮无真实API/SSH/GPU调用。安装模块不包含仓库根的cmd启动器（该入口已单独验证）；旧安装包和冻结任务包保留。实际GPU预算、COCO AP60、8GPU长训恢复、跨任务模型能力、统一资源公平性和RSI效率门槛仍未完成。

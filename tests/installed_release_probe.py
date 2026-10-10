@@ -43,7 +43,8 @@ def main():
                  'test_campaign', 'test_campaign_audit', 'test_policy_audit', 'test_paired_study',
                  'test_cpu_runtime', 'test_training_runtime', 'test_serving_state', 'test_serving_acceptance',
                  'test_remote_capability', 'test_controller_budget', 'test_watch', 'test_video_runtime',
-                 'test_filesystem', 'test_experiments', 'test_executable_harness', 'test_not_dispatched']
+                 'test_filesystem', 'test_experiments', 'test_executable_harness', 'test_not_dispatched',
+                 'test_task_adapters']
         suite = unittest.defaultTestLoader.loadTestsFromNames(names)
         with (output/'installed-tests.log').open('w', encoding='utf-8') as log:
             result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)
