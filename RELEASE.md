@@ -550,3 +550,9 @@
 - tests/live_task_research_probe.py对现有会话df8e8f8991ee496d859e35fab2085d8f调用真实training research-step CLI，独立API上限1，候选写入/检查关闭，固定合同从会话研究目录自动带入。
 - 实际通过：runs/task-research-live/81fe5c73c78e489f8922f5afe50b401d/{preregistered.json,evidence.json,cli-output.txt}，原始请求/响应在runs/task-research/该session/research.sqlite3。DeepSeek选择inspect_repository并完成，实际请求快照含精确导出合同及SHA，会话SQLite哈希不变。1次responded，reported prompt2123/completion191/total2314 tokens，额度剩0；无SSH/GPU/训练。
 - 此证据证明会话→CLI→真实规划→本地只读工具→账本衔接，不证明长期研究质量或视觉指标达标。开发版本更新0.1.0.dev4，包含dev3之后研究候选/合同/CLI改动；安装验证待完成。
+
+## dev4开发安装包完整验证（2026-10-10）
+
+- 源码0b71a814245ca21849b541bab0c4398a4f88f72d完整回归394项通过（140.499秒），日志runs/dev4-full-tests.log。wheel runs/release-dev4/wheelhouse/vision_rsi_agent-0.1.0.dev4-py3-none-any.whl，SHA256=103701a781f49c930283a3ef3f8f126cbad57284c5e476b298617b24fe11671a。
+- 新venv按本地wheelhouse和Windows依赖哈希清单离线安装，pip check通过。仓库外201项安装测试通过（30.749秒），6个模块CLI帮助入口通过，安装Python/HTML文件集合及各文件SHA与源码完全一致。证据runs/release-dev4/{installed-evidence.json,installed-tests.log}；控制器身份source-sha256:db6f9f7ac93a49d7e4cbde1258a12d4373f452790f525fd4ee68a795c1aff955。
+- 另在F盘根目录用安装venv的python -m vision_rsi training research-init，显式指向原会话/研究根，成功读取task my-vision-task/v5并复用原研究。未调用API/SSH/GPU；不声称新机器认证、真实训练或上线质量门槛完成。
