@@ -188,12 +188,8 @@ class Candidates:
                 return self._check(candidate_id,remote,module,function,cases,check_id)
         return self._check(candidate_id,remote,module,function,cases)
 
-    def _check(self,candidate_id,remote,module,function,cases,check_id=None):
-        import base64
-        import uuid
-        from .remote import check_candidate
-        from .candidate_runtime import encode_cases
-        encode_cases(module,function,cases)
+    def source_files(self,candidate_id):
+        """Verified runtime source closure, including inherited candidate modules."""
         if not re.fullmatch('[0-9a-f]{64}',candidate_id):raise ValueError('Invalid candidate ID')
         folder=self.root/candidate_id
         record=self.verify(json.loads((folder/'candidate.json').read_text(encoding='utf-8')))
@@ -208,6 +204,16 @@ class Candidates:
             if ancestor['identity']['base_revision']!=parent['git_revision']:raise ValueError('Candidate lineage revision mismatch')
             names.update(parent['source_hashes']);ancestor=parent
         files={name:(checkout/name).read_bytes() for name in sorted(names)}
+        return record,files
+
+    def _check(self,candidate_id,remote,module,function,cases,check_id=None):
+        import base64
+        import uuid
+        from .remote import check_candidate
+        from .candidate_runtime import encode_cases
+        encode_cases(module,function,cases)
+        record,files=self.source_files(candidate_id)
+        folder=self.root/candidate_id
         request={'files':{name:base64.b64encode(raw).decode() for name,raw in files.items()},
                  'source_hashes':{name:hashlib.sha256(raw).hexdigest() for name,raw in files.items()},
                  'module':module,'function':function,'cases':cases}
@@ -285,7 +291,7 @@ class Candidates:
 def main(argv):
     import argparse
     parser=argparse.ArgumentParser(prog='vision-rsi candidate')
-    parser.add_argument('action',choices=['create','propose','list','show','check','strategy-check','adapter-check','adapter-evaluate','adapter-repair','adapter-budget'])
+    parser.add_argument('action',choices=['create','propose','list','show','check','strategy-check','adapter-check','adapter-evaluate','adapter-repair','adapter-budget','bundle'])
     parser.add_argument('--store',default='runs/research-candidates');parser.add_argument('--repository',default='.')
     parser.add_argument('--proposal');parser.add_argument('--evidence');parser.add_argument('--request-id');parser.add_argument('--candidate-id')
     parser.add_argument('--session-id');parser.add_argument('--sessions',default='runs/training-sessions')
@@ -293,11 +299,16 @@ def main(argv):
     parser.add_argument('--contract')
     parser.add_argument('--dataset',help='Frozen development_validation JSON; never a hidden-test feedback dataset')
     parser.add_argument('--report')
+    parser.add_argument('--output',help='Directory for content-addressed candidate bundles')
     parser.add_argument('--json',action='store_true')
     parser.add_argument('--config',default='config.local.json')
     args=parser.parse_args(argv);store=Candidates(args.store,args.repository)
     try:
-        if args.action=='create':
+        if args.action=='bundle':
+            if not all((args.candidate_id,args.module,args.function,args.contract,args.output)):parser.error('bundle requires candidate-id, module, function, contract and output')
+            from .candidate_bundle import build
+            result=build(store,args.candidate_id,args.module,args.function,args.contract,args.output)
+        elif args.action=='create':
             if not args.proposal:parser.error('create requires --proposal')
             result=store.create(json.loads(Path(args.proposal).read_text(encoding='utf-8-sig')),{'origin':'explicit-local-proposal'})
         elif args.action=='propose':
@@ -338,6 +349,7 @@ def main(argv):
             result=store.verify(json.loads((store.root/args.candidate_id/'candidate.json').read_text(encoding='utf-8')))
         else:result=[json.loads(path.read_text(encoding='utf-8')) for path in sorted(store.root.glob('*/candidate.json'))]
         if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
+        elif args.action=='bundle':print('候选包: '+result['directory']+'\n状态: 开发工件，未通过生产验收')
         elif args.action=='adapter-evaluate':
             print('候选指标评测: '+result['status']+'\n报告: '+result['report_path']+'\n仅开发验证；未注册能力或采用Agent。')
         elif args.action=='adapter-budget':

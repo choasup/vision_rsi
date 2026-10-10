@@ -905,3 +905,11 @@ python -m vision_rsi training release-status --session-id SESSION --json
 通用研究的 `stage_candidate` 现在可额外传入 `parent_candidate_id`，用于基于上一版候选继续迭代。必须引用同一账本的父候选生成结果，`base_revision` 使用父候选的 `git_revision`；修改已有文件时使用父候选 `source_hashes`。父候选及源码会重新校验，主仓库不变。运行包沿 Git 父链收集继承模块，最多 32 层；不因此自动采用或注册能力。
 
 通用控制器可用 `read_candidate_source` 找回已生成候选的源码。参数为 `candidate_id/path/start_line/max_lines`，可选 `expected_sha256`；省略时使用完整验证后的候选记录哈希。必须引用同一账本的候选生成结果，最多读取 100 行，保持原有源码路径和字节限制。长期指标摘要同时保留 `staged_ref`、模块和函数，便于找回早期最佳候选；该工具只读，不执行代码。
+
+源码版可导出候选交付包：
+
+```powershell
+.\vision-rsi.cmd candidate bundle --store CANDIDATE_STORE --repository GIT_REPO --candidate-id CANDIDATE_ID --module vision_rsi.adapter_name --function predict --contract contract.json --output runs/candidate-bundles --json
+```
+
+包按内容身份保存，包含已校验的候选及继承模块、入口、Git 身份、冻结合同与源码哈希，可从独立位置读取校验。它不包含数据集、配置密钥或候选运行记录；合同中的用户内容会按原样保留。现有包修改后拒绝覆盖。`production_accepted` 与 `capability_registered` 均为 false：尚需独立验收和推理部署，不能直接用开发包替代已验收任务版本。内容哈希验证完整性，不认证发布者。

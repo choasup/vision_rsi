@@ -11,6 +11,20 @@ from test_event_eval import event
 
 
 class AdapterEvaluationTests(unittest.TestCase):
+    def test_candidate_bundle_is_portable_and_refuses_changed_existing_bytes(self):
+        from vision_rsi.candidate_bundle import build,verify
+        result=build(self.store,self.candidate,'vision_rsi.adapter_fixture','predict',self.contract,self.root/'bundles')
+        self.assertFalse(result['production_accepted']);self.assertFalse(result['capability_registered'])
+        original=Path(result['path']).read_bytes()
+        copied=self.root/'independent-bundle.json';copied.write_bytes(original)
+        self.assertEqual(verify(copied)['bundle_id'],result['bundle_id'])
+        self.assertEqual(build(self.store,self.candidate,'vision_rsi.adapter_fixture','predict',self.contract,self.root/'bundles'),result)
+        broken=json.loads(original);broken['files']['vision_rsi/adapter_fixture.py']='Yg=='
+        Path(result['path']).write_text(json.dumps(broken),encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'source hash mismatch'):verify(result['path'])
+        with self.assertRaises(ValueError):build(self.store,self.candidate,'vision_rsi.adapter_fixture','predict',self.contract,self.root/'bundles')
+        self.assertEqual(json.loads(Path(result['path']).read_text()),broken)
+
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_controller_reads_bound_candidate_source_after_old_history_window(self,client):
         from vision_rsi.controller import research_step,observation_context
