@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import shlex
 from pathlib import Path
 
 from .contracts import Sessions, validate_sample, validate_schema, validate_manifest
@@ -12,7 +13,27 @@ from .contracts import Sessions, validate_sample, validate_schema, validate_mani
 def interactive_action(message,session,args):
     """Reuse the durable CLI actions; never send unknown slash commands to LLM."""
     actions={'/readiness':'readiness','/prepare':'prepare','/run':'advance','/watch':'watch','/status':'agent-status',
-             '/job':'status','/logs':'logs','/pause':'agent-pause','/resume':'agent-resume'}
+             '/job':'status','/logs':'logs','/pause':'agent-pause','/resume':'agent-resume',
+             '/research':'research-step','/research-watch':'research-watch','/research-status':'research-status',
+             '/research-pause':'research-pause','/research-resume':'research-resume',
+             '/select':'select-candidate','/release':'release-status'}
+    extra=[]
+    head=message.split()[:1]
+    if head in (['/deliver'],['/delivery']):
+        try:
+            # Preserve Windows backslashes, including paths quoted for spaces.
+            parts=[value[1:-1] if value.startswith('"') and value.endswith('"') else value
+                   for value in shlex.split(message,posix=False)]
+        except ValueError:
+            print('路径引号未闭合；本次操作未执行。');return True
+        if parts[0]=='/deliver' and len(parts)==3:
+            actions[message]='deliver-candidate'
+            extra=['--select-development','--dataset',parts[1],'--max-latency-seconds',parts[2]]
+        elif parts[0]=='/delivery' and len(parts)==2:
+            actions[message]='delivery-status';extra=['--version',parts[1]]
+        else:
+            print('用法：/deliver "独立验收集路径" 最大延迟秒数；/delivery 原候选版本。交付前先 /research-pause。')
+            return True
     budget_value=None
     if message.split()[:1]==['/budget']:
         parts=message.split()
@@ -24,6 +45,9 @@ def interactive_action(message,session,args):
         print('/readiness 只读检查本地任务条件；/budget N 设置初始GPU小时上限；/prepare 检查训练计划；/run 推进有界执行；/watch 持续推进与观察；\n'
               '/status 查看本地控制记录；/job 实时查询远端作业；/logs 读取作业日志；\n'
               '/pause 暂停继续决策；/resume 恢复决策；/show 需求摘要；/contract 完整接口；/quit 保存退出。\n'
+              '/research 推进一步通用研究；/research-watch 有界持续研究；/research-status 查看研究记录；\n'
+              '/research-pause 暂停通用研究；/research-resume 恢复通用研究；/select 冻结开发选型；\n'
+              '/deliver "验收集路径" 延迟秒数 自动选型并交付；/delivery 原候选版本 查看交付记录；/release 只读发布证据。\n'
               '执行沿用当前会话的预算、研究轮数和时限。暂停或退出不取消已提交作业。')
         return True
     if message=='/show':return False
@@ -35,6 +59,12 @@ def interactive_action(message,session,args):
     action=actions[message]
     command=[action,'--session-id',session,'--sessions',args.sessions,'--config',args.config,
              '--run-store',args.run_store,'--campaign-store',args.campaign_store,'--registry',args.registry]
+    command+=extra
+    if action.startswith('research-') or action in ('select-candidate','deliver-candidate'):
+        command+=['--research-root',args.research_root]
+    if action in ('research-step','research-watch'):
+        command+=['--repository',args.repository,'--steps',str(args.steps),
+                  '--research-watch-turns',str(args.research_watch_turns),'--watch-seconds',str(args.watch_seconds)]
     if budget_value is not None:command+=['--gpu-hours',budget_value]
     if action in ('advance','watch','agent-status','agent-pause','agent-resume'):
         command+=['--steps',str(args.steps),'--watch-seconds',str(args.watch_seconds),'--poll-seconds',str(args.poll_seconds)]

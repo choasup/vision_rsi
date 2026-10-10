@@ -4,17 +4,34 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+import contextlib
+import io
 from unittest.mock import patch
 
 import test_candidate_delivery as fixtures
 from vision_rsi.executable_harness import build_executable
 from vision_rsi.harness import build
+from vision_rsi.contracts import Sessions
 
 
 class ExportedCandidateTests(unittest.TestCase):
     setUp=fixtures.CandidateDeliveryTests.setUp
     history=fixtures.CandidateDeliveryTests.history
     ready=fixtures.CandidateDeliveryTests.ready
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_interactive_release_reads_real_registry_without_model_or_dispatch(self,remote):
+        from vision_rsi.training_cli import main
+        self.ready(remote)
+        calls=remote.call_count
+        output=io.StringIO()
+        with patch('builtins.input',side_effect=['/research-status','/release','/quit']), \
+                patch.object(Sessions,'clarify') as clarify,contextlib.redirect_stdout(output):
+            main(['show','--session-id',self.session['session_id'],'--sessions',str(self.root/'sessions'),
+                  '--research-root',str(self.research_root),'--registry',str(self.registry.root),'--interactive'])
+        clarify.assert_not_called()
+        self.assertEqual(remote.call_count,calls)
+        self.assertIn('local_evidence_ready_for_test',output.getvalue())
 
     def command(self, folder, *args):
         return subprocess.run([sys.executable,'-B','-X','utf8',str(folder/'harness.py'),*args],

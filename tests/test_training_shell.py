@@ -34,7 +34,42 @@ class TrainingShellTests(unittest.TestCase):
         return SimpleNamespace(sessions='sessions',config='local.json',run_store='runs',
             campaign_store='campaigns',registry='registry',steps=3,watch_seconds=120,
             poll_seconds=15,research_rounds=2,campaign_id='saved-campaign',candidate_id=None,
-            candidate_module=None,candidate_store='candidates',run_id='saved-run',output=None)
+            candidate_module=None,candidate_store='candidates',run_id='saved-run',output=None,
+            research_root='task-research',repository='source-repo',research_watch_turns=4)
+
+    def test_general_research_shell_preserves_repository_and_limits(self):
+        args=self.settings()
+        with patch('vision_rsi.training_cli.main') as invoke:
+            for command in ('/research','/research-watch','/research-status','/research-pause','/research-resume','/select','/release'):
+                self.assertTrue(interactive_action(command,'original-session',args))
+                actual=invoke.call_args.args[0]
+                self.assertEqual(actual[actual.index('--session-id')+1],'original-session')
+                if command!='/release':
+                    self.assertEqual(actual[actual.index('--research-root')+1],'task-research')
+                if command in ('/research','/research-watch'):
+                    self.assertEqual(actual[actual.index('--repository')+1],'source-repo')
+                    self.assertEqual(actual[actual.index('--research-watch-turns')+1],'4')
+                    self.assertEqual(actual[actual.index('--watch-seconds')+1],'120')
+
+    def test_delivery_shell_preserves_windows_path_and_explicit_acceptance_target(self):
+        with patch('vision_rsi.training_cli.main') as invoke:
+            self.assertTrue(interactive_action('/deliver "F:\\holdout data\\acceptance.json" 30','session',self.settings()))
+            actual=invoke.call_args.args[0]
+            self.assertEqual(actual[0],'deliver-candidate')
+            self.assertIn('--select-development',actual)
+            self.assertEqual(actual[actual.index('--dataset')+1],r'F:\holdout data\acceptance.json')
+            self.assertEqual(actual[actual.index('--max-latency-seconds')+1],'30')
+            self.assertEqual(actual[actual.index('--research-root')+1],'task-research')
+            self.assertTrue(interactive_action('/delivery source-version','session',self.settings()))
+            actual=invoke.call_args.args[0]
+            self.assertEqual(actual[0],'delivery-status')
+            self.assertEqual(actual[actual.index('--version')+1],'source-version')
+
+    def test_incomplete_delivery_commands_never_execute_or_become_prompts(self):
+        with patch('vision_rsi.training_cli.main') as invoke,contextlib.redirect_stdout(io.StringIO()):
+            for command in ('/deliver','/deliver file.json','/deliver "unclosed','/delivery','/delivery one two','/select extra'):
+                self.assertTrue(interactive_action(command,'session',self.settings()))
+            invoke.assert_not_called()
 
     def test_execution_reuses_scope_and_frozen_campaign_settings(self):
         args=self.settings()
