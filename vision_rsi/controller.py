@@ -27,6 +27,12 @@ def observation_context(value):
             result['metric_report']={key:metric[key] for key in ('protocol','threshold','iou_threshold',
                 'sample_count','tp','fp','fn','precision','recall','event_micro_f1','metric_threshold_met',
                 'contract_sha256','ground_truth_sha256','predictions_sha256','provenance_verified') if key in metric}
+            diagnostics=metric.get('error_analysis')
+            if isinstance(diagnostics,dict):
+                result['metric_report']['error_analysis']={key:diagnostics[key] for key in
+                    ('scope','failing_label_count','failing_sample_count','truncated') if key in diagnostics}
+                for key in ('worst_labels','worst_samples'):
+                    result['metric_report']['error_analysis'][key]=diagnostics.get(key,[])[:3]
         if len(json.dumps(result,ensure_ascii=False))>8800:
             raise ValueError('Candidate metric context metadata too large')
         return result

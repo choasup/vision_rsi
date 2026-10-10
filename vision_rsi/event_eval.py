@@ -163,14 +163,39 @@ def evaluate(ground_truth, predictions, iou_threshold=None, threshold=None, cont
     if positives == 0:
         raise ValueError('Ground truth must contain at least one event')
     count = sum(map(len, pred.values()))
-    tp = sum(matched_count(pred[key], gt[key], iou_threshold) for key in gt)
+    # Label-disjoint matching preserves maximum-cardinality totals while also
+    # producing deterministic diagnostics without another matching pass.
+    by_label={label:{'tp':0,'fp':0,'fn':0} for label in labels}
+    by_sample=[];tp=0
+    for key in sorted(gt):
+        gp,pp={},{}
+        for item in gt[key]:gp.setdefault(item['label'],[]).append(item)
+        for item in pred[key]:pp.setdefault(item['label'],[]).append(item)
+        sample_tp=0
+        for label in sorted(set(gp)|set(pp)):
+            annotated,predicted=gp.get(label,[]),pp.get(label,[])
+            hits=matched_count(predicted,annotated,iou_threshold)
+            sample_tp+=hits
+            row=by_label[label];row['tp']+=hits;row['fp']+=len(predicted)-hits;row['fn']+=len(annotated)-hits
+        tp+=sample_tp
+        by_sample.append({'sample_id_sha256':hashlib.sha256(key.encode('utf-8')).hexdigest(),
+                          'tp':sample_tp,'fp':len(pred[key])-sample_tp,'fn':len(gt[key])-sample_tp})
+    label_rows=[dict(counts,label_excerpt=label[:160],label_sha256=hashlib.sha256(label.encode('utf-8')).hexdigest())
+                for label,counts in by_label.items() if counts['fp']+counts['fn']]
+    sample_rows=[row for row in by_sample if row['fp']+row['fn']]
+    rank=lambda row:(-(row['fp']+row['fn']),-row['fn'],str(row))
+    diagnostics={'scope':'Count attribution only; no causal explanation or raw annotations.',
+                 'failing_label_count':len(label_rows),'failing_sample_count':len(sample_rows),
+                 'worst_labels':sorted(label_rows,key=rank)[:10],
+                 'worst_samples':sorted(sample_rows,key=rank)[:10],
+                 'truncated':len(label_rows)>10 or len(sample_rows)>10}
     precision, recall = tp / count if count else 0.0, tp / positives
     f1 = 2 * tp / (count + positives)
     return {'protocol': PROTOCOL, 'matching': 'maximum_cardinality/class_and_temporal_iou',
             'iou_threshold': iou_threshold, 'threshold': threshold, 'metric_scale': '0..1',
             'sample_count': len(gt), 'tp': tp, 'fp': count - tp, 'fn': positives - tp,
             'precision': precision, 'recall': recall, 'event_micro_f1': f1,
-            'metric_threshold_met': f1 >= threshold, 'capability_registered': False,
+            'metric_threshold_met': f1 >= threshold, 'error_analysis':diagnostics,'capability_registered': False,
             'provenance_verified': False, 'contract_bound': contract is not None,
             'comparison_pairs': comparisons,
             'contract_sha256': contract_hash,

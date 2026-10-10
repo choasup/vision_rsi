@@ -91,6 +91,8 @@ class AdapterEvaluationTests(unittest.TestCase):
         self.assertEqual(len(metrics),1)
         self.assertEqual(metrics[0]['metric_report']['event_micro_f1'],0)
         self.assertFalse(metrics[0]['metric_report']['metric_threshold_met'])
+        self.assertEqual(metrics[0]['metric_report']['error_analysis']['worst_labels'][0]['fn'],1)
+        self.assertEqual(metrics[0]['metric_report']['error_analysis']['worst_samples'][0]['fn'],1)
         self.assertFalse(metrics[0]['production_acceptance_verified'])
 
     @patch('vision_rsi.remote.check_candidate')

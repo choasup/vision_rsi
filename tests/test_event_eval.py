@@ -65,6 +65,26 @@ class EventEvaluationTests(unittest.TestCase):
         self.assertFalse(report['capability_registered'])
         self.assertFalse(report['metric_threshold_met'])
         self.assertEqual(len(report['ground_truth_sha256']), 64)
+        analysis=report['error_analysis']
+        self.assertEqual(analysis['failing_label_count'],1)
+        self.assertEqual(analysis['failing_sample_count'],1)
+        self.assertEqual(analysis['worst_labels'][0]['fn'],1)
+        self.assertEqual(analysis['worst_samples'][0]['fp'],2)
+        self.assertNotIn('start_seconds',json.dumps(analysis))
+
+    def test_error_attribution_distinguishes_labels_and_is_order_independent(self):
+        docs=[{'labels':['action','other'],'samples':[{'sample_id':'clip1','events':items}]} for items in
+              ([event(0,1),event(2,3,'other')],[event(0,1),event(0,1),event(5,6,'other')])]
+        paths=[self.root/'gt.json',self.root/'pred.json']
+        for path,doc in zip(paths,docs):path.write_text(json.dumps(doc),encoding='utf-8')
+        report=evaluate(*paths)
+        self.assertEqual((report['tp'],report['fp'],report['fn']),(1,2,1))
+        rows={row['label_excerpt']:row for row in report['error_analysis']['worst_labels']}
+        self.assertEqual((rows['action']['tp'],rows['action']['fp'],rows['action']['fn']),(1,1,0))
+        self.assertEqual((rows['other']['tp'],rows['other']['fp'],rows['other']['fn']),(0,1,1))
+        for path,doc in zip(paths,docs):
+            doc['samples'][0]['events'].reverse();path.write_text(json.dumps(doc),encoding='utf-8')
+        self.assertEqual(evaluate(*paths)['error_analysis'],report['error_analysis'])
 
     def test_empty_predictions_and_invalid_inputs(self):
         gt = self.write('gt.json', [event(0, 1)])
