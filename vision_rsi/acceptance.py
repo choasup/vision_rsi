@@ -50,7 +50,16 @@ def review(plan,receipt):
     passed=not reasons and score>=target
     if declared.get('passed') is not passed: raise ValueError('Declared pass status contradicts measured evidence')
     if score<target:reasons.append('Measured box AP is below task requirement')
+    diagnostics=None
+    if 'error_analysis' in evaluation:
+        from .coco_errors import brief
+        diagnostics=brief(evaluation['error_analysis'])
+        if sorted(row['category_id'] for row in evaluation['error_analysis']['categories'])!=evaluation.get('category_ids'):
+            raise ValueError('Diagnostic categories differ from evaluated coverage')
+        values=[row['box_AP'] for row in evaluation['error_analysis']['categories'] if row['box_AP'] is not None]
+        if not values or abs(sum(values)/len(values)-score)>1e-6:raise ValueError('Category AP disagrees with overall AP')
     return {'status':'ready_for_registration' if passed else 'not_met','passed':passed,'box_AP':score,'threshold':target,
             'reasons':reasons,'checkpoint_sha256':hashes['checkpoint.pt'],
             'training_identity':identity,
+            'error_summary':diagnostics,
             'capability_registered':False,'note':'Acceptance evidence review only; inference registration requires a working adapter.'}

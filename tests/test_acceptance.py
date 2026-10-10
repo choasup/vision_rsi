@@ -30,6 +30,23 @@ def evidence(score=65,fixture=False):
 
 
 class AcceptanceTests(unittest.TestCase):
+    def test_diagnostics_are_bound_to_evaluated_categories_and_metric(self):
+        plan,receipt=evidence(score=42)
+        evaluation=json.loads(base64.b64decode(receipt['reports']['evaluation.json']['base64']))
+        evaluation['category_ids']=[1]
+        evaluation['error_analysis']={'protocol':'COCOeval/bbox/category_AP_and_matches/v1','iou_threshold':.5,'score_threshold':.05,
+            'max_detections_per_image_per_category':100,'area':'all','categories':[{'category_id':1,'box_AP':42,'true_positives':1,'false_positives':1,'false_negatives':1,'ground_truth':2}],
+            'totals':{'true_positives':1,'false_positives':1,'false_negatives':1,'ground_truth':2}}
+        def receipt_with(value):
+            changed=copy.deepcopy(receipt);changed['reports']['evaluation.json']=wrap(value)
+            result=json.loads(base64.b64decode(changed['reports']['result.json']['base64']))
+            result['evaluation_sha256']=changed['reports']['evaluation.json']['sha256'];changed['reports']['result.json']=wrap(result)
+            return changed
+        verdict=review(plan,receipt_with(evaluation));self.assertEqual(verdict['error_summary']['totals']['false_negatives'],1)
+        for field,value in [('category_id',2),('box_AP',43),('false_negatives',0)]:
+            changed=copy.deepcopy(evaluation);changed['error_analysis']['categories'][0][field]=value
+            with self.assertRaises(ValueError):review(plan,receipt_with(changed))
+
     def test_matching_evidence_only_becomes_registration_candidate(self):
         plan,receipt=evidence()
         verdict=review(plan,receipt)

@@ -72,6 +72,13 @@ def execution_summary(result):
         if 'box_AP' in verdict: lines.append('box AP: '+str(verdict['box_AP'])+' / 目标: '+str(verdict['threshold']))
         if verdict.get('reason'): lines.append(verdict['reason'])
         lines.extend('- '+reason for reason in verdict.get('reasons',[]))
+        diagnostic=verdict.get('error_summary')
+        if diagnostic:
+            totals=diagnostic['totals']
+            lines.append('诊断匹配 (IoU='+str(diagnostic['iou_threshold'])+', score≥'+str(diagnostic['score_threshold'])+'): '
+                         +'TP '+str(totals['true_positives'])+' / FP '+str(totals['false_positives'])+' / FN '+str(totals['false_negatives']))
+            weak=diagnostic['weakest_annotated_categories'][:3]
+            if weak:lines.append('低 AP 类别: '+', '.join(str(row['category_id'])+'='+str(round(row['box_AP'],3)) for row in weak))
     if result.get('log') is not None: lines.append(result['log'])
     if result.get('policy_stop'):
         stop=result['policy_stop']

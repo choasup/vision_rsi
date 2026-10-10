@@ -23,6 +23,7 @@ def history_context(rows,version=2):
                 if finite(verdict.get('box_AP')) and finite(verdict.get('threshold')):
                     observation['measurement']={'metric':'box_AP','value':verdict['box_AP'],'threshold':verdict['threshold'],'direction':'maximize',
                                                 'reasons':verdict.get('reasons',[]),'source':'controller acceptance review; tools recheck original receipts before research'}
+                if verdict.get('error_summary') is not None:observation['error_summary']=verdict['error_summary']
                 observation['quality_verified']=value.get('quality_verified') is True
             recipe=value.get('recipe')
             if isinstance(recipe,dict):

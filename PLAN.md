@@ -302,3 +302,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Generic harness code research/adoption and real COCO quality remain incomplete. Exported controls still require shared stores, configured remote resources and original Python-compatible dependencies.
 
 - Actual Windows cmd.exe launcher tested from a temporary directory outside the repository using original task session df8e8f8991ee496d859e35fab2085d8f. Bundle d6b06dc5619f3642ba14d262e0e4f41584cf5610f49a4bf5786183e6679a6377 at source45bb32f passed controls check; prepare correctly blocked on original missing execution inputs. Original session was byte-equivalent in returned structure and AP60 unchanged; no GPU job/API call. Ignored evidence: runs/executable-harness-integration/{artifact,check,prepare,summary}.json. Legacy optional clarification questions remain in the old contract and were not silently rewritten.
+
+
+## Measured COCO error observations (2026-10-10)
+
+- New Training evaluation reports derive per-class AP and diagnostic TP/FP/FN from the same official COCOeval accumulator. Explicit IoU0.5 / confidence0.05 / max100-per-image-per-category diagnostic scope does not replace acceptance. Crowd and low-confidence matching cases tested.
+- Independent receipt review validates category coverage, class AP versus overall AP and count conservation. Bounded summaries enter strategy observations and method-planner evidence; absent legacy diagnostics remain unknown. No causal error classification inferred from unmatched detections.
+- Fetched only hash-verified bounded historical H20 fixture annotation/prediction/coverage artifacts, recomputed on local official pycocotools: AP remained0, TP0/FP0/FN2/GT2,80 category coverage, acceptance false. No GPU or API call. Evidence under ignored runs/error-analysis-integration/{evaluation,summary}.json. This is fixture integration, not real COCO quality.

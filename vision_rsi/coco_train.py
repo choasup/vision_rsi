@@ -207,7 +207,7 @@ def run(recipe,output,resume=False):
             for row in detections(prediction['boxes'].cpu().tolist(),prediction['labels'].cpu().tolist(),prediction['scores'].cpu().tolist()):
                 rows.append(dict(row,image_id=image_id))
     atomic_json(output/'predictions.json',rows);atomic_json(output/'coverage.json',coverage)
-    report=evaluate(Path(recipe['coco_root'])/'annotations/instances_val2017.json',output/'predictions.json',output/'coverage.json',recipe.get('acceptance_threshold',60),recipe['val_annotations_sha256'])
+    report=evaluate(Path(recipe['coco_root'])/'annotations/instances_val2017.json',output/'predictions.json',output/'coverage.json',recipe.get('acceptance_threshold',60),recipe['val_annotations_sha256'],include_errors=True)
     if recipe.get('fixture',False): report['acceptance'].update(passed=False,eligible_for_coco_val2017=False)
     atomic_json(output/'evaluation.json',report)
     result={'status':'evaluated','fixture':recipe.get('fixture',False),'identity':identity,'identity_hash':identity_hash,'step':step,

@@ -42,3 +42,27 @@ class CocoEvaluationTests(unittest.TestCase):
         self.rows[0]['category_id']=12
         self.predictions.write_text(json.dumps(self.rows))
         with self.assertRaisesRegex(ValueError,'category'):self.run_eval()
+
+    def test_diagnostics_count_missing_low_confidence_and_unmatched_predictions(self):
+        self.predictions.write_text(json.dumps([self.rows[0],dict(self.rows[1],score=.01),
+                                               {'image_id':1,'category_id':1,'bbox':[70,70,10,10],'score':.9}]))
+        result=evaluate(self.annotations,self.predictions,self.coverage,60,file_sha(self.annotations),include_errors=True)
+        counts=result['error_analysis']['totals']
+        self.assertEqual(counts,{'true_positives':1,'false_positives':1,'false_negatives':1,'ground_truth':2})
+        from vision_rsi.coco_errors import brief
+        summary=brief(result['error_analysis'])
+        self.assertEqual(summary['observed_category_count'],1)
+        self.assertEqual(summary['highest_false_positive_categories'][0]['false_positives'],1)
+        ordinary=self.run_eval();self.assertEqual(result['metrics'],ordinary['metrics']);self.assertEqual(result['acceptance'],ordinary['acceptance'])
+
+    def test_crowd_is_not_reported_as_missed_or_false_positive(self):
+        data=json.loads(self.annotations.read_text());data['annotations'][1]['iscrowd']=1
+        self.annotations.write_text(json.dumps(data))
+        result=evaluate(self.annotations,self.predictions,self.coverage,60,file_sha(self.annotations),include_errors=True)
+        self.assertEqual(result['error_analysis']['totals'],{'true_positives':1,'false_positives':0,'false_negatives':0,'ground_truth':1})
+
+    def test_empty_predictions_produce_observed_misses_not_causal_claims(self):
+        self.predictions.write_text('[]')
+        result=evaluate(self.annotations,self.predictions,self.coverage,60,file_sha(self.annotations),include_errors=True)
+        self.assertEqual(result['error_analysis']['totals']['false_negatives'],2)
+        self.assertEqual(result['error_analysis']['categories'][0]['box_AP'],0)

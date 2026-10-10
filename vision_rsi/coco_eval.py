@@ -19,7 +19,7 @@ def file_sha(path):
     return digest.hexdigest()
 
 
-def evaluate(annotation_path, prediction_path, coverage_path, threshold=60, expected_annotation_sha256=None):
+def evaluate(annotation_path, prediction_path, coverage_path, threshold=60, expected_annotation_sha256=None,include_errors=False):
     """Evaluate all GT images, including images with no predictions.
 
     Coverage is a producer-written JSON list of processed image IDs, separate
@@ -72,15 +72,21 @@ def evaluate(annotation_path, prediction_path, coverage_path, threshold=60, expe
     metrics={name:(float(value)*100 if value>=0 else None) for name,value in zip(names,evaluator.stats)}
     # Shape checks are necessary but do not establish official provenance.
     eligible=(len(ids)==5000 and category_set==set(COCO_IDS) and expected_annotation_sha256 is not None)
-    return {'protocol':'pycocotools.COCOeval/bbox/defaults','metric_scale':'0..100',
+    report={'protocol':'pycocotools.COCOeval/bbox/defaults','metric_scale':'0..100',
             'metrics':metrics,'image_count':len(ids),'prediction_count':len(predictions),
             'coverage_complete':True,'annotation_sha256':annotation_hash,
+            'category_ids':sorted(category_ids),
             'predictions_sha256':file_sha(prediction_path),'coverage_sha256':file_sha(coverage_path),
             'pycocotools_version':importlib.metadata.version('pycocotools'),
             'acceptance':{'threshold':threshold,'direction':'maximize','eligible_for_coco_val2017':eligible,
                           'passed':eligible and metrics['box_AP'] is not None and metrics['box_AP']>=threshold},
             'note':'Dataset hash must be independently pinned to official val2017; shape alone is not provenance. Fixture/subset scores cannot register a COCO capability.',
             'evaluation_log':log.getvalue()}
+    if include_errors:
+        from .coco_errors import summarize,brief
+        report['error_analysis']=summarize(evaluator)
+        brief(report['error_analysis'])
+    return report
 
 
 def main(argv=None):
@@ -91,9 +97,10 @@ def main(argv=None):
     parser.add_argument('--output',required=True)
     parser.add_argument('--threshold',type=float,default=60)
     parser.add_argument('--annotation-sha256')
+    parser.add_argument('--errors',action='store_true',help='Include diagnostic category AP and IoU0.5 match counts; acceptance unchanged')
     args=parser.parse_args(argv)
     try:
-        result=evaluate(args.annotations,args.predictions,args.coverage,args.threshold,args.annotation_sha256)
+        result=evaluate(args.annotations,args.predictions,args.coverage,args.threshold,args.annotation_sha256,args.errors)
         atomic_json(Path(args.output),result)
         print(json.dumps(result,ensure_ascii=False,indent=2))
     except (ValueError,KeyError,TypeError,OSError,ImportError) as error:
