@@ -913,3 +913,11 @@ python -m vision_rsi training release-status --session-id SESSION --json
 ```
 
 包按内容身份保存，包含已校验的候选及继承模块、入口、Git 身份、冻结合同与源码哈希，可从独立位置读取校验。它不包含数据集、配置密钥或候选运行记录；合同中的用户内容会按原样保留。现有包修改后拒绝覆盖。`production_accepted` 与 `capability_registered` 均为 false：尚需独立验收和推理部署，不能直接用开发包替代已验收任务版本。内容哈希验证完整性，不认证发布者。
+
+开发包可独立执行（无需候选 Git 仓库）：
+
+```powershell
+.\vision-rsi.cmd candidate-run --bundle PATH_TO_BUNDLE_JSON --bundle-id BUNDLE_ID --input sample.json --output runs/candidate-executions --config config.local.json
+```
+
+`sample.json` 可以是一个符合合同的样本对象，或 1 至 16 个样本组成的数组。入口将包中源码送往 CPU 沙箱，核对源码身份、隔离限制、输出数量及输出 schema。相同包、输入、端点和执行程序复用结果；结果不确定时保留预留记录并拒绝自动重发。它只传合同样本 JSON，不自动读取 URI 指向的图片/视频，也没有新增视觉模型后端；开发包执行不等于 `test` 模式已验收能力。
