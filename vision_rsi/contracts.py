@@ -11,6 +11,7 @@ from .capability import task_id
 from .llm import OpenAICompatibleClient
 
 TYPES = {'image', 'image_list', 'video', 'text'}
+GPU_BUDGET_QUESTION = '首轮真实训练最多允许多少 GPU 小时？'
 
 
 def normalize_contract(value):
@@ -208,6 +209,39 @@ class Sessions:
             versions=json.loads(row[0]); versions.append({'version':len(versions)+1,'origin':origin,'contract':contract,'issues':issues(contract)})
             db.execute('UPDATE sessions SET versions=? WHERE id=?',(json.dumps(versions,ensure_ascii=False,allow_nan=False),session))
         return self.show(session)
+    def set_gpu_budget(self,session,hours):
+        """Record explicit initial authorization without another model call."""
+        try:valid=type(hours) in (int,float) and hours>0 and math.isfinite(hours) and math.isfinite(hours*3600)
+        except (OverflowError,TypeError):valid=False
+        if not valid:raise ValueError('GPU hours must be a positive finite executable duration')
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT turns,versions,pending FROM sessions WHERE id=?',(session,)).fetchone()
+            if not row:raise ValueError('Unknown session')
+            if row[2]:raise ValueError('Request in progress; do not overwrite contract')
+            turns=json.loads(row[0]);versions=json.loads(row[1])
+            if not versions:raise ValueError('Define the task interface before setting its GPU budget')
+            latest=versions[-1]
+            if latest.get('review_required'):raise ValueError('Resolve the pending requirements draft before setting a budget')
+            contract=normalize_contract(json.loads(json.dumps(latest['contract'])))
+            if not isinstance(contract,dict) or not isinstance(contract.get('open_questions'),list):
+                raise ValueError('Define a valid task question list before setting its budget')
+            budget=contract.get('budget')
+            if budget is not None and not isinstance(budget,dict):raise ValueError('Existing budget is malformed')
+            budget=dict(budget or {})
+            if budget.get('gpu_hours') is not None and budget['gpu_hours']!=hours:
+                raise ValueError('GPU budget already defined; this command cannot revise or reset an existing execution budget')
+            budget['gpu_hours']=hours;contract['budget']=budget
+            # Only this exact system-owned question is resolved. Do not guess
+            # which unrelated natural-language requirements can be discarded.
+            contract['open_questions']=[q for q in contract.get('open_questions',[]) if q!=GPU_BUDGET_QUESTION]
+            if contract!=latest['contract']:
+                versions.append({'version':len(versions)+1,'origin':'user_gpu_budget','contract':contract,'issues':issues(contract)})
+                turns.append({'role':'user','content':'设置初始 GPU 预算上限为 '+str(hours)+' GPU 小时。'})
+                db.execute('UPDATE sessions SET turns=?,versions=? WHERE id=?',
+                           (json.dumps(turns,ensure_ascii=False),json.dumps(versions,ensure_ascii=False,allow_nan=False),session))
+        return self.show(session)
+
     @contextmanager
     def request_lock(self,session):
         import hashlib
@@ -234,6 +268,7 @@ class Sessions:
             db.execute('INSERT INTO clarification_requests VALUES (?,?,?,?,?)',(request_id,session,json.dumps(context,ensure_ascii=False),'pending','[]'))
         prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask at most five critical questions per turn, record secondary choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output. Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum,minItems,maxItems. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
         prompt['change_policy']='Preserve established goal wording, input/output interface, acceptance values and budget exactly unless the user explicitly requests a change. Put implementation choices in assumptions. Do not paraphrase unchanged goal/protocol descriptions. Structural changes are reviewed separately before execution.'
+        prompt['missing_gpu_budget_question']='When GPU execution budget is missing, use exactly this open_questions entry: '+GPU_BUDGET_QUESTION+'. Do not mix memory, model size, latency or optimizer choices into that question; these are implementation defaults unless explicitly constrained.'
         prompt['format_rules']='output_schema MUST have type=object and nonempty properties; place detection lists inside a detections property, never at the root. assumptions and open_questions MUST be lists of strings, never dictionaries. Video processing sampling, temporal, audio MUST each be nonempty strings; use audio="ignore" for no audio, never false. Missing budget is null, never invented. Examples must satisfy the exact interface. Batch means multiple samples, not image_list. Do not ask for batch size limits, model confidence filters, optimizer or architectural choices unless explicitly constrained by the user; record implementation defaults in assumptions. The inputs section describes INFERENCE-time per-sample inputs only. Training/validation/held-out datasets, annotation files, budgets, weights and evaluation protocols are training resources, NEVER required inference input fields unless the user explicitly requests them as per-sample inputs. Select conventional box coordinates as an assumption, never ask about JSON field names or coordinate syntax. Ask only unresolved task semantics (such as defect class taxonomy or event matching needed to define a metric), not internal representation choices. Resolve schema formatting internally; never ask the user to write JSON schemas.'
         from .detector import COCO_IDS
         prompt['available_adapter_defaults']={'coco_detection':{'use_only_if_matching_user_task':True,'inputs':{'image':{'type':'image','required':True}},'acceptance_metric':'box_AP','metric_units':'0..100','output':'object with detections array; each item has category_id (integer), bbox (4 numbers, COCO xywh pixels), score (0..1)','category_ids':list(COCO_IDS),'note':'80 COCO categories use sparse IDs in 1..90, NOT contiguous 1..80. These are optional implementation defaults, never override an explicit user interface. No claim of training, quality or other task adapter availability.'}}

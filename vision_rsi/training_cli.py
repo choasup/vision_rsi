@@ -13,8 +13,15 @@ def interactive_action(message,session,args):
     """Reuse the durable CLI actions; never send unknown slash commands to LLM."""
     actions={'/prepare':'prepare','/run':'advance','/watch':'watch','/status':'agent-status',
              '/job':'status','/logs':'logs','/pause':'agent-pause','/resume':'agent-resume'}
+    budget_value=None
+    if message.split()[:1]==['/budget']:
+        parts=message.split()
+        if len(parts)!=2:
+            print('用法：/budget GPU小时数，例如 /budget 32；仅设置初始上限，不修改已有预算。')
+            return True
+        budget_value=parts[1];actions[message]='budget'
     if message=='/help':
-        print('/prepare 检查训练计划；/run 推进有界执行；/watch 持续推进与观察；\n'
+        print('/budget N 设置初始GPU小时上限；/prepare 检查训练计划；/run 推进有界执行；/watch 持续推进与观察；\n'
               '/status 查看本地控制记录；/job 实时查询远端作业；/logs 读取作业日志；\n'
               '/pause 暂停继续决策；/resume 恢复决策；/show 需求摘要；/contract 完整接口；/quit 保存退出。\n'
               '执行沿用当前会话的预算、研究轮数和时限。暂停或退出不取消已提交作业。')
@@ -28,6 +35,7 @@ def interactive_action(message,session,args):
     action=actions[message]
     command=[action,'--session-id',session,'--sessions',args.sessions,'--config',args.config,
              '--run-store',args.run_store,'--campaign-store',args.campaign_store,'--registry',args.registry]
+    if budget_value is not None:command+=['--gpu-hours',budget_value]
     if action in ('advance','watch','agent-status','agent-pause','agent-resume'):
         command+=['--steps',str(args.steps),'--watch-seconds',str(args.watch_seconds),'--poll-seconds',str(args.poll_seconds)]
         for flag,value in (('--research-rounds',args.research_rounds),('--campaign-id',args.campaign_id),
@@ -127,9 +135,10 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
+    parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
     parser.add_argument('--manifest', help='JSONL samples for batch protocol validation')
     parser.add_argument('--interactive',action='store_true');parser.add_argument('--offline',action='store_true')
@@ -293,6 +302,9 @@ def main(argv):
             elif args.action in ('accept','reject'):
                 if not args.version:raise ValueError('Specify --version with the exact pending requirements draft number')
                 result=getattr(store,args.action)(session,int(args.version))
+            elif args.action=='budget':
+                if args.gpu_hours is None:raise ValueError('Specify --gpu-hours with the initial training budget')
+                result=store.set_gpu_budget(session,args.gpu_hours)
             elif args.action=='define': result=store.define(session,json.loads(Path(args.contract).read_text(encoding='utf-8')))
             elif args.action in ('validate','export'):
                 if not result['versions']: raise ValueError('No interface defined')
@@ -338,7 +350,7 @@ def main(argv):
                 if message=='/show': result=store.show(session)
                 elif message: result=clarify(session,message)
         else:
-            if not args.json and args.action in ('start','reply','show','define','accept','reject','recover','abandon-request'):print(summary(result))
+            if not args.json and args.action in ('start','reply','show','budget','define','accept','reject','recover','abandon-request'):print(summary(result))
             else:print(execution_summary(result) if args.action in ('prepare','run') and not args.json else json.dumps(result,ensure_ascii=False,indent=2))
     except (ValueError,TypeError,KeyError,OSError,RuntimeError,subprocess.SubprocessError) as error:
         if args.action in ('start','reply') and 'session' in locals():

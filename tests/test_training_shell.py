@@ -50,6 +50,15 @@ class TrainingShellTests(unittest.TestCase):
             self.assertTrue(interactive_action('/run','session',self.settings()))
             invoke.assert_called_once()
 
+    def test_budget_shortcut_forwards_only_explicit_number_without_llm(self):
+        with patch('vision_rsi.training_cli.main') as invoke,contextlib.redirect_stdout(io.StringIO()):
+            self.assertTrue(interactive_action('/budget','session',self.settings()))
+            invoke.assert_not_called()
+            self.assertTrue(interactive_action('/budget 32','session',self.settings()))
+            actual=invoke.call_args.args[0]
+            self.assertEqual(actual[0],'budget')
+            self.assertEqual(actual[actual.index('--gpu-hours')+1],'32')
+
     def test_interactive_prepare_keeps_original_contract_and_blocks_missing_resources(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);sessions=root/'sessions';store=Sessions(sessions)
