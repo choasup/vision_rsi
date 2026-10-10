@@ -3,7 +3,10 @@ import sys
 
 
 def main():
-    if len(sys.argv)>1 and sys.argv[1]=='baseline-evaluate':
+    if len(sys.argv)>1 and sys.argv[1]=='resources-train':
+        from .training_resources import main as train_resources_main
+        train_resources_main(sys.argv[2:])
+    elif len(sys.argv)>1 and sys.argv[1]=='baseline-evaluate':
         from .baseline_eval import main as baseline_main
         baseline_main(sys.argv[2:])
     elif len(sys.argv)>1 and sys.argv[1]=='resources':

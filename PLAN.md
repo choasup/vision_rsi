@@ -427,3 +427,8 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Deployed source16f1ec6 content-addressed bundle819658b0a96287364faeeaca16e8056a4288a739b6dae8a1922c75cf06e88b08. CPU baseline job baseline-cpu-819658b0a962-a0 is authoritatively running with zero GPUs,300s external timeout;11 real per-image predictions saved at last observation. Full AP is still unavailable; never infer AP or acceptance from partial outputs. Evidence runs/resource-bootstrap/{baseline-deployment,baseline-eval-job,baseline-eval-observation}.json.
 - Local ignored configuration now points at verified remote validation root and fixed weights/annotation hashes; original configuration backed up in ignored runs directory. Original user contract/budget unchanged, no training submitted. GPU budget question remains pending.
 - Full189-test suite passed in70.716s. This verifies tested implementation paths, not AP60, strategy efficiency, unseen adapters or launch readiness.
+
+## Official training image download admission (2026-10-10)
+
+- Actual official train2017 HTTPS HEAD returned200,19,336,861,798 bytes and ETag62ff7d7fbcc7e0c0604cbb0f9047ce77-2306; resolved URL unchanged. F drive free653,340,934,144 bytes at probe. Evidence runs/resource-bootstrap/train-source-probe.json.
+- Added resources-train local CLI,<=240s per invocation, OS lease, disk reserve for archive/extraction and inherited pinned-source/Range/SHA sidecars. Download completion leaves dataset_ready=false; no extraction/model/training/GPU claim. Six targeted training-resource/download tests pass, including insufficient-disk rejection before network. Existing189-test full run predates this command.

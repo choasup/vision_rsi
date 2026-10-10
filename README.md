@@ -512,3 +512,7 @@ For a complete extracted validation dataset, `python -m vision_rsi.resource_veri
 ### Fixed public baseline evaluation
 
 `vision-rsi baseline-evaluate --root COCO_ROOT --weights PUBLIC_WEIGHT --weights-sha256 SHA --annotation-sha256 SHA --image-manifest-sha256 SHA --output NEW_RECORDS --seconds 240` runs CPU inference of the fixed torchvision Faster R-CNN ResNet50 FPN v2 public weight with800/1333 resizing. Requires pinned torch2.6.0+cu124/torchvision0.21.0+cu124 and the full verified5,000-image validation dataset. Each input/output cache is bound to model/source/data identity and integrity checked on resume. Full COCO AP is computed only after complete coverage; this diagnostic never registers a validated Training capability. External scheduler timeout must bound execution because an individual model call can exceed the soft deadline.
+
+### Official training image preparation
+
+`vision-rsi resources-train --root runs/coco-train-downloads --seconds 240` downloads/resumes the official19.34GB train2017 ZIP locally using pinned HTTPS URL/ETag/size. It reserves disk for the remaining archive plus extraction, uses an OS lease and inherits the download integrity checks. Repeat only after the current invocation finishes. Archive download alone never reports dataset_ready or starts training; extraction, CRC,118,287-image coverage and server transfer remain separate.
