@@ -243,3 +243,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - 支持直接图片路径和图片目录批量；批量恢复指纹包含JSON引用的图片字节，保留样本ID，拒绝换图后复用旧结果。
 - H20服务器CPU实测合成检查点图片推理通过，预测为空，不是质量证据；正向注册仅mock逻辑测试。CPU后端完整AP/性能待验证，登记serving_accuracy_verified=false，不能视为上线完成。
 - 下一主线仍是通用研究/方法与Agent自身RSI，不把固定COCO adapter视为最终Agent能力边界；联合多图/视频适配器也未完成。
+
+
+## Policy trace audit (2026-10-10)
+
+- Added read-only replay of controller phases and baseline/candidate decisions. Candidate evidence binds Git source, module, protocol source, history, available actions, request digest and returned decision to executed actions.
+- Missing or mismatched decision counts fail protocol validation. Legacy incomplete traces remain unverified.
+- This establishes trace consistency only. Equal-budget held-out paired evaluation, policy adoption and real COCO acceptance remain pending.

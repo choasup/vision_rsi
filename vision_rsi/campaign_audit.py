@@ -5,11 +5,13 @@ import math
 from pathlib import Path
 import re
 import sqlite3
+import subprocess
 from urllib.parse import quote
 
 from .acceptance import review
 from .runner import digest
 from .training_runs import TrainingRuns
+from .policy_audit import verify_trace
 
 
 def finite(value):return not isinstance(value,bool) and isinstance(value,(int,float)) and math.isfinite(value) and value>=0
@@ -89,8 +91,10 @@ def audit(session_id,campaign_id,root='runs/campaigns',run_store='runs/training-
             else:token_total+=numbers[2]
     if api_requests!=expected_requests:token_complete=False
     if not token_complete:missing.append('LLM usage missing or uncertain; unreported tokens are not zero')
-    policy_verified=binding.get('policy') is None
-    if not policy_verified:missing.append('Candidate-policy trace requires independent paired-study verification')
+    try:policy_trace=verify_trace(state)
+    except (ValueError,TypeError,KeyError,OSError,subprocess.SubprocessError) as error:
+        policy_trace={'verified':False,'error':str(error)}
+        missing.append('Policy trace unverified: '+str(error))
     if not measurements:missing.append('No verified completed measurement')
     scores=[row['box_AP'] for row in measurements if row['eligible_real_coco_measurement']]
     return {'campaign_id':campaign_id,'session_id':session_id,'campaign_state_sha256':hashlib.sha256(raw).hexdigest(),
@@ -100,6 +104,7 @@ def audit(session_id,campaign_id,root='runs/campaigns',run_store='runs/training-
             'known_llm_tokens':token_total,'llm_usage_complete':token_complete,'llm_request_count':api_requests,
             'llm_cost_scope':'Campaign experiment proposals only; task clarification and candidate-generation setup excluded',
             'measurements':measurements,'best_verified_real_box_AP':max(scores) if scores else None,
+            'policy_trace':policy_trace,
             'unattributed_run_ids':unattributed,'evidence_complete_for_review':not missing,'missing_evidence':missing,
             'rsi_efficiency_verified':False,'agent_adopted':False,
             'limitation':'Independent single-campaign audit only; no paired held-out study or RSI improvement established.'}

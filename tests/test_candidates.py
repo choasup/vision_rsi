@@ -102,6 +102,15 @@ class CandidateTests(unittest.TestCase):
             self.store.check(record['candidate_id'],{'workspace':'/workspace'},'vision_rsi.strategy_candidate','choose',[{}])
 
     @patch('vision_rsi.remote.check_candidate')
+    def test_strategy_rejects_missing_decisions(self,remote):
+        record=self.store.create(proposal(),{})
+        remote.side_effect=lambda endpoint,request: {'status':'executed_unverified','source_hashes':request['source_hashes'],'observation':{'results':[]}}
+        cases=[{'history':[],'actions':[],'budget':1}]
+        result=self.store.check_strategy(record['candidate_id'],{'workspace':'/workspace'},'vision_rsi.strategy_candidate',cases)
+        self.assertEqual(result['status'],'protocol_failed')
+        self.assertIn('result count',result['protocol_failures'][0]['error'])
+
+    @patch('vision_rsi.remote.check_candidate')
     def test_strategy_protocol_rejects_completed_action_despite_self_claim(self,remote):
         record=self.store.create(proposal(),{})
         def response(endpoint,request):

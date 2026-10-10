@@ -9,6 +9,7 @@ from unittest.mock import patch
 from test_acceptance import evidence
 from vision_rsi.campaign_audit import audit
 from vision_rsi.runner import digest
+from vision_rsi.campaign import available,project
 from vision_rsi.training_runs import TrainingRuns
 
 
@@ -25,7 +26,11 @@ class CampaignAuditTests(unittest.TestCase):
                      'plan_id':digest(parent),'details':{'plan_path':str(pp),'receipt_path':str(rp)}}
         binding={'session_id':'session','contract':parent['contract'],'run_store':str(self.ledger.resolve()),'policy':None}
         self.cid=digest(binding);self.folder=self.root/'campaigns/session'/self.cid;self.folder.mkdir(parents=True)
-        self.state={'campaign_id':self.cid,'binding':binding,'history':[self.row('submit',{'run_id':self.record['run_id']})],'intent':None,'run_id':self.record['run_id']}
+        self.state={'campaign_id':self.cid,'binding':binding,'history':[],'intent':None}
+        for kind,result in [('prepare',{'status':'ready_to_submit'}),('submit',{'run_id':self.record['run_id'],'status':'completed'})]:
+            row=self.row(kind,result);row['action']=available(self.state)[0]
+            row.update(status='completed',decision={'action_id':row['action']['id'],'rationale':'Deterministic baseline control order'})
+            project(self.state,row['action'],result);self.state['history'].append(row)
         self.save()
         self.patch=patch('vision_rsi.campaign_audit.TrainingRuns');self.store=self.patch.start();self.addCleanup(self.patch.stop)
         self.store.return_value.list.return_value=[self.record]

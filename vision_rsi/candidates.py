@@ -41,6 +41,24 @@ def validate_proposal(proposal):
     return proposal
 
 
+def verify_candidate(root,record):
+    if digest(record['identity'])!=record['candidate_id']:raise ValueError('Candidate identity changed')
+    validate_proposal(record['identity']['proposal'])
+    checkout=Path(record['checkout'])
+    if checkout.resolve()!=(Path(root)/record['candidate_id']/'checkout').resolve():raise ValueError('Candidate checkout outside expected identity')
+    if git(checkout,'rev-parse','HEAD')!=record['git_revision'] or git(checkout,'status','--porcelain','--untracked-files=all'):
+        raise ValueError('Candidate Git state changed')
+    if git(checkout,'rev-parse','HEAD^')!=record['identity']['base_revision']:raise ValueError('Candidate parent changed')
+    edits=record['identity']['proposal']['edits']
+    if set(git(checkout,'diff','--name-only','HEAD^','HEAD').splitlines())!={edit['path'] for edit in edits}:
+        raise ValueError('Candidate changes outside proposal')
+    proposal_hashes={edit['path']:hashlib.sha256(edit['content'].encode('utf-8')).hexdigest() for edit in edits}
+    if record['source_hashes']!=proposal_hashes:raise ValueError('Candidate hashes differ from original proposal')
+    for name,expected in proposal_hashes.items():
+        if hashlib.sha256((checkout/name).read_bytes()).hexdigest()!=expected:raise ValueError('Candidate source changed')
+    return record
+
+
 class Candidates:
     def __init__(self,root,repository='.'):
         self.root=Path(root).resolve();self.root.mkdir(parents=True,exist_ok=True)
@@ -90,21 +108,7 @@ class Candidates:
         atomic_json(record_path,record);return record
 
     def verify(self,record):
-        if digest(record['identity'])!=record['candidate_id']:raise ValueError('Candidate identity changed')
-        validate_proposal(record['identity']['proposal'])
-        checkout=Path(record['checkout'])
-        if checkout.resolve()!=(self.root/record['candidate_id']/'checkout').resolve():raise ValueError('Candidate checkout outside expected identity')
-        if git(checkout,'rev-parse','HEAD')!=record['git_revision'] or git(checkout,'status','--porcelain','--untracked-files=all'):
-            raise ValueError('Candidate Git state changed')
-        if git(checkout,'rev-parse','HEAD^')!=record['identity']['base_revision']:raise ValueError('Candidate parent changed')
-        edits=record['identity']['proposal']['edits']
-        if set(git(checkout,'diff','--name-only','HEAD^','HEAD').splitlines())!={edit['path'] for edit in edits}:
-            raise ValueError('Candidate changes outside proposal')
-        proposal_hashes={edit['path']:hashlib.sha256(edit['content'].encode('utf-8')).hexdigest() for edit in edits}
-        if record['source_hashes']!=proposal_hashes:raise ValueError('Candidate hashes differ from original proposal')
-        for name,expected in proposal_hashes.items():
-            if hashlib.sha256((checkout/name).read_bytes()).hexdigest()!=expected:raise ValueError('Candidate source changed')
-        return record
+        return verify_candidate(self.root,record)
 
     def propose(self,request_id,contract,evidence,llm):
         from .llm import OpenAICompatibleClient
@@ -178,7 +182,11 @@ class Candidates:
         evidence=self.check(candidate_id,remote,module,'propose',cases)
         failures=[]
         if evidence['status']=='executed_unverified':
-            for index,(case,decision) in enumerate(zip(cases,evidence['response']['observation']['results'])):
+            results=evidence['response']['observation'].get('results')
+            if not isinstance(results,list) or len(results)!=len(cases):
+                failures.append({'error':'Candidate result count differs from requested cases'})
+                results=[]
+            for index,(case,decision) in enumerate(zip(cases,results)):
                 try:validate_decision(**case,decision=decision)
                 except (ValueError,TypeError,KeyError) as error:failures.append({'case':index,'error':str(error)})
         else:failures.append({'error':'Candidate did not complete isolated execution'})
