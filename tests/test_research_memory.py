@@ -63,3 +63,72 @@ class ResearchMemoryTests(unittest.TestCase):
         self.assertEqual(completed.returncode,0,completed.stderr)
         self.assertTrue(json.loads(completed.stdout)['read_only'])
         self.assertEqual(self.path.read_bytes(),before)
+
+    def test_controller_retrieves_pages_once_without_remote_or_model(self):
+        from vision_rsi.research_memory import memory_actions,retrieve_page,PAGE_CHARS
+        from vision_rsi.campaign import available,execute,project
+        from vision_rsi.strategy_context import history_context,encoded
+        rows=self.state['history'];before=json.dumps(rows)
+        state={'history':rows,'plan':{'status':'ready_to_submit'},'run_id':'fixture','run_status':'completed',
+               'receipt_collected':True,'analysis':{'quality_verified':False},'research_rounds':1,'status':'needs_research'}
+        self.assertEqual(available(state)[0]['kind'],'propose_experiment')
+        action=next(a for a in available(state,memory=True) if a['kind']=='retrieve_memory')
+        self.assertEqual(action['source_index'],10)
+        page=execute(action,state,{}, {'remote':{}},None,None)
+        self.assertLessEqual(len(page['text']),PAGE_CHARS);self.assertTrue(page['has_more'])
+        self.assertEqual(json.dumps(rows),before)
+        project(state,action,page);self.assertEqual(state['status'],'needs_research')
+        rows.append({'action':action,'result':page,'status':'completed'})
+        self.assertNotIn(action['id'],{a['id'] for a in memory_actions(rows)})
+        self.assertEqual(memory_actions(rows)[0]['offset'],PAGE_CHARS)
+        view=history_context(rows,4)
+        projected=next(r for r in view if r['id']==action['id'])
+        self.assertEqual(projected['observation']['memory_page'],page)
+        self.assertLessEqual(len(encoded(view)),192*1024)
+        rows[10]['result']['acceptance_review']['error_summary']['detail']='changed'
+        with self.assertRaisesRegex(ValueError,'hash changed'):retrieve_page(rows,action)
+
+    def test_all_pages_reconstruct_original_observation_and_exhaust(self):
+        from vision_rsi.research_memory import memory_actions,retrieve_page
+        from vision_rsi.strategy_context import encoded,history_context
+        rows=self.state['history'];original=encoded(history_context(rows,3)[10]).decode('ascii');pieces=[]
+        for _ in range(100):
+            actions=memory_actions(rows)
+            if not actions:break
+            action=actions[0];page=retrieve_page(rows,action);pieces.append(page['text'])
+            rows.append({'action':action,'result':page,'status':'completed'})
+        else:self.fail('Retrieval did not terminate')
+        self.assertEqual(''.join(pieces),original)
+        self.assertNotIn('PRIVATE_MUST_NOT_EXPORT',''.join(pieces))
+
+    def test_memory_cannot_read_arbitrary_records_or_unbounded_offsets(self):
+        from vision_rsi.research_memory import memory_actions,retrieve_page
+        rows=self.state['history'];action=memory_actions(rows)[0]
+        for updates in ({'source_index':True},{'source_index':0},{'offset':-1},{'offset':1},{'offset':1000000},{'id':'invented'},{'source_sha256':'0'*64}):
+            with self.assertRaises(ValueError):retrieve_page(rows,dict(action,**updates))
+        self.assertEqual(memory_actions(rows[:5]),[])
+
+    def test_advance_persists_memory_intent_and_page_without_training(self):
+        from vision_rsi.campaign import advance
+        from vision_rsi.runner import atomic_json
+        session={'session_id':'session','task_id':'fixture','versions':[{'contract':{}}]}
+        config={'remote':{'ssh_host':'fixture','workspace':'/workspace'}}
+        root=self.root/'controller';runs=self.root/'runs'
+        with patch('vision_rsi.campaign.prepare',return_value={'status':'blocked','blockers':['fixture']}):
+            initial=advance(session,config,root,runs,steps=1,research_rounds=1)
+        path=Path(initial['state_path']);state=json.loads(path.read_text(encoding='utf-8'))
+        state.update(history=self.state['history'],plan={'status':'ready_to_submit'},run_id='fixture',run_status='completed',
+                     receipt_collected=True,analysis={'quality_verified':False},status='needs_research')
+        atomic_json(path,state)
+        def choose_memory(state,actions,*args):
+            action=next(a for a in actions if a['kind']=='retrieve_memory')
+            return {'action_id':action['id'],'rationale':'Read omitted diagnosis before planning'},None
+        with patch('vision_rsi.campaign.choose',side_effect=choose_memory),patch('vision_rsi.campaign.submit') as submit,patch('vision_rsi.experiments.propose_next') as propose:
+            result=advance(session,config,root,runs,steps=1,research_rounds=1)
+            submit.assert_not_called();propose.assert_not_called()
+        self.assertIsNone(result['intent']);self.assertEqual(result['status'],'needs_research')
+        row=result['history'][-1]
+        self.assertEqual(row['action']['kind'],'retrieve_memory')
+        self.assertEqual(row['controller_action_version'],2)
+        self.assertEqual(row['tool_attempts'][0]['status'],'completed')
+        self.assertEqual(row['result']['offset'],0)

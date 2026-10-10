@@ -52,6 +52,8 @@ def history_context(rows,version=4):
                     observation['gpu_budget_scope']='whole_session_snapshot'
                 if finite(value.get('remaining_gpu_hours')):
                     observation['gpu_budget_scope']='whole_session_snapshot'
+            if item['kind']=='retrieve_memory':
+                observation['memory_page']={key:value[key] for key in ('source_index','source_action_id','source_sha256','offset','total_chars','page_chars','text','has_more','scope') if key in value}
             if observation:item['observation']=observation
         result.append(item)
     return bounded_memory(result) if version==4 else result

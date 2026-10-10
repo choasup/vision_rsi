@@ -51,7 +51,7 @@ def verify_trace(state):
 
     replay={'history':[],'research_rounds':state['binding'].get('research_rounds',0)}
     for row in state['history']:
-        actions=available(replay)
+        actions=available(replay,memory=row.get('controller_action_version',1)>=2)
         if row.get('status')!='completed' or row['action'] not in actions:
             raise ValueError('Action does not match replayed controller state')
         decision=row['decision']
@@ -62,6 +62,9 @@ def verify_trace(state):
         if brief is not None and row['result'].get('status')!='budget_exhausted':
             recorded=row['result'].get('experiment',{}).get('strategy_brief_sha256',row['result'].get('strategy_brief_sha256'))
             if recorded!=digest(brief):raise ValueError('Research plan does not match executed strategy brief')
+        if row['action']['kind']=='retrieve_memory':
+            from .research_memory import retrieve_page
+            if retrieve_page(replay['history'],row['action'])!=row['result']:raise ValueError('Retrieved memory page differs from original evidence')
         project(replay,row['action'],row['result'])
         replay['history'].append(row)
     stop=state.get('policy_stop')
@@ -69,7 +72,7 @@ def verify_trace(state):
         if state.get('intent') or state.get('status')!='policy_stopped' or stop['decision'].get('action_id') is not None:
             raise ValueError('Invalid terminal policy stop')
         history=history_context(replay['history'],stop.get('strategy_context_version',1))
-        actions=available(replay)
+        actions=available(replay,memory=stop.get('controller_action_version',1)>=2)
         if not actions:raise ValueError('Policy stop has no decision context')
         verify_decision_evidence(stop,actions,history)
     elif state.get('status')=='policy_stopped':raise ValueError('Terminal policy stop evidence missing')

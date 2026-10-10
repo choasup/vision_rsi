@@ -52,7 +52,7 @@ def lease(path,owner='Training controller'):
             if os.name=='nt':file.seek(0);msvcrt.locking(file.fileno(),msvcrt.LK_UNLCK,1)
 
 
-def available(state):
+def available(state,memory=False):
     if state.get('paused') or state.get('policy_stop'):return []
     if not state.get('plan'):kinds=['prepare']
     elif state['plan']['status']=='blocked':return []
@@ -63,7 +63,11 @@ def available(state):
     elif not state['analysis']['quality_verified'] and state.get('receipt_collected') and not state.get('research_stopped') and state.get('proposals_attempted',0)<state.get('research_rounds',0):kinds=['propose_experiment']
     else:return []
     sequence=len(state['history'])
-    return [{'id':kind+'-'+str(sequence),'kind':kind,'estimated_cost':1,'expected_gain':2 if kind!='logs' else .5,'uncertainty':.1} for kind in kinds]
+    actions=[{'id':kind+'-'+str(sequence),'kind':kind,'estimated_cost':1,'expected_gain':2 if kind!='logs' else .5,'uncertainty':.1} for kind in kinds]
+    if memory:
+        from .research_memory import memory_actions
+        actions+=memory_actions(state['history'])
+    return actions
 
 
 def choose(state,actions,steps_left,policy,remote):
@@ -89,6 +93,9 @@ def choose(state,actions,steps_left,policy,remote):
 
 def execute(action,state,session,config,folder,runs):
     kind=action['kind'];remote=config['remote']
+    if kind=='retrieve_memory':
+        from .research_memory import retrieve_page
+        return retrieve_page(state['history'],action)
     if kind=='prepare':return prepare(session,config,folder/'plans')
     if kind=='submit':
         active=[row for row in runs.list(session['session_id']) if row['actual_gpu_hours'] is None]
@@ -210,18 +217,18 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                 if state.get('paused'):break
                 intent=state.get('intent')
                 if intent is None:
-                    actions=available(state)
+                    actions=available(state,memory=True)
                     if not actions:break
                     choice_started=time.monotonic()
                     decision,evidence=choose(state,actions,steps-index,policy,config['remote'])
                     policy_elapsed=time.monotonic()-choice_started
                     if decision['action_id'] is None:
                         state['policy_stop']={'decision':decision,'policy_evidence':evidence,'policy_elapsed_seconds':policy_elapsed,
-                                              'control_sources':control_sources,'git_revision':revision(),'created_at_unix':time.time(),'strategy_context_version':4}
+                                              'control_sources':control_sources,'git_revision':revision(),'created_at_unix':time.time(),'strategy_context_version':4,'controller_action_version':2}
                         state['status']='policy_stopped';atomic_json(path,state);break
                     action=next(row for row in actions if row['id']==decision['action_id'])
                     intent={'action':action,'decision':decision,'policy_evidence':evidence,'status':'reserved',
-                            'strategy_context_version':4,
+                            'strategy_context_version':4,'controller_action_version':2,
                             'control_sources':control_sources,'git_revision':revision(),'policy_elapsed_seconds':policy_elapsed,
                             'created_at_unix':time.time(),'tool_attempts':[]}
                     state['intent']=intent;atomic_json(path,state)
