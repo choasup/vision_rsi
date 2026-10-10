@@ -10,7 +10,7 @@ from unittest.mock import MagicMock,patch
 
 from test_acceptance import evidence,wrap
 from test_coco_train import fixture_recipe
-from vision_rsi.experiments import compile_plan,propose_next
+from vision_rsi.experiments import compile_plan,propose_next,rejected_feedback
 from vision_rsi.runner import digest
 
 
@@ -20,6 +20,42 @@ def proposal():
 
 
 class ExperimentTests(unittest.TestCase):
+    def test_feedback_is_bounded_and_excludes_other_parent_receipts(self):
+        folder=self.root/'bounded-feedback';folder.mkdir()
+        context={'run_id':'same','parent_plan_id':'same-plan','receipt_sha256':'same-receipt'}
+        with closing(sqlite3.connect(':memory:')) as db:
+            db.execute('CREATE TABLE requests(id TEXT,context TEXT,state TEXT,response TEXT)')
+            for index in range(12):
+                request='request-'+str(index)
+                saved=dict(context)
+                if index==11:saved['receipt_sha256']='other-receipt'
+                db.execute('INSERT INTO requests VALUES (?,?,?,?)',(request,json.dumps(saved),'responded',json.dumps({'content':'x'*8000})))
+                path=folder/request;path.mkdir()
+                (path/'experiment.json').write_text(json.dumps({'status':'proposal_rejected','reason':'y'*2000}),encoding='utf-8')
+            feedback=rejected_feedback(db,folder,context)
+        self.assertEqual([row['request_id'] for row in feedback],['request-'+str(i) for i in range(3,11)])
+        self.assertTrue(all(len(row['reason'])==1000 and len(row['proposal_content'])==6000 for row in feedback))
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_rejected_proposal_feedback_is_bound_and_replay_does_not_refresh_snapshot(self,client):
+        invalid=proposal();invalid['recipe_changes']={'world_size':8}
+        client.return_value.complete.side_effect=[{'content':json.dumps(invalid)},{'content':json.dumps(proposal())}]
+        folder=self.root/'feedback'
+        rejected=propose_next(self.record,self.runs,self.llm,folder,'invalid-first')
+        self.assertEqual(rejected['status'],'proposal_rejected')
+        second=propose_next(self.record,self.runs,self.llm,folder,'corrected-second')
+        self.assertEqual(second['status'],'ready_to_submit')
+        prompt=json.loads(client.return_value.complete.call_args.args[0][1]['content'])
+        feedback=prompt['previous_rejections']
+        self.assertEqual(feedback[0]['request_id'],'invalid-first')
+        self.assertIn('supported',feedback[0]['reason'])
+        with closing(sqlite3.connect(folder/'requests.sqlite3')) as db:
+            context=json.loads(db.execute('SELECT context FROM requests WHERE id=?',('corrected-second',)).fetchone()[0])
+        self.assertEqual(context['previous_rejections'],feedback)
+        self.assertEqual(rejected,propose_next(self.record,self.runs,self.llm,folder,'invalid-first'))
+        self.assertEqual(second,propose_next(self.record,self.runs,self.llm,folder,'corrected-second'))
+        self.assertEqual(client.return_value.complete.call_count,2)
+
     def test_two_generation_lineage_rejects_return_to_original_method(self):
         first=compile_plan(self.parent,self.record,proposal(),.5,self.root/'first')
         frozen=json.loads(Path(first['plan_path']).read_text(encoding='utf-8'))
