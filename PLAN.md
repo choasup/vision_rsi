@@ -464,3 +464,8 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Automatic CPU watcher confirmed live at job a6; independent audit610 real images passed at last observation. Training local exec8046 completed partial13,219,604,214 bytes and next bounded exec72635 is live. No full AP, GPU training or launch acceptance claim.
 
 - Full207-test suite passed in69.530s after transport and baseline-controller additions. This is implementation verification, not task-quality or RSI/adoption evidence.
+
+## CPU resource gate before GPU submission (2026-10-10)
+
+- Added read-only CPU preflight for initial Training and checkpoint resume before DDP/GPU submission: CUDA hidden,90s remote alarm/100s SSH timeout, deployed source/recipe/contract identity and runtime/full data-count/weights/annotation hashes checked using the frozen training preflight. Returned counts and identities revalidated locally. Gate errors cannot submit GPU work and unused reservation settles at zero; unknown actual GPU submit remains held as before.
+- Seventeen training-run/preflight regressions pass, including missing resources blocking both initial submit/resume with zero actual GPU use, full-split/recipe/source receipt mismatches and existing stable checkpoint/budget rules. Baseline watcher protected source files unchanged. Actual remote negative resource probe remains to be performed.

@@ -60,9 +60,10 @@ class TrainingRunsTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):submit(plan(),REMOTE,self.store)
         record=self.store.list('session')[0]
         self.assertEqual(record['status'],'deployment_failed');self.assertEqual(record['actual_gpu_hours'],0)
+    @patch('vision_rsi.training_runs.resource_preflight',return_value={'status':'resources_verified'})
     @patch('vision_rsi.training_runs.job_request')
     @patch('vision_rsi.training_runs.deploy_training')
-    def test_lost_submit_response_retains_budget_and_reconciles_same_id(self,deploy,request):
+    def test_lost_submit_response_retains_budget_and_reconciles_same_id(self,deploy,request,preflight):
         deploy.return_value={'entry':'/workspace/train.py','recipe':'/workspace/recipe.json','dependencies_ready':True}
         request.side_effect=TimeoutError('response lost')
         with self.assertRaises(TimeoutError):submit(plan(),REMOTE,self.store)
@@ -73,6 +74,15 @@ class TrainingRunsTests(unittest.TestCase):
         result=observe(record['run_id'],REMOTE,self.store)
         self.assertEqual(result['actual_gpu_hours'],.002)
         self.assertEqual(request.call_args.args[2],record['run_id'])
+    @patch('vision_rsi.training_runs.resource_preflight',side_effect=RuntimeError('missing training images'))
+    @patch('vision_rsi.training_runs.job_request')
+    @patch('vision_rsi.training_runs.deploy_training',return_value={'dependencies_ready':True})
+    def test_resource_failure_never_submits_gpu_and_releases_unused_reservation(self,deploy,request,preflight):
+        with self.assertRaisesRegex(RuntimeError,'missing training'):submit(plan(),REMOTE,self.store)
+        request.assert_not_called();preflight.assert_called_once()
+        record=self.store.list('session')[0]
+        self.assertEqual(record['status'],'deployment_failed');self.assertEqual(record['actual_gpu_hours'],0)
+        self.assertEqual(self.store.remaining('session',.03),.03)
     @patch('vision_rsi.training_runs.job_request')
     def test_rejects_other_destination_and_invalid_accounting(self,request):
         record,_=self.store.reserve(plan(),REMOTE)
@@ -135,9 +145,10 @@ class ResumeCoordinatorTests(unittest.TestCase):
         details=record['details'];details.update(deployment={'resume_protocol':2},output_directory='/workspace/training/task/'+self.original,
             spec={'argv':['python3','train.py','--output','/workspace/training/task/'+self.original]})
         self.store.update(self.original,'cancelled',details,actual=.001)
+    @patch('vision_rsi.training_runs.resource_preflight',return_value={'status':'resources_verified'})
     @patch('vision_rsi.remote.collect_training')
     @patch('vision_rsi.training_runs.job_request')
-    def test_resume_has_stable_id_frozen_checkpoint_and_shared_budget(self,request,inspect):
+    def test_resume_has_stable_id_frozen_checkpoint_and_shared_budget(self,request,inspect,preflight):
         from vision_rsi.training_runs import resume
         request.side_effect=lambda remote,action,run_id,*args: {'status':'cancelled','gpu_hours':.001} if action=='status' else {'job_id':run_id}
         inspect.return_value={'checkpoint_sha256':'a'*64,'progress':{'status':'interrupted'}}
@@ -151,6 +162,17 @@ class ResumeCoordinatorTests(unittest.TestCase):
         self.assertEqual(len(self.store.list('session')),2)
         inspect.return_value['checkpoint_sha256']='b'*64
         with self.assertRaisesRegex(ValueError,'owns this Training output'):resume(self.original,REMOTE,self.store)
+    @patch('vision_rsi.training_runs.resource_preflight',side_effect=RuntimeError('resource missing'))
+    @patch('vision_rsi.remote.collect_training')
+    @patch('vision_rsi.training_runs.job_request')
+    def test_resume_resource_failure_cannot_submit_gpu(self,request,inspect,preflight):
+        from vision_rsi.training_runs import resume
+        request.return_value={'status':'cancelled','gpu_hours':.001}
+        inspect.return_value={'checkpoint_sha256':'a'*64,'progress':{'status':'interrupted'}}
+        with self.assertRaisesRegex(RuntimeError,'resource missing'):resume(self.original,REMOTE,self.store)
+        self.assertEqual([call.args[1] for call in request.call_args_list],['status'])
+        resumed=[row for row in self.store.list('session') if row['run_id']!=self.original][0]
+        self.assertEqual(resumed['status'],'resume_preflight_failed');self.assertEqual(resumed['actual_gpu_hours'],0)
     @patch('vision_rsi.remote.collect_training')
     @patch('vision_rsi.training_runs.job_request')
     def test_active_and_completed_evaluation_cannot_resume(self,request,inspect):

@@ -7,6 +7,7 @@ import time
 from urllib.parse import quote
 
 from .remote import deploy_training, job_request
+from .training_preflight import check as resource_preflight
 from .runner import digest
 
 TERMINAL={'completed','failed','cancelled','timed_out'}
@@ -89,6 +90,7 @@ def submit(plan,remote,store):
         deployment=deploy_training(remote,plan)
         if not deployment['dependencies_ready']: raise RuntimeError('Remote pycocotools missing; install pinned optional dependency before GPU submission')
         details['deployment']=deployment
+        details['resource_preflight']=resource_preflight(remote,deployment,plan)
         output=str(PurePosixPath(remote['workspace'])/'training'/plan['task_id']/run_id)
         argv=[remote.get('python','python3'),'-m','torch.distributed.run','--standalone',
               '--nproc-per-node='+str(plan['recipe']['world_size']),deployment['entry'],'--recipe',deployment['recipe'],'--output',output]
@@ -185,6 +187,7 @@ def resume(run_id,remote,store):
     if not created: return dict(record,reused=True)
     new_id=record['run_id'];details=record['details']
     try:
+        details['resource_preflight']=resource_preflight(remote,deployment,base)
         argv=[value for value in original['spec']['argv']]
         if '--checkpoint-sha256' in argv:
             index=argv.index('--checkpoint-sha256');del argv[index:index+2]
