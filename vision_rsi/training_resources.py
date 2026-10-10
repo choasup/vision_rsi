@@ -27,7 +27,14 @@ def step(root, seconds):
         required=max(0,TRAIN_RESOURCE['bytes']-existing)+TRAIN_RESOURCE['bytes']+1024**3
         if shutil.disk_usage(root).free<required:
             raise ValueError('Insufficient disk for archive plus extraction reserve')
-        result=download(TRAIN_RESOURCE,root,time.monotonic()+seconds)
+        try:
+            result=download(TRAIN_RESOURCE,root,time.monotonic()+seconds)
+        except TimeoutError:
+            # A full archive can consume the remaining window before hashing
+            # finishes. Retain it and report pending verification, never success.
+            result={'status':'verification_pending','path':str(part),
+                    'downloaded_bytes':part.stat().st_size if part.exists() else 0,
+                    'asset':TRAIN_RESOURCE,'sha256_verified':False}
         return {'resource':result,'training_started':False,'gpu_used':False,
                 'dataset_ready':False,'remaining_extraction_and_coverage_verification':True}
 

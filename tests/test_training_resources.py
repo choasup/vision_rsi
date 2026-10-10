@@ -8,6 +8,19 @@ from vision_rsi.training_resources import step, TRAIN_RESOURCE
 
 
 class TrainingResourceTests(unittest.TestCase):
+    def test_checksum_deadline_retains_archive_without_success_claim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            part=Path(tmp)/'train2017.zip.part'
+            part.write_bytes(b'partial fixture')
+            with patch('vision_rsi.training_resources.shutil.disk_usage',return_value=namedtuple('Disk','free')(100_000_000_000)), \
+                 patch('vision_rsi.training_resources.download',side_effect=TimeoutError('verification deadline')):
+                result=step(tmp,240)
+            self.assertEqual(result['resource']['status'],'verification_pending')
+            self.assertFalse(result['resource']['sha256_verified'])
+            self.assertFalse(result['dataset_ready'])
+            self.assertEqual(part.read_bytes(),b'partial fixture')
+            self.assertFalse((Path(tmp)/'train2017.zip').exists())
+
     def test_disk_admission_blocks_before_network(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch('vision_rsi.training_resources.shutil.disk_usage',return_value=namedtuple('Disk','free')(1)), \
