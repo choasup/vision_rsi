@@ -10,6 +10,45 @@ from vision_rsi.ledger import Ledger
 
 
 class ControllerTests(unittest.TestCase):
+    @patch('vision_rsi.controller.execute',return_value={'observed':True})
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    def test_snapshot_bounds_history_and_rejects_oversized_goal_before_admission(self,client,execute):
+        with tempfile.TemporaryDirectory() as folder:
+            ledger=Ledger(folder);ledger.append('goal','objective',{'summary':'goal'})
+            for i in range(15):ledger.append('context-'+str(i),'evidence',{'summary':'s'*3000,'observation':'x'*8000})
+            client.return_value.complete.return_value={'content':json.dumps({'tool':'inspect_repository','summary':'inspect','question':'q','expected_evidence':'e','refs':['goal']})}
+            research_step({'llm':{'model':'fixture'},'remote':{}},folder)
+            snapshot=next(e['payload']['request_snapshot'] for e in ledger.events() if e['payload'].get('record_type')=='planning_request')
+            self.assertLessEqual(len(json.dumps(snapshot,sort_keys=True,ensure_ascii=False)),90000)
+            prompt=json.loads(snapshot['messages'][0]['content'])
+            self.assertGreater(prompt['history_projection']['omitted_oldest_count'],0)
+            self.assertEqual(prompt['objective']['summary'],'goal')
+        client.reset_mock()
+        with tempfile.TemporaryDirectory() as folder:
+            ledger=Ledger(folder);ledger.append('goal','objective',{'summary':'x'*95000})
+            with self.assertRaisesRegex(ValueError,'objective exceeds'):research_step({'llm':{'model':'fixture'},'remote':{}},folder)
+            self.assertEqual(len(ledger.events()),1)
+            client.return_value.complete.assert_not_called()
+
+    @patch('vision_rsi.controller.execute',return_value={'observed':True})
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    def test_request_snapshot_is_persisted_before_api_and_matches_sent_messages(self,client,execute):
+        from vision_rsi.runner import digest
+        with tempfile.TemporaryDirectory() as folder:
+            ledger=Ledger(folder);ledger.append('goal','objective',{'summary':'goal'})
+            def complete(messages,max_tokens):
+                request=ledger.events()[-1]['payload']
+                self.assertEqual(request['record_type'],'planning_request')
+                snapshot=request['request_snapshot']
+                self.assertEqual(snapshot['messages'],messages)
+                self.assertEqual(snapshot['max_tokens'],max_tokens)
+                self.assertEqual(snapshot['thinking'],{'type':'disabled'})
+                self.assertEqual(request['request_snapshot_sha256'],digest(snapshot))
+                self.assertNotIn('api_key_env',snapshot)
+                return {'content':json.dumps({'tool':'inspect_repository','summary':'inspect','question':'q','expected_evidence':'e','refs':['goal']})}
+            client.return_value.complete.side_effect=complete
+            research_step({'llm':{'model':'deepseek-flash','api_key_env':'KEY'},'remote':{}},folder)
+
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_synthesis_preserves_findings_and_rejects_non_result_citations(self,client):
         from vision_rsi.controller import validate_synthesis_evidence,execute

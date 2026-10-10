@@ -472,3 +472,9 @@
 - 扩展显式--live探针的--synthesis模式：实际检查本仓库，预登记独立API上限1，要求synthesize；核验findings引用inspect:result、报告字段持久保存、interpretation_only=true、experiment_executed=false，无语义重试。修正原源码探针在规划拒绝时的StopIteration，改为明确未生成工具结果的AssertionError。
 - 实际一次DeepSeek Flash调用通过上述机械协议检查：4条发现，reported prompt4592/completion970/total5562 tokens，额度剩0。原始证据 runs/source-research-live/2d8ef3064ecf41598f7744d521a844e8/{preregistered.json,evidence.json,report.json,research/research.sqlite3}；另从原始输出生成可读report.md。
 - 不将passed等同研究内容正确：模型将original_excerpt_count描述为非空片段，计数语义未独立核对；引用有效只证明记录存在。evidence原scope沿用旧source-range措辞，已修改探针后续输出按模式区分，未改写这次原始记录。无SSH/GPU/训练，安装包未更新，完整上线目标未完成。
+
+## 通用研究请求快照（2026-10-10）
+
+- 研究规划现在在调用前持久保存实际messages/model/max_tokens/stream及thinking设置和request_snapshot_sha256，发送内容与账本快照相同；不保存API Key或连接配置。历史请求不回填虚构快照。
+- 请求快照序列化限制90000字符，为Ledger事件预留空间；超限时移除最早历史投影并明确original/included/omitted计数，目标原样保留。目标本身过大则在请求事件/API调用前拒绝，避免产生假的不确定请求。原始历史事件保持不变。
+- 32项controller/controller_budget/ledger/not_dispatched测试通过（6.190秒）：API mock执行时已能读到完整快照，快照SHA匹配，长历史有界，95K目标在预留前拒绝，既有恢复/不确定请求停止规则保持。无实际API/SSH/GPU，安装包未更新，真实训练和完整上线目标仍未完成。
