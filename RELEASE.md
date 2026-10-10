@@ -355,3 +355,8 @@
 
 - 修正顶层无参数/-h/--help仍由早期mock runner提供说明的问题，展示实际training start/list/readiness/watch、单样本/批量test、预算和注册前提，列出实际工具入口并说明通用训练范围尚不完整。training无动作显示新任务CLI帮助；旧training --task入口保持兼容。
 - 11项CLI帮助/任务shell/启动路径测试通过（.957秒），Windows vision-rsi.cmd --help实际成功。无配置读取、API/SSH/GPU或任务状态修改。安装包探针加入新CLI测试但未重建；完整上线目标仍未完成。
+## 独立接口包事件需求校验修复（2026-10-10）
+
+- 隔离Python -I进程复现：抽取contracts函数的interface_runtime.issues因新增event_eval相对导入失败；原check只校验示例未覆盖此调用。移除抽取校验的包内运行时依赖，协议常量/有限单位区间检查随校验函数冻结，测试确认常量与评测器一致。
+- 28项contracts/harness/executable_harness/event_eval测试通过（5.316秒）。新增隔离进程直接调用导出包issues，验证普通合同及事件合同通过、缺IoU拒绝，且未导入vision_rsi；安装包探针加入harness测试并修正其样例路径。
+- 原已生成接口包保持冻结内容，不自动篡改更新；需在新输出目录重新build以获得修复。无真实API/SSH/GPU/模型训练，安装包未重建，完整上线目标未完成。

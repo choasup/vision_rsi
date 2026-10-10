@@ -11,6 +11,7 @@ from .capability import task_id
 from .llm import OpenAICompatibleClient,LLMNotDispatched
 
 TYPES = {'image', 'image_list', 'video', 'text'}
+EVENT_PROTOCOL = 'vision-rsi/event_micro_f1/v1'
 GPU_BUDGET_QUESTION = '首轮真实训练最多允许多少 GPU 小时？'
 
 
@@ -27,6 +28,11 @@ def definition_status(contract, errors):
     if not errors: return 'ready_for_harness'
     essential=[e for e in errors if not e.startswith('待澄清:') and '预算' not in e]
     return 'task_defined' if not essential else 'clarifying'
+
+
+def unit_interval(value):
+    return (not isinstance(value,bool) and isinstance(value,(int,float))
+            and math.isfinite(value) and 0<=value<=1)
 
 
 def issues(contract):
@@ -60,13 +66,12 @@ def issues(contract):
     if isinstance(threshold,bool) or not isinstance(threshold,(int,float)) or not math.isfinite(threshold): errors.append('缺少有限数值验收阈值')
     if isinstance(acceptance,dict) and acceptance.get('direction') not in ('maximize','minimize'): errors.append('缺少指标方向')
     if isinstance(acceptance,dict):
-        from .event_eval import PROTOCOL,number
-        if acceptance.get('evaluation_protocol')==PROTOCOL:
+        if acceptance.get('evaluation_protocol')==EVENT_PROTOCOL:
             if acceptance.get('metric')!='event_micro_f1' or acceptance.get('direction')!='maximize':
                 errors.append('事件评测协议要求 event_micro_f1/maximize')
-            if not number(threshold,0,1):errors.append('事件F1验收阈值需在0..1内')
+            if not unit_interval(threshold):errors.append('事件F1验收阈值需在0..1内')
             iou=acceptance.get('iou_threshold')
-            if not number(iou,0,1) or iou==0:errors.append('事件评测需明确0< iou_threshold <=1')
+            if not unit_interval(iou) or iou==0:errors.append('事件评测需明确0< iou_threshold <=1')
             properties=schema.get('properties') if isinstance(schema,dict) else None
             if not isinstance(properties,dict) or 'events' not in properties:
                 errors.append('事件评测输出需定义 events 字段')
@@ -296,10 +301,9 @@ class Sessions:
             db.execute('INSERT INTO clarification_requests VALUES (?,?,?,?,?)',(request_id,session,json.dumps(context,ensure_ascii=False),'pending','[]'))
         prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask at most five critical questions per turn, record secondary choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output. Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum,minItems,maxItems. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
         prompt['change_policy']='Preserve established goal wording, input/output interface, acceptance values and budget exactly unless the user explicitly requests a change. Put implementation choices in assumptions. Do not paraphrase unchanged goal/protocol descriptions. Structural changes are reviewed separately before execution.'
-        from .event_eval import PROTOCOL
         prompt['available_evaluation_defaults']={'video_events':{
             'use_only_if_matching_user_task':True,'metric':'event_micro_f1','direction':'maximize',
-            'evaluation_protocol':PROTOCOL,'metric_scale':'0..1',
+            'evaluation_protocol':EVENT_PROTOCOL,'metric_scale':'0..1',
             'acceptance_extra_field':'iou_threshold, finite and greater than 0 up to 1',
             'matching':'Same sample and label, temporal IoU, maximum-cardinality one-to-one matching',
             'output':'object with events array; each event has label, start_seconds, end_seconds',

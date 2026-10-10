@@ -48,7 +48,7 @@ def main():
                  'test_filesystem', 'test_experiments', 'test_executable_harness', 'test_not_dispatched',
                  'test_task_adapters', 'test_task_readiness', 'test_event_eval',
                  'test_coco_train', 'test_training_preflight', 'test_batch', 'test_experiment_observe',
-                 'test_study_resources', 'test_cli_help']
+                 'test_study_resources', 'test_cli_help', 'test_harness']
         suite = unittest.defaultTestLoader.loadTestsFromNames(names)
         with (output/'installed-tests.log').open('w', encoding='utf-8') as log:
             result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)

@@ -8,6 +8,8 @@ from vision_rsi.contracts import Sessions,issues,validate_sample,validate_schema
 class ContractTests(unittest.TestCase):
     def test_event_protocol_requires_executable_acceptance_fields(self):
         from vision_rsi.event_eval import PROTOCOL
+        from vision_rsi.contracts import EVENT_PROTOCOL
+        self.assertEqual(EVENT_PROTOCOL,PROTOCOL)
         contract=json.loads(json.dumps(self.contract))
         contract['acceptance']={'metric':'event_micro_f1','direction':'maximize',
                                 'evaluation_protocol':PROTOCOL,'threshold':.9,'iou_threshold':.5}
