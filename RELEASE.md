@@ -385,3 +385,9 @@
 - 显式--live-remote的tests/live_cpu_resume_probe.py实际SSH执行Torch2.6.0+cu124 CPU fixture，CUDA_VISIBLE_DEVICES为空。17样本/批2/3epoch共27step，Linear/Dropout/SGD(momentum.9)模型在step1/8/9/10/26/27真实序列化checkpoint后重建恢复，全部loss/batch trace、模型张量、动量buffer、最终CPU RNG逐值完全一致。
 - 生产迭代器source SHA256=42c6cf1afe40af5af752f7dc7c20a9dd537e4c2dec13c098527c30b6b6701ef2；证据runs/resource-bootstrap/cpu-numerical-resume-1dd0eb2075d04423960b46af51972f8c/{preregistered.json,stdout.txt,stderr.txt,evidence.json}。数据/checkpoint仅内存fixture，不修改用户远端数据或训练预算。
 - 此证据仅单进程CPU合成数值恢复，不覆盖实际检测器、CUDA RNG、8卡DDP/NCCL、信号终止或真实COCO效果。本轮无LLM/GPU调用，安装dev2 wheel早于此次迭代器提取，完整上线目标仍未完成。
+## 两进程CPU/Gloo数值恢复（2026-10-10）
+
+- live_cpu_resume_probe.py新增显式--distributed，复用同一生产epoch_batches源码，远端CUDA禁用、两进程Gloo DDP，Linear/Dropout/SGD合成数据17样本、每rank批2、3epoch15step。各rank RNG收集、rank0 checkpoint序列化广播、重建DDP后按rank恢复CPU RNG。
+- 实际step1/4/5/6/14/15共6种断点、2rank全部loss/batch trace、模型张量、动量buffer、最终CPU RNG与连续运行完全一致。Torch2.6.0+cu124，生产迭代器SHA42c6cf1afe40af5af752f7dc7c20a9dd537e4c2dec13c098527c30b6b6701ef2。
+- 证据runs/resource-bootstrap/cpu-numerical-resume-92a12c52d40d4bd484233cac0c8459d5/{preregistered.json,stdout.txt,stderr.txt,evidence.json}；远端临时rendezvous正常清理，fixture数据及checkpoint仅进程内存。
+- 仅两进程CPU对象重建恢复，未杀进程，不证明实际检测器/8卡CUDA/NCCL恢复或真实训练质量。无LLM/GPU调用、未修改真实任务预算，完整上线目标仍未完成。

@@ -65,19 +65,25 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live-remote',action='store_true')
     parser.add_argument('--config',default='config.local.json')
+    parser.add_argument('--distributed',action='store_true',help='Two-process CPU/Gloo fixture')
     args=parser.parse_args()
     if not args.live_remote:parser.error('--live-remote required; CPU fixture only')
     remote=json.loads(Path(args.config).read_text(encoding='utf-8'))['remote']
-    request={'iterator_source':inspect.getsource(epoch_batches),'splits':[1,8,9,10,26,27]}
+    program=PROGRAM
+    if args.distributed:
+        from cpu_ddp_resume_fixture import PROGRAM as program
+    request={'iterator_source':inspect.getsource(epoch_batches),
+             'world_size':2 if args.distributed else 1,
+             'splits':[1,4,5,6,14,15] if args.distributed else [1,8,9,10,26,27]}
     folder=Path('runs/resource-bootstrap')/('cpu-numerical-resume-'+uuid.uuid4().hex)
     folder.mkdir(parents=True)
     atomic_json(folder/'preregistered.json',request)
-    result=subprocess.run(ssh_argv(remote)+[shlex.quote(remote.get('python','python3'))+' -c '+shlex.quote(PROGRAM)],
+    result=subprocess.run(ssh_argv(remote)+[shlex.quote(remote.get('python','python3'))+' -c '+shlex.quote(program)],
                           input=json.dumps(request),capture_output=True,text=True,encoding='utf-8',timeout=60)
     (folder/'stdout.txt').write_text(result.stdout,encoding='utf-8')
     (folder/'stderr.txt').write_text(result.stderr,encoding='utf-8')
     assert result.returncode==0,'Remote CPU probe failed; inspect retained logs'
-    evidence=json.loads(result.stdout)
+    evidence=json.loads(result.stdout.strip().splitlines()[-1])
     assert evidence['iterator_sha256']==hashlib.sha256(request['iterator_source'].encode()).hexdigest()
     atomic_json(folder/'evidence.json',evidence)
     print(json.dumps({'directory':str(folder),**evidence},indent=2))
