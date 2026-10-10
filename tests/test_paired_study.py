@@ -8,10 +8,26 @@ from unittest.mock import patch
 
 from test_coco_train import fixture_recipe
 from vision_rsi.contracts import Sessions
-from vision_rsi.paired_study import create,load,step,compare
+from vision_rsi.paired_study import create,load,step,compare,paired_sign_evidence,SIGN_RULE
 
 
 class PairedStudyTests(unittest.TestCase):
+    def test_exact_sign_rule_counts_ties_losses_and_insufficient_replication(self):
+        strong=paired_sign_evidence([2]*5,1,SIGN_RULE)
+        self.assertEqual(strong['p_value'],1/32)
+        self.assertTrue(strong['preregistered_sign_rule_met'])
+        self.assertFalse(strong['independence_verified']);self.assertFalse(strong['agent_adopted'])
+        short=paired_sign_evidence([2]*4+[1]*10,1,SIGN_RULE)
+        self.assertEqual(short['non_tied_pairs'],4);self.assertEqual(short['tied_pairs'],10)
+        self.assertFalse(short['preregistered_sign_rule_met'])
+        mixed=paired_sign_evidence([2]*4+[0],1,SIGN_RULE)
+        self.assertEqual(mixed['p_value'],6/32);self.assertFalse(mixed['preregistered_sign_rule_met'])
+        ties=paired_sign_evidence([1]*5,1,SIGN_RULE)
+        self.assertIsNone(ties['p_value']);self.assertFalse(ties['preregistered_sign_rule_met'])
+        for gains in ([],[True],[float('nan')],[float('inf')]):
+            with self.assertRaises(ValueError):paired_sign_evidence(gains,1,SIGN_RULE)
+        with self.assertRaises(ValueError):paired_sign_evidence([2]*5,1,dict(SIGN_RULE,alpha=.5))
+
     def test_preregistration_preserves_shared_api_and_controller_caps_without_credentials(self):
         self.spec['research_rounds']=1
         ledger=str(self.root/'shared-api.sqlite3')
@@ -98,6 +114,7 @@ class PairedStudyTests(unittest.TestCase):
         record=self.create();result=compare(record['study_id'],self.studies)
         self.assertEqual(len(result['missing_evidence']),4);self.assertFalse(result['comparison_complete'])
         self.assertIsNone(result['mean_paired_ap_gain']);self.assertFalse(result['agent_adopted'])
+        self.assertFalse(result['paired_statistical_evidence']['evaluated'])
 
     def test_all_registered_pairs_are_required_and_changed_data_is_rejected(self):
         # Fabricated audit results isolate comparison logic; no real AP evidence.
@@ -123,6 +140,14 @@ class PairedStudyTests(unittest.TestCase):
             result=compare(record['study_id'],self.studies)
         self.assertTrue(result['comparison_complete']);self.assertEqual(result['mean_paired_ap_gain'],3)
         self.assertTrue(result['preregistered_gain_rule_met']);self.assertFalse(result['rsi_efficiency_verified']);self.assertFalse(result['agent_adopted'])
+        self.assertEqual(identity['statistical_rule'],SIGN_RULE)
+        self.assertEqual(result['paired_statistical_evidence']['p_value'],.25)
+        self.assertFalse(result['paired_statistical_evidence']['preregistered_sign_rule_met'])
+        legacy=copy.deepcopy(record);legacy['identity'].pop('statistical_rule')
+        with patch('vision_rsi.paired_study.load',return_value=legacy),patch('vision_rsi.paired_study.audit',side_effect=audited):
+            old_result=compare(record['study_id'],self.studies)
+        self.assertFalse(old_result['paired_statistical_evidence']['evaluated'])
+        self.assertIn('Legacy',old_result['paired_statistical_evidence']['reason'])
         bound=identity['pairs'][0]['candidate'];path=self.campaigns/bound['session_id']/bound['campaign_id']/'state.json'
         original=path.read_text();state=json.loads(original);state['paused']=True;path.write_text(json.dumps(state))
         with patch('vision_rsi.paired_study.audit',side_effect=audited):paused=compare(record['study_id'],self.studies)

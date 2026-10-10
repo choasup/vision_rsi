@@ -696,3 +696,9 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 真实LLM方法反馈探针可显式运行：`python tests/live_method_feedback_probe.py --live`。每次创建独立fixture/账本，最多一次实际API准入；首次非法提案明确为mock，随后验证真实回答编译与缓存重放。它不启动训练，合成预算不能授权真实GPU作业；不应把单次通过视为真实COCO效果或统计研究效率证明。
 
 新配对研究预登记会保留配置中的共享API账本/调用上限与每campaign工具尝试上限，并把它们绑定到两组执行身份；不会因study配置复制而静默移除。共享API总上限仍不是各组相等的Token或费用预算，当前配对观察不据此自动采用候选策略。
+
+### 配对研究的预登记统计检查
+
+新study固定保存单侧精确符号检验规则：比较每对AP提升是否严格超过预登记的minimum_mean_ap_gain，精确平局排除，至少5个非平局配对，alpha=0.05。p值为Binomial(n,0.5)右尾，具体方法参考[NIST符号检验](https://www.itl.nist.gov/div898/software/dataplot/refman1/auxillar/signtest.htm)。该检验针对超过阈值的方向性概率，不是均值提升的置信区间；平均提升规则单独报告。
+
+仅在所有预登记配对证据完整时计算。旧study未预登记该规则时不事后追加；输出evaluated=false。任务独立性仍未验证，重复候选研究的多重比较尚未控制，Token/费用公平性也未证明；统计标记通过不自动采用候选或宣称RSI效率已验证。

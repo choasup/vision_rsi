@@ -15,6 +15,25 @@ from .contracts import Sessions,issues
 from .runner import atomic_json,digest,revision
 from .training_runs import TrainingRuns
 
+SIGN_RULE={'test':'exact_one_sided_sign_test_above_gain_threshold','alpha':.05,'minimum_non_tied_pairs':5,
+           'ties':'exclude exact ties at preregistered gain threshold'}
+
+
+def paired_sign_evidence(gains,threshold,rule):
+    if rule!=SIGN_RULE:raise ValueError('Unsupported preregistered statistical rule')
+    if isinstance(threshold,bool) or not isinstance(threshold,(int,float)) or not math.isfinite(threshold):raise ValueError('Invalid statistical gain threshold')
+    if not isinstance(gains,list) or not 1<=len(gains)<=100 or any(isinstance(x,bool) or not isinstance(x,(int,float)) or not math.isfinite(x) for x in gains):
+        raise ValueError('Statistical comparison requires complete finite paired gains')
+    positive=sum(x>threshold for x in gains);negative=sum(x<threshold for x in gains)
+    count=positive+negative
+    probability=sum(math.comb(count,k) for k in range(positive,count+1))/2**count if count else None
+    sufficient=count>=rule['minimum_non_tied_pairs']
+    return {'evaluated':True,'rule':dict(rule),'gain_threshold':threshold,'positive_pairs':positive,'negative_pairs':negative,
+            'tied_pairs':len(gains)-count,'non_tied_pairs':count,'p_value':probability,'sufficient_non_tied_pairs':sufficient,
+            'preregistered_sign_rule_met':bool(sufficient and probability<=rule['alpha']),
+            'assumption':'One-sided null: conditional on a non-tie, probability of gain above threshold is at most 0.5; pairs must be independent.',
+            'independence_verified':False,'agent_adopted':False}
+
 
 def sources():
     return {p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(Path(__file__).parent.glob('*.py'))}
@@ -87,6 +106,7 @@ def create(spec,config,root='runs/paired-studies',sessions='runs/training-sessio
     identity={'pairs':pairs,'registered_at_unix':time.time(),'candidate_git_revision':candidate['git_revision'],'candidate_source_hashes':candidate['source_hashes'],
               'control_sources':sources(),'git_revision':revision(),'sessions':str(Path(sessions).resolve()),'campaigns':str(Path(campaigns).resolve()),
               'runs':str(Path(runs).resolve()),'minimum_mean_ap_gain':gain,'heldout_declaration':spec['heldout_declaration'],
+              'statistical_rule':dict(SIGN_RULE),
               'comparison_rule':'Mean paired best real COCO AP gain at equal authorized GPU budgets; every preregistered arm must settle and pass independent evidence audit.'}
     sid=digest(identity);folder=Path(root)/sid;folder.mkdir(parents=True,exist_ok=True);path=folder/'study.json'
     record={'study_id':sid,'identity':identity,'agent_adopted':False}
@@ -167,8 +187,13 @@ def compare(study_id,root='runs/paired-studies'):
                 missing.append({'pair':index,'error':'Paired runs used different data, weights, seeds, code or runtime'})
             else:pairs.append({'pair':index,'seed':pair['seed'],'ap_gain':results['candidate']['best_verified_real_box_AP']-results['baseline']['best_verified_real_box_AP'],'arms':results})
     complete=not missing and len(pairs)==len(identity['pairs']);mean=sum(p['ap_gain'] for p in pairs)/len(pairs) if complete else None
+    statistical={'evaluated':False,'preregistered_sign_rule_met':False,
+                 'reason':'Incomplete paired evidence' if not complete else 'Legacy study has no preregistered statistical rule'}
+    if complete and 'statistical_rule' in identity:
+        statistical=paired_sign_evidence([p['ap_gain'] for p in pairs],identity['minimum_mean_ap_gain'],identity['statistical_rule'])
     return {'study_id':study_id,'pairs':pairs,'missing_evidence':missing,'comparison_complete':complete,'mean_paired_ap_gain':mean,
             'preregistered_gain_rule_met':complete and mean>=identity['minimum_mean_ap_gain'],
+            'paired_statistical_evidence':statistical,
             'rsi_efficiency_verified':False,'agent_adopted':False,
             'limitation':'Observed preregistered GPU-budget comparison only. Held-out independence is a declaration, not verified provenance; statistical replication and full multi-resource budget review remain required before adoption.'}
 
