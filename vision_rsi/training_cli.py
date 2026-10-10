@@ -9,6 +9,43 @@ from pathlib import Path
 from .contracts import Sessions, validate_sample, validate_schema, validate_manifest
 
 
+def interactive_action(message,session,args):
+    """Reuse the durable CLI actions; never send unknown slash commands to LLM."""
+    actions={'/prepare':'prepare','/run':'advance','/watch':'watch','/status':'agent-status',
+             '/job':'status','/logs':'logs','/pause':'agent-pause','/resume':'agent-resume'}
+    if message=='/help':
+        print('/prepare 检查训练计划；/run 推进有界执行；/watch 持续推进与观察；\n'
+              '/status 查看本地控制记录；/job 实时查询远端作业；/logs 读取作业日志；\n'
+              '/pause 暂停继续决策；/resume 恢复决策；/show 需求摘要；/contract 完整接口；/quit 保存退出。\n'
+              '执行沿用当前会话的预算、研究轮数和时限。暂停或退出不取消已提交作业。')
+        return True
+    if message=='/show':return False
+    if message not in actions:
+        if message.startswith('/'):
+            print('未知命令或命令参数；输入 /help 查看操作。此内容未发给模型。')
+            return True
+        return False
+    action=actions[message]
+    command=[action,'--session-id',session,'--sessions',args.sessions,'--config',args.config,
+             '--run-store',args.run_store,'--campaign-store',args.campaign_store,'--registry',args.registry]
+    if action in ('advance','watch','agent-status','agent-pause','agent-resume'):
+        command+=['--steps',str(args.steps),'--watch-seconds',str(args.watch_seconds),'--poll-seconds',str(args.poll_seconds)]
+        for flag,value in (('--research-rounds',args.research_rounds),('--campaign-id',args.campaign_id),
+                           ('--candidate-id',args.candidate_id),('--candidate-module',args.candidate_module)):
+            if value is not None:command+=[flag,str(value)]
+        command+=['--candidate-store',args.candidate_store]
+    if action in ('status','logs') and args.run_id:command+=['--run-id',args.run_id]
+    if action=='prepare' and args.output:command+=['--output',args.output]
+    if action=='agent-status':print('以下是本地控制记录；远端实时状态使用 /job。')
+    try:
+        main(command)
+    except SystemExit:
+        print('本次操作已结束；需求会话保留。输入 /show 查看。')
+    except KeyboardInterrupt:
+        print('\n已中断本地等待；远端作业及未结算记录保留，使用 /job 查询。')
+    return True
+
+
 def summary(result):
     labels={'clarifying':'需要补充关键信息','task_defined':'任务已明确；执行条件待补充','ready_for_harness':'接口检查通过','requirements_review':'需求变更待核对，原要求保留'}
     lines=['任务: '+result['task_id'], '会话: '+result['session_id'], '状态: '+labels.get(result['status'],result['status'])]
@@ -192,6 +229,8 @@ def main(argv):
                         previous=runs.list(args.session_id)
                         if not previous: raise ValueError('No Training runs for this session')
                         run_id=previous[-1]['run_id']
+                    if args.session_id and runs.get(run_id)['session_id']!=args.session_id:
+                        raise ValueError('Run belongs to another task session')
                     config=json.loads(Path(args.config).read_text(encoding='utf-8'))
                     if args.action=='collect': result=collect(run_id,config['remote'],runs)
                     elif args.action=='resume': result=resume(run_id,config['remote'],runs)
@@ -277,7 +316,7 @@ def main(argv):
             while True:
                 print(summary(result))
                 try:
-                    message=input('补充需求（/quit 退出，/show 摘要，/contract 接口，/accept 接受变更，/reject 拒绝）：\n> ').strip()
+                    message=input('描述需求或输入命令（/help 操作，/run 推进，/watch 观测，/quit 保存退出）：\n> ').strip()
                 except (EOFError, KeyboardInterrupt):
                     print('\n会话已保存。session_id: '+session)
                     break
@@ -292,6 +331,9 @@ def main(argv):
                     current=store.show(session)
                     if not current['versions']:print('当前没有需求草案。');continue
                     result=getattr(store,message[1:])(session,current['versions'][-1]['version'])
+                    continue
+                if interactive_action(message,session,args):
+                    result=store.show(session)
                     continue
                 if message=='/show': result=store.show(session)
                 elif message: result=clarify(session,message)

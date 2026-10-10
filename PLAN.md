@@ -495,3 +495,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Image verification accepts a progress callback, emits checking/decoding/completed stages, and CLI supports explicit train or val with a new sidecar outside the dataset. Partial/corrupt decoding cannot emit completion. Baseline frozen releases/controller sources remain unchanged. Full tests56713 previously213 passed; new full source suite is now running under active handle saved in tool history.
 
 - Updated full214-test suite passed in80.009s. Actual new training pixel verifier68308 reached12000/118287 images with explicit verification_complete=false and dataset_ready=false; no completed full-training integrity claim yet. Baseline watcher99400 and archive transfer37077 re-polled live in this turn; their unknown/in-progress state is retained without replacement jobs.
+
+## Same-session natural language and execution shell (2026-10-10)
+
+- Interactive Training now supports /prepare, /run, /watch, /status, /job, /logs, /pause, /resume and /help without copying a session ID. Commands reuse existing CLI actions with the same original session, authority stores, configuration, frozen campaign/research settings and explicit run ID. /status is labelled local saved state; /job uses authoritative SSH observation. Unknown slash commands are not sent to the LLM. Execution failures/local interruption preserve the interaction and journals; pausing does not cancel submitted GPU work.
+- Three new tests pass, including an actual nested interactive /prepare that writes a blocked plan from missing resources, retains the exact original contract and makes zero LLM calls; setting propagation and unknown-command/error handling are also checked. No GPU job or real API request submitted by these tests.
+
+- Full217-test suite passed in81.282s; subsequent explicit run/session binding guard passed all4 targeted shell tests. Supplying both session ID and a run belonging elsewhere now fails before reading execution configuration or making remote requests. Main user budget/acceptance remains unchanged; no paid API or GPU execution from testing.

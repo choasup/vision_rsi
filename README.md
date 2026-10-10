@@ -17,6 +17,8 @@ Windows 本地 CLI，通过 SSH 调度视觉研究任务。核心入口是 `trai
 .\vision-rsi.cmd training watch --session-id SESSION_ID --research-rounds 2 --watch-seconds 3600
 ```
 
+交互会话内可直接输入 `/prepare` 检查计划、`/run` 推进执行、`/watch` 持续观察，无需复制会话 ID。`/status` 查看本地控制记录，`/job` 实时核查远端作业，`/logs` 读取日志。`/pause` 暂停后续决策，`/resume` 恢复决策；已提交作业不会被取消。`/help` 列出命令。执行沿用启动参数（例如 `--research-rounds 2 --watch-seconds 3600`）及原会话预算；未知斜杠命令不发给 LLM。
+
 需求用自然语言描述目标、输入、输出和效果要求即可；Agent 整理接口，不要求手写 schema。GPU 预算不自动推定，8 卡运行 1 小时计为 8 GPU 小时。`watch` 退出保留记录，远端已提交作业继续受原时限约束。完整推理验收通过后才能使用 `test --task-id ...`；首次任务尚未验收时不能靠代号取得达标输出。下方按阶段列出详细操作和限制。
 
 Training的自然语言澄清会保留已定义的要求。模型提出目标、输入输出、验收指标/阈值/协议或预算变更时，只保存为草案，原定义继续保留；新计划、harness和advance会等待处理该草案。交互模式显示差异，使用`/accept`接受当前草案、`/reject`保留原要求，或继续自然语言修正。非交互模式明确指定草案版本，防止误接受旧版本：
