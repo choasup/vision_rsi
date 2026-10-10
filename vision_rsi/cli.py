@@ -3,6 +3,9 @@ import sys
 
 
 def main():
+    if len(sys.argv)>1 and sys.argv[1]=='evaluate-events':
+        from .event_eval import main as events_main
+        return events_main(sys.argv[2:])
     if len(sys.argv)>1 and sys.argv[1]=='llm-usage':
         from .llm_usage import main as usage_main
         usage_main(sys.argv[2:])

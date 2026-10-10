@@ -732,3 +732,16 @@ COCO checkpoint恢复现在核对epoch/cursor/step与冻结数据集、Distribut
 显式远端CPU checkpoint开发探针：`python tests/live_checkpoint_preflight_probe.py --live-remote`。它创建独立且明确标记的1图train/1图val fixture，部署冻结代码，对真实Torch序列化的合成checkpoint验证错误进度拒绝/正确进度通过；CUDA禁用，不启动训练。合成model/optimizer/CUDA RNG字段不代表有效检测器或数值恢复，原失败checkpoint文件保留用于核查。
 
 checkpoint CPU预检进一步检查每rank CPU/CUDA RNG字段必须是非空的一维CPU uint8张量，并实际尝试恢复CPU RNG，随后在finally中还原检查进程原状态。CUDA RNG仅检查张量结构，不在预检里初始化GPU或声称它一定能被CUDA恢复。真实GPU恢复时仍执行CUDA自身状态校验。
+# 视频事件评测（独立工具）
+
+在项目目录运行：
+
+```powershell
+.\vision-rsi.cmd evaluate-events --ground-truth examples/events-ground-truth.json --predictions examples/events-predictions.json --iou-threshold 0.5 --threshold 0.9 --output runs/events-demo.json
+```
+
+示例是合成事件，预期 F1=1，不代表模型效果。输入 JSON 包含 `labels` 词表及 `samples`；每个样本有唯一 `sample_id` 和 `events`，每个事件有 `label`、`start_seconds`、`end_seconds`。两个文件的词表（含顺序）和样本集合必须一致；无预测时保留样本并使用空 events。
+
+固定协议 `vision-rsi/event_micro_f1/v1`：同一样本、同类别、时间 IoU 达标的事件进行最大数量一对一匹配，汇总 TP/FP/FN 后计算 micro-F1（0..1）。不使用置信度或自动过滤；重复预测计入 FP。至少有一个真实标注事件，每份文件最多 10000 样本，每样本最多 1000 事件，超限拒绝而不截断。
+
+输出记录原始文件 SHA256 和 `metric_threshold_met`。这是独立协议的评分工具，尚未接入视频训练适配器或能力注册；不验证标注来源、数据划分或真实模型质量。

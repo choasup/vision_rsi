@@ -301,3 +301,8 @@
 - 28项COCO/CPU预检/训练账本相关测试通过（.974秒），含模拟CPU状态不兼容时仍恢复调用方状态及非张量前置拒绝。
 - 冻结新代码真实远端CPU探针通过：错误进度拒绝、float类型CPU RNG拒绝、有效CPU状态/正确进度通过。原失败checkpoint和invalid-rng-checkpoint另存，证据runs/resource-bootstrap/cpu-progress-probe-a4920bcc543c4e20bc748aa1474e92ed/；冻结bundle1ef7f7329c20755eacec447c1ba0b7082f754b859276006f79d9cb8ce41a3d41。
 - CUDA禁用，无模型训练或GPU计算。CUDA字段仅结构检查，合成model/optimizer仍不是有效检测器状态；未证明CUDA RNG兼容、完整8卡数值恢复或COCO质量。安装包尚未重建，GPU授权及完整上线门槛仍未完成。
+## 视频事件独立评测工具（2026-10-10）
+
+- 新增 evaluate-events，固定 event_micro_f1/v1 协议，类别与时间 IoU 最大数量一对一匹配；精确样本覆盖、输入校验、原始文件哈希及独立阈值结果。
+- 5项测试通过，覆盖贪心匹配陷阱、重复预测、无预测、非法输入、覆盖不完整、边界值及真实子进程 CLI。Windows vision-rsi.cmd 示例实际执行成功，合成事件 F1=1；证据 runs/events-demo.json。
+- 仅独立评分工具，没有视频训练/推理模型接入、能力注册或数据来源证明；不把合成指标作为模型质量。安装包未重建，完整上线门槛仍未完成。

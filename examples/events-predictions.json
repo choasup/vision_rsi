@@ -1,0 +1,1 @@
+{"labels":["person_enters"],"samples":[{"sample_id":"clip-001","events":[{"label":"person_enters","start_seconds":1.5,"end_seconds":3.0}]}]}
