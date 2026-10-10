@@ -29,3 +29,8 @@ class DoctorTests(unittest.TestCase):
             for update in ({'base_url':'http://example.invalid'},{'usage_call_limit':True},{'usage_call_limit':2},{'usage_ledger':'relative.sqlite3'}):
                 report=doctor({'llm':dict(base,**update)})
                 self.assertFalse(report['llm_configuration_valid'])
+
+    def test_optional_controller_cap_is_validated_locally(self):
+        self.assertEqual(doctor({'controller':{'tool_attempt_limit':5}})['controller_tool_attempt_limit'],5)
+        report=doctor({'controller':{'tool_attempt_limit':True}})
+        self.assertFalse(report['controller_configuration_valid']);self.assertFalse(report['configuration_ready'])

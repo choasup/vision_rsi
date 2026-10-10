@@ -104,11 +104,15 @@ def execution_summary(result):
             'waiting':'已提交；等待远端作业','needs_research':'已分析结果；需要下一轮研究',
             'awaiting_serving_validation':'训练证据通过；需要推理后端验收','action_uncertain':'动作结果不确定；保留原作业与预留',
             'action_not_dispatched':'研究请求未发送；已暂停，解决准入条件后显式恢复','retry_authorized':'已允许重新提交未发送的研究请求',
-            'policy_stopped':'策略本次未选择动作','processing_result':'正在处理训练结果','ready':'训练计划已准备','new':'尚未推进'}
+            'controller_budget_exhausted':'本Campaign工具尝试预算已耗尽；保留作业与未完成意图','policy_stopped':'策略本次未选择动作','processing_result':'正在处理训练结果','ready':'训练计划已准备','new':'尚未推进'}
     lines=['状态: '+labels.get(result.get('status'),str(result.get('status')))]
     for key,label in [('task_id','任务'),('session_id','会话'),('run_id','运行'),('version','能力版本'),('plan_path','计划文件')]:
         if result.get(key): lines.append(label+': '+str(result[key]))
     if result.get('actual_gpu_hours') is not None: lines.append('实际 GPU 小时: '+str(result['actual_gpu_hours']))
+    budget=result.get('controller_tool_budget')
+    if isinstance(budget,dict):
+        if budget.get('valid') is False:lines.append('控制预算记录无效: '+budget['error'])
+        else:lines.append('本Campaign工具尝试: '+str(budget['admitted_attempts'])+' / '+str(budget['limit'])+'；剩余 '+str(budget['remaining_attempts']))
     blockers=result.get('blockers') or []
     immediate=[x for x in blockers if not x.startswith('待澄清:')]
     if immediate:

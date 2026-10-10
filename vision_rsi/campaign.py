@@ -53,7 +53,7 @@ def lease(path,owner='Training controller'):
 
 
 def available(state,memory=False):
-    if state.get('paused') or state.get('policy_stop'):return []
+    if state.get('paused') or state.get('policy_stop') or state.get('controller_budget_exhausted'):return []
     if not state.get('plan'):kinds=['prepare']
     elif state['plan']['status']=='blocked':return []
     elif not state.get('run_id'):kinds=['submit']
@@ -163,6 +163,9 @@ def campaign_binding(session,config,run_store,policy,research_rounds):
     if research_rounds:
         for key in ('usage_ledger','usage_call_limit','thinking'):
             if key in config.get('llm',{}):binding['research_model'][key]=config['llm'][key]
+    from .controller_budget import configured_limit
+    limit=configured_limit(config)
+    if limit is not None:binding['controller_tool_attempt_limit']=limit
     return binding
 
 
@@ -202,6 +205,11 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
         else:
             state={'campaign_id':campaign_id,'binding':binding,'session_id':session['session_id'],'task_id':session['task_id'],
                    'status':'new','history':[],'intent':None,'git_revision':revision(),'policy_adopted':False,'research_rounds':research_rounds}
+        from .controller_budget import summary as control_budget
+        try:budget_snapshot=control_budget(state)
+        except ValueError as error:
+            if control not in ('show','pause'):raise
+            budget_snapshot={'valid':False,'error':str(error)}
         if control not in ('show','pause'):
             for row in state['history']:control_versions(row)
             if state.get('intent'):control_versions(state['intent'])
@@ -214,11 +222,15 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                 intent['status']='reserved'
                 state['status']='retry_authorized'
             if control!='show':state['paused']=control=='pause';atomic_json(path,state)
-            return dict(state,state_path=str(path.resolve()))
+            return dict(state,state_path=str(path.resolve()),controller_tool_budget=budget_snapshot)
         runs=TrainingRuns(run_store)
         try:
             for index in range(steps):
                 if state.get('paused'):break
+                budget_snapshot=control_budget(state)
+                if budget_snapshot is not None and budget_snapshot['remaining_attempts']==0:
+                    state.update(status='controller_budget_exhausted',controller_budget_exhausted=True)
+                    atomic_json(path,state);break
                 intent=state.get('intent')
                 if intent is None:
                     actions=available(state,memory=True)
@@ -262,4 +274,4 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                 state['intent']=None;state.pop('last_error',None);atomic_json(path,state)
                 if state['status'] in ('waiting','blocked'):break
         finally:runs.close()
-    return dict(state,state_path=str(path.resolve()))
+    return dict(state,state_path=str(path.resolve()),controller_tool_budget=control_budget(state))

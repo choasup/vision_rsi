@@ -82,3 +82,11 @@ class WatchTests(unittest.TestCase):
     def test_invalid_bounds_rejected(self):
         for kwargs in ({'duration':0},{'duration':float('nan')},{'poll_seconds':1},{'duration':True}):
             with self.subTest(kwargs=kwargs),self.assertRaises(ValueError):watch(lambda:{},lambda:{},**kwargs)
+
+    @patch('vision_rsi.watch.advance')
+    def test_cumulative_controller_exhaustion_stops_without_cancelling_job(self,advance):
+        advance.return_value=dict(self.waiting,status='controller_budget_exhausted',controller_budget_exhausted=True)
+        result=self.watch()
+        self.assertEqual(result['watch']['stop_reason'],'controller_budget_exhausted')
+        self.assertEqual(result['run_id'],'original-job');self.assertFalse(result['watch']['remote_job_cancelled'])
+        advance.assert_called_once()

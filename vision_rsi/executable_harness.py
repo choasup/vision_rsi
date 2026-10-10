@@ -141,6 +141,9 @@ def build_executable(session,interface,config,storage,root):
     safe={'llm':{key:config.get('llm',{})[key] for key in ('model','base_url','api_key_env','thinking','usage_ledger','usage_call_limit') if key in config.get('llm',{})},
           'remote':{key:config.get('remote',{})[key] for key in ('ssh_host','ssh_port','workspace','python','coco_root') if key in config.get('remote',{})},
           'training':config.get('training',{})}
+    from .controller_budget import configured_limit
+    configured_limit(config)
+    if 'controller' in config:safe['controller']=config['controller']
     allowed={'detector','epochs','batch_size_per_gpu','seed','checkpoint_steps','world_size','min_size','max_size','learning_rate','weight_decay','fixture','coco_root','weights','weights_sha256','train_annotations_sha256','val_annotations_sha256','acceptance_threshold','timeout_seconds'}
     if not isinstance(safe['training'],dict) or set(safe['training'])-allowed:raise ValueError('Unsupported training settings in harness')
     latest=session['versions'][-1];base=Path(interface['directory'])

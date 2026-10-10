@@ -91,6 +91,11 @@ def doctor(config):
         workspace=remote.get('workspace')
         remote_valid=isinstance(workspace,str) and PurePosixPath(workspace).is_absolute() and not any(c in workspace for c in ('\x00','\n','\r'))
     except (ValueError,TypeError):pass
+    controller_valid=True;controller_limit=None
+    try:
+        from .controller_budget import configured_limit
+        controller_limit=configured_limit(config)
+    except ValueError:controller_valid=False
     ssh_available=bool(__import__('shutil').which('ssh'))
     return {'mode':config.get('mode'),'ssh_available':ssh_available,
             'llm_model_configured':isinstance(llm.get('model'),str) and bool(llm['model'].strip()),
@@ -99,7 +104,8 @@ def doctor(config):
             'remote_configured':remote_valid,'real_training_implemented':True,
             'training_scope':'Fixed COCO single-image baseline and bounded recipe experiments; general harness/model adaptation is incomplete.',
             'checks_performed':['local_configuration_only'],'read_only':True,
-            'configuration_ready':bool(ssh_available and remote_valid and llm_valid),
+            'configuration_ready':bool(ssh_available and remote_valid and llm_valid and controller_valid),
+            'controller_configuration_valid':controller_valid,'controller_tool_attempt_limit':controller_limit,
             'real_api_tested':False,'remote_connectivity_tested':False,'training_performed':False,
             'task_budget_checked':False,'task_effect_verified':False,'release_verified':False,
             'next_steps':['training show --session-id SESSION_ID: inspect task contract and unresolved requirements',

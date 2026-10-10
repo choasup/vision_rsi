@@ -650,3 +650,18 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 
 
 视频计划编译发生在新任务包build时，既有冻结任务包继续使用自己的协议与源代码，不会被本地升级悄悄替换。时间网格由 [FFmpeg select 的源时间变量](https://www.ffmpeg.org/ffmpeg-filters.html#select_002c-aselect) 驱动；接收端独立用原始PTS和时间基准的有理数运算核对时序和网格区间，不把格式化秒数当成精确时间。
+
+
+### 可选的累计控制工具尝试上限
+
+在本地配置的顶层增加：
+
+```json
+{"controller": {"tool_attempt_limit": 1000}}
+```
+
+这是每个campaign跨`advance/watch`及进程重启的累计上限，取值为整数0..100000；0禁止开始任何控制工具尝试。配置缺省时不启用。它不应写进任务`budget`，也不授权GPU训练。上限绑定到campaign身份；对选定campaign删除或改变上限会拒绝执行，新campaign有独立计数，不能将它声称为全会话或全项目预算。
+
+每次工具调用前先持久化`started`，再执行；完成、不确定、中断和已确定未发送的尝试都占用一次，恢复重试另占一次。完整历史及待执行意图用于累计，不依赖压缩后的策略视图。达到上限后返回`controller_budget_exhausted`，保留运行ID、原始意图及记录，不取消已经运行的远端作业；`agent-resume`不重置计数。可用`training agent-status --campaign-id ...`查看`controller_tool_budget`，远端作业仍可通过独立`training status/logs/cancel`人工处理。
+
+冻结任务包保留该配置，损坏或缺失的计数证据不会自动补零。该上限只限制控制工具尝试数，不计算策略决策调用、Token、GPU小时、墙钟时长或实际费用；这些统一资源约束仍待完善。

@@ -97,3 +97,11 @@ class ExecutableHarnessTests(unittest.TestCase):
         extra=self.folder/'vision_rsi/__pycache__';extra.mkdir();(extra/'runner.fake.pyc').write_bytes(b'unverified')
         result=self.run_harness('check');self.assertNotEqual(result.returncode,0);self.assertIn('Unexpected runtime',result.stderr)
         shutil.rmtree(extra)
+
+    def test_export_keeps_optional_controller_attempt_cap(self):
+        config=dict(self.config,controller={'tool_attempt_limit':5})
+        artifact=build_executable(self.session,self.interface,config,self.storage,self.root/'artifacts')
+        exported=json.loads((Path(artifact['directory'])/'config.json').read_text())
+        self.assertEqual(exported['controller'],{'tool_attempt_limit':5})
+        with self.assertRaises(ValueError):
+            build_executable(self.session,self.interface,dict(config,controller={'tool_attempt_limit':True}),self.storage,self.root/'artifacts')

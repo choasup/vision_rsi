@@ -43,7 +43,7 @@ def watch(session_provider,config_provider,root='runs/campaigns',run_store='runs
                            'elapsed_seconds':round(time.monotonic()-started,2),'observation_retry':consecutive_errors>0})
             if state.get('paused'):reason='paused';break
             if state.get('run_status')=='lost':reason='remote_worker_lost_reservation_retained';break
-            if state['status'] in ('blocked','budget_exhausted','policy_stopped'):reason=state['status'];break
+            if state['status'] in ('blocked','budget_exhausted','controller_budget_exhausted','policy_stopped'):reason=state['status'];break
             if not state.get('intent') and not available(state):reason='no_pending_actions';break
             remaining=deadline-time.monotonic()
             if remaining<=0:break

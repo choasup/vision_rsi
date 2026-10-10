@@ -12,6 +12,8 @@ from .strategy_context import history_context,control_versions
 
 
 def verify_trace(state):
+    from .controller_budget import summary as control_budget
+    budget=control_budget(state)
     for row in state['history']:control_versions(row)
     if state.get('policy_stop'):control_versions(state['policy_stop'])
     if state.get('intent'):control_versions(state['intent'])
@@ -83,8 +85,10 @@ def verify_trace(state):
     elif state.get('status')=='policy_stopped':raise ValueError('Terminal policy stop evidence missing')
     for key in ('plan','run_id','run_status','receipt_collected','analysis','proposals_attempted','research_stopped'):
         if state.get(key)!=replay.get(key):raise ValueError('Campaign projection differs from decision replay: '+key)
-    if not state.get('intent') and not stop and state.get('status')!=replay.get('status'):
+    exhausted=state.get('controller_budget_exhausted') is True and budget is not None and budget['remaining_attempts']==0
+    if exhausted and state.get('status')!='controller_budget_exhausted':raise ValueError('Controller budget terminal status differs')
+    if not state.get('intent') and not stop and not exhausted and state.get('status')!=replay.get('status'):
         raise ValueError('Campaign status differs from decision replay')
     if not replay['history'] and not stop:raise ValueError('No completed decisions to verify')
     return {'verified':True,'decisions_verified':len(replay['history'])+bool(stop),
-            'candidate_id':record['candidate_id'] if record else None}
+            'candidate_id':record['candidate_id'] if record else None,'controller_tool_budget':budget}
