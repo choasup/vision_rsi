@@ -47,6 +47,9 @@ def check(registry,session,version,dataset_path,remote,max_latency_seconds,*,cac
     for key,filename in components.items():
         if baseline['binding'].get(key)!=hashlib.sha256(Path(__file__).with_name(filename).read_bytes()).hexdigest():
             raise ValueError('Accepted serving implementation changed or identity missing: '+key)
+    # A self-consistent saved report is not proof that its metric was computed
+    # from the execution outputs. Reconstruct those inputs before any dispatch.
+    verify_metric(bundle,data,baseline,report,frozen)
     runtime_hash=baseline.get('runtime_identity_sha256')
     if runtime_hash is not None:
         from .candidate_runtime import validate_runtime_identity
@@ -111,3 +114,29 @@ def check(registry,session,version,dataset_path,remote,max_latency_seconds,*,cac
             if cached_only:raise ValueError('Completed serving report missing')
             atomic_json(result_path,result)
         return result
+
+
+def verify_metric(bundle,data,execution,report,frozen):
+    """Recompute frozen holdout metrics locally; never execute the candidate."""
+    import base64
+    import tempfile
+    from .event_eval import evaluate
+    if frozen.get('evaluator_sha256')!=hashlib.sha256(Path(__file__).with_name('event_eval.py').read_bytes()).hexdigest():
+        raise ValueError('Acceptance evaluator implementation changed')
+    samples=data.get('samples')
+    outputs=execution.get('outputs')
+    if not isinstance(samples,list) or not isinstance(outputs,list) or len(samples)!=len(outputs):
+        raise ValueError('Acceptance execution output coverage differs')
+    truth=data['ground_truth']
+    predictions={'labels':truth['labels'],'samples':[
+        {'sample_id':sample['sample_id'],'events':output['events']}
+        for sample,output in zip(samples,outputs)]}
+    with tempfile.TemporaryDirectory(prefix='vision-rsi-metric-review-') as directory:
+        root=Path(directory)
+        (root/'contract.json').write_bytes(base64.b64decode(bundle['contract_base64'],validate=True))
+        atomic_json(root/'truth.json',truth)
+        atomic_json(root/'predictions.json',predictions)
+        actual=evaluate(root/'truth.json',root/'predictions.json',contract_path=root/'contract.json')
+    if actual!=report.get('metric_report') or not actual['metric_threshold_met']:
+        raise ValueError('Acceptance metric differs from independently recomputed execution outputs')
+    return actual

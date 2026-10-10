@@ -124,3 +124,37 @@ class CandidateServingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'metric must be met'):
             check(registry,self.session,delivery['version'],self.dataset,{},30)
         self.assertEqual(remote.call_count,2)
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_rehashed_false_metric_refused_before_serving_dispatch(self,remote):
+        from vision_rsi.runner import atomic_json,digest
+        registry,delivery=self.accepted(remote)
+        path=registry.root/self.session['task_id']/'candidate-acceptance'/'acceptance.json'
+        report=json.loads(path.read_text())
+        report['metric_report']['tp']+=1
+        report['report_sha256']=digest({k:v for k,v in report.items() if k!='report_sha256'})
+        atomic_json(path,report)
+        with registry.db:
+            registry.db.execute('UPDATE candidate_acceptance_slots SET report_hash=? WHERE task_id=?',
+                                (report['report_sha256'],self.session['task_id']))
+        with self.assertRaisesRegex(ValueError,'independently recomputed'):
+            check(registry,self.session,delivery['version'],self.dataset,{},30)
+        self.assertEqual(remote.call_count,2)
+        self.assertFalse((registry.root/self.session['task_id']/'candidate-serving').exists())
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_cached_serving_recomputes_metric_without_remote_calls(self,remote):
+        from vision_rsi.runner import atomic_json,digest
+        registry,delivery=self.accepted(remote)
+        check(registry,self.session,delivery['version'],self.dataset,{},30)
+        path=registry.root/self.session['task_id']/'candidate-acceptance'/'acceptance.json'
+        report=json.loads(path.read_text())
+        report['metric_report']['threshold']=0
+        report['report_sha256']=digest({k:v for k,v in report.items() if k!='report_sha256'})
+        atomic_json(path,report)
+        with registry.db:
+            registry.db.execute('UPDATE candidate_acceptance_slots SET report_hash=? WHERE task_id=?',
+                                (report['report_sha256'],self.session['task_id']))
+        with self.assertRaisesRegex(ValueError,'independently recomputed'):
+            check(registry,self.session,delivery['version'],self.dataset,{},30,cached_only=True)
+        self.assertEqual(remote.call_count,4)
