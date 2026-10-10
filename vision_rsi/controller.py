@@ -249,8 +249,10 @@ def parse_plan(content, known):
     if plan['tool']=='stage_candidate':
         from .candidates import validate_proposal
         args=plan.get('arguments')
-        if not isinstance(args,dict) or set(args)!={'base_revision','proposal'} or not isinstance(args['base_revision'],str) or not re.fullmatch('[0-9a-f]{40,64}',args['base_revision']):
+        if not isinstance(args,dict) or set(args) not in ({'base_revision','proposal'},{'base_revision','proposal','parent_candidate_id'}) or not isinstance(args['base_revision'],str) or not re.fullmatch('[0-9a-f]{40,64}',args['base_revision']):
             raise ValueError('Candidate requires base_revision and proposal')
+        if 'parent_candidate_id' in args and (not isinstance(args['parent_candidate_id'],str) or not re.fullmatch('[0-9a-f]{64}',args['parent_candidate_id'])):
+            raise ValueError('Invalid parent candidate identity')
         validate_proposal(args['proposal'])
         if len(json.dumps(args,ensure_ascii=False))>30000:raise ValueError('Research candidate proposal exceeds 30000 characters')
         result['arguments']=args
@@ -309,8 +311,18 @@ def execute(tool, config, repository,arguments=None):
             raise ValueError('Isolated candidate staging is not enabled')
         store=Candidates(context['store'],repository)
         try:
-            if store.base()!=arguments['base_revision']:raise ValueError('Observed repository revision changed')
-            record=store.create(arguments['proposal'],context['binding'],base=arguments['base_revision'])
+            parent_id=arguments.get('parent_candidate_id')
+            if parent_id:
+                if not isinstance(parent_id,str) or not re.fullmatch('[0-9a-f]{64}',parent_id):raise ValueError('Invalid parent candidate identity')
+                parent=store.verify(json.loads((store.root/parent_id/'candidate.json').read_text(encoding='utf-8')))
+                if parent['git_revision']!=arguments['base_revision']:raise ValueError('Parent candidate revision changed')
+                child_store=Candidates(store.root,parent['checkout'])
+                try:
+                    record=child_store.create(arguments['proposal'],dict(context['binding'],parent_candidate_id=parent_id,lineage_mode='git_parent'),base=arguments['base_revision'])
+                finally:child_store.close()
+            else:
+                if store.base()!=arguments['base_revision']:raise ValueError('Observed repository revision changed')
+                record=store.create(arguments['proposal'],context['binding'],base=arguments['base_revision'])
         finally:store.close()
         return {'candidate_id':record['candidate_id'],'git_revision':record['git_revision'],
                 'base_revision':record['identity']['base_revision'],'source_edits':record['identity']['proposal']['edits'],
@@ -483,6 +495,8 @@ def research_step(config, directory, steps=1, repository='.'):
                         prompt['schema']['tool_argument_shapes']['read_training_run']={'run_id':'exact recent_run_snapshots run_id from task_readiness','expected_record_sha256':'matching record_sha256 from that same snapshot'}
                         prompt['schema']['arguments_rule']+=' read_training_run requires arguments exactly run_id,expected_record_sha256; never supply a path or session ID. An updated record has a new hash and may be inspected again; do not repeat the same run/hash.'
                         prompt['instruction']+=' A successful read_training_run result is also eligible synthesis evidence. Locally re-reviewed receipts are not independent authenticity, serving availability or RSI evidence.'
+                    if 'stage_candidate' in available:
+                        prompt['schema']['arguments_rule']+=' stage_candidate may additionally include parent_candidate_id to iterate a previously staged candidate. Cite its staged result, set base_revision to that candidate git_revision, and use its source_hashes for edited files. Omit parent_candidate_id to start from the inspected main repository.'
                     prompt['response_contract']={
                         'required_keys':['tool','summary','question','expected_evidence','refs'],
                         'optional_keys':['arguments'],
@@ -547,6 +561,8 @@ def research_step(config, directory, steps=1, repository='.'):
                         raise ValueError('Tool already completed or not yet eligible')
                     if plan['tool']=='synthesize':validate_synthesis_evidence(plan['arguments'],ledger.events())
                     if plan['tool'] in ('check_candidate','check_contract','evaluate_contract'):validate_check_binding(plan['arguments'],events,plan['refs'])
+                    if plan['tool']=='stage_candidate' and plan['arguments'].get('parent_candidate_id'):
+                        validate_check_binding({'candidate_id':plan['arguments']['parent_candidate_id']},events,plan['refs'])
                     if plan['tool']=='stage_candidate' and not any(e['kind']=='result' and e['payload'].get('status')=='completed'
                             and e['payload'].get('observation',{}).get('git_revision')==plan['arguments']['base_revision']
                             for e in events if e['key'] in plan['refs']):
@@ -565,6 +581,8 @@ def research_step(config, directory, steps=1, repository='.'):
                 dashboard(ledger)
             try:
                 execution_config=config
+                if pending['payload']['tool']=='stage_candidate' and pending['payload']['arguments'].get('parent_candidate_id'):
+                    validate_check_binding({'candidate_id':pending['payload']['arguments']['parent_candidate_id']},events,pending['payload']['refs'])
                 if pending['payload']['tool'] in ('check_candidate','check_contract','evaluate_contract'):validate_check_binding(pending['payload']['arguments'],events,pending['payload']['refs'])
                 if pending['payload']['tool'] in ('stage_candidate','check_candidate','check_contract','evaluate_contract'):
                     execution_config=dict(config,_research_candidate_context={

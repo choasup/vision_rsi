@@ -87,7 +87,7 @@ class Candidates:
             return record
         checkout=folder/'checkout';folder.mkdir(parents=True,exist_ok=True)
         if checkout.exists():raise ValueError('Incomplete candidate checkout retained for inspection; no overwrite')
-        subprocess.run(['git','clone','--no-local','--no-checkout','--',str(self.repository),str(checkout)],check=True,capture_output=True,text=True)
+        subprocess.run(['git','clone','-c','core.autocrlf=false','--no-local','--no-checkout','--',str(self.repository),str(checkout)],check=True,capture_output=True,text=True)
         git(checkout,'checkout','-b','codex/candidate-'+candidate_id[:16],base)
         for edit in proposal['edits']:
             target=checkout/edit['path']
@@ -198,6 +198,15 @@ class Candidates:
         folder=self.root/candidate_id
         record=self.verify(json.loads((folder/'candidate.json').read_text(encoding='utf-8')))
         checkout=Path(record['checkout']);names=set(record['source_hashes'])|{'vision_rsi/research.py'}
+        ancestor=record;seen={candidate_id}
+        while ancestor['identity']['context'].get('lineage_mode')=='git_parent':
+            parent_id=ancestor['identity']['context'].get('parent_candidate_id')
+            if not isinstance(parent_id,str) or not re.fullmatch('[0-9a-f]{64}',parent_id) or parent_id in seen or len(seen)>=32:
+                raise ValueError('Invalid or excessive candidate lineage')
+            seen.add(parent_id)
+            parent=self.verify(json.loads((self.root/parent_id/'candidate.json').read_text(encoding='utf-8')))
+            if ancestor['identity']['base_revision']!=parent['git_revision']:raise ValueError('Candidate lineage revision mismatch')
+            names.update(parent['source_hashes']);ancestor=parent
         files={name:(checkout/name).read_bytes() for name in sorted(names)}
         request={'files':{name:base64.b64encode(raw).decode() for name,raw in files.items()},
                  'source_hashes':{name:hashlib.sha256(raw).hexdigest() for name,raw in files.items()},

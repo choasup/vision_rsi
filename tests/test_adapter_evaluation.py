@@ -11,6 +11,34 @@ from test_event_eval import event
 
 
 class AdapterEvaluationTests(unittest.TestCase):
+    def test_child_candidate_inherits_parent_and_keeps_main_unchanged(self):
+        from vision_rsi.controller import execute
+        parent=json.loads((self.store.root/self.candidate/'candidate.json').read_text())
+        name='vision_rsi/adapter_fixture.py'
+        proposal={'hypothesis':'repair failed metric','expected_improvement':'testable','evaluation_plan':'fixed validation',
+                  'edits':[{'path':name,'base_sha256':parent['source_hashes'][name],
+                            'content':'def predict(sample):\n    return {"events": [{"label":"action","start_seconds":0,"end_seconds":1}]}\n'}]}
+        args={'base_revision':parent['git_revision'],'parent_candidate_id':self.candidate,'proposal':proposal}
+        config={'research':{'allow_candidate_writes':True},'_research_candidate_context':{
+            'store':str(self.store.root),'binding':{'action_key':'repair','objective_sha256':'a'*64}}}
+        main_before=git(self.store.repository,'rev-parse','HEAD')
+        result=execute('stage_candidate',config,self.store.repository,args)
+        child=json.loads((self.store.root/result['candidate_id']/'candidate.json').read_text())
+        self.assertEqual(child['identity']['context']['parent_candidate_id'],self.candidate)
+        self.assertEqual(git(child['checkout'],'rev-parse','HEAD^'),parent['git_revision'])
+        self.assertEqual(git(self.store.repository,'rev-parse','HEAD'),main_before)
+        self.assertEqual(execute('stage_candidate',config,self.store.repository,args)['candidate_id'],result['candidate_id'])
+        with self.assertRaisesRegex(ValueError,'revision changed'):
+            execute('stage_candidate',config,self.store.repository,dict(args,base_revision=main_before))
+        extra=dict(proposal,edits=[{'path':'vision_rsi/harness_helper.py','base_sha256':None,'content':'VALUE = 1\n'}])
+        next_args={'base_revision':child['git_revision'],'parent_candidate_id':child['candidate_id'],'proposal':extra}
+        grandchild=execute('stage_candidate',config,self.store.repository,next_args)
+        with patch('vision_rsi.remote.check_candidate') as remote:
+            remote.side_effect=lambda endpoint,request:{'status':'executed_unverified','source_hashes':request['source_hashes'],'observation':{}}
+            self.store.check(grandchild['candidate_id'],{},'vision_rsi.adapter_fixture','predict',[{'sample':{}}])
+            self.assertIn(name,remote.call_args.args[1]['files'])
+            self.assertIn('vision_rsi/harness_helper.py',remote.call_args.args[1]['files'])
+
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     @patch('vision_rsi.remote.check_candidate')
     def test_detection_contract_does_not_offer_event_metric_tool(self,remote,client):
