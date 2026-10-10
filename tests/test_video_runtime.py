@@ -83,3 +83,20 @@ class VideoRuntimeTests(unittest.TestCase):
             self.assertEqual(compile_plan(dict(base,sampling=sampling))['status'],'blocked')
         for change in ({'audio':'保留音频'},{'temporal':'打乱顺序'},{'decoder':dict(self.plan,fps=2)}):
             self.assertEqual(compile_plan(dict(base,**change))['status'],'blocked')
+
+    def test_time_grid_accepts_source_frames_without_minimum_interval_drift(self):
+        plan=dict(self.plan,protocol='source_time_grid_v2',fps=3,max_frames=8)
+        raw=b'P6\n1 1\n255\n'+b'\x01\x02\x03'
+        frame={'width':1,'height':1,'time_base':{'numerator':1,'denominator':4},'format':'ppm_rgb24','sha256':hashlib.sha256(raw).hexdigest(),'content_base64':base64.b64encode(raw).decode()}
+        frames=[dict(frame,index=i,pts=pts,seconds=pts/4) for i,pts in enumerate((0,2,3,4))]
+        request={'plan':plan,'sha256':'1'*64}
+        result={'status':'video_decoded','input_sha256':'1'*64,'plan':plan,'frames':frames,'decoded_bytes':len(raw)*4,'duration_seconds':1.5,'inference_performed':False,'audio_processed':False}
+        self.assertTrue(validate_result(request,result))
+        changed=copy.deepcopy(result);changed['frames'][1].update(pts=1,seconds=.25)
+        with self.assertRaisesRegex(ValueError,'slot repeated'):validate_result(request,changed)
+        changed=copy.deepcopy(result);changed['frames'][2].update(pts=2,seconds=.5)
+        with self.assertRaisesRegex(ValueError,'order'):validate_result(request,changed)
+        legacy=dict(plan,protocol='source_first_min_interval_v1')
+        with self.assertRaisesRegex(ValueError,'interval'):validate_result(dict(request,plan=legacy),dict(result,plan=legacy))
+        compiled=compile_plan({'sampling':'3 fps','temporal':'ordered','audio':'ignore'})
+        self.assertEqual(compiled['plan']['protocol'],'source_time_grid_v2')

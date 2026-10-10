@@ -18,7 +18,7 @@ import tempfile
 
 def validate_plan(plan):
     fields={'protocol','fps','max_frames','max_width','max_height','max_duration_seconds','audio'}
-    if not isinstance(plan,dict) or set(plan)!=fields or plan['protocol']!='source_first_min_interval_v1' or plan['audio']!='ignore':
+    if not isinstance(plan,dict) or set(plan)!=fields or plan['protocol'] not in ('source_first_min_interval_v1','source_time_grid_v2') or plan['audio']!='ignore':
         raise ValueError('Explicit source-frame sampling plan with audio=ignore required')
     for name,upper in [('fps',30),('max_frames',128),('max_width',4096),('max_height',4096),('max_duration_seconds',300)]:
         value=plan[name]
@@ -39,13 +39,15 @@ def compile_plan(processing):
     if not match:match=re.fullmatch(r'每秒\s*([0-9]+(?:\.[0-9]+)?)\s*帧',sampling.strip())
     if not match or processing.get('audio')!='ignore' or processing.get('temporal') not in ('ordered','preserve timestamps and order','保留原始时间戳和帧顺序','保留时间戳和顺序'):
         return {'status':'blocked','reason':'Decoder requires explicit N fps / 每秒N帧, ordered source timestamps and audio=ignore'}
-    plan=processing.get('decoder') or {'protocol':'source_first_min_interval_v1','fps':float(match[1]),
+    plan=processing.get('decoder') or {'protocol':'source_time_grid_v2','fps':float(match[1]),
           'max_frames':64,'max_width':640,'max_height':480,'max_duration_seconds':30,'audio':'ignore'}
     try:
         plan=validate_plan(plan)
         if plan['fps']!=float(match[1]):raise ValueError('Decoder fps differs from task sampling requirement')
     except ValueError as error:return {'status':'blocked','reason':str(error)}
-    return {'status':'ready','plan':plan,'sampling_semantics':'First source frame, then first source frame at least 1/fps seconds after previous selected frame; original PTS retained.',
+    semantics=('First source frame in each occupied time-grid interval [k/fps,(k+1)/fps), anchored to first source timestamp; empty intervals skipped, original PTS retained, no duplicates.'
+               if plan['protocol']=='source_time_grid_v2' else 'First source frame, then first source frame at least 1/fps seconds after previous selected frame; original PTS retained.')
+    return {'status':'ready','plan':plan,'sampling_semantics':semantics,
             'limits_semantics':'Reject exceeded limits; never truncate or resize implicitly.'}
 
 
@@ -72,7 +74,13 @@ def validate_result(request,result):
         stamp=Fraction(pts*base['numerator'],base['denominator'])
         if first_stamp is None:first_stamp=stamp
         if frame.get('seconds')!=float(stamp) or isinstance(frame.get('seconds'),bool):raise ValueError('Returned source timestamp differs')
-        if previous is not None and (base!=time_base or float(stamp-previous)+1e-12<1/plan['fps']):raise ValueError('Returned video sampling interval differs')
+        if previous is not None:
+            if base!=time_base or stamp<=previous:raise ValueError('Returned video timestamp order differs')
+            if plan['protocol']=='source_first_min_interval_v1':
+                if float(stamp-previous)+1e-12<1/plan['fps']:raise ValueError('Returned video sampling interval differs')
+            else:
+                rate=Fraction(str(plan['fps']))
+                if (stamp-first_stamp)*rate//1<=(previous-first_stamp)*rate//1:raise ValueError('Returned video time-grid slot repeated')
         previous=stamp;time_base=base
         encoded=frame.get('content_base64');header=f'P6\n{width} {height}\n255\n'.encode();size=len(header)+width*height*3
         if not isinstance(encoded,str) or len(encoded)!=4*((size+2)//3):raise ValueError('Returned video content size differs')
@@ -166,7 +174,11 @@ def run(request):
         duration=float(metadata.get('format',{}).get('duration','nan'))
         if not math.isfinite(duration) or not 0<duration<=plan['max_duration_seconds']:raise ValueError('Video duration exceeds frozen plan or is unknown')
         interval=1/plan['fps']
-        filter_text=f'select=isnan(prev_selected_t)+gte(t-prev_selected_t\\,{interval:.17g}),showinfo'
+        if plan['protocol']=='source_first_min_interval_v1':
+            filter_text=f'select=isnan(prev_selected_t)+gte(t-prev_selected_t\\,{interval:.17g}),showinfo'
+        else:
+            rate=f'{plan["fps"]:.17g}'
+            filter_text=f'select=isnan(prev_selected_t)+gt(floor((t-start_t)*{rate})\\,floor((prev_selected_t-start_t)*{rate})),showinfo'
         _,log=_command(['/usr/bin/ffmpeg','-nostdin','-hide_banner','-loglevel','info','-protocol_whitelist','file,pipe',
                         '-hwaccel','none','-threads','1','-copyts','-i','/work/input.video','-map','0:v:0','-an','-sn','-dn',
                         '-filter_threads','1','-vf',filter_text,'-vsync','0','-frames:v',str(plan['max_frames']+1),
