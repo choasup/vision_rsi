@@ -287,3 +287,10 @@
 - 27项预检/训练账本/COCO配置相关测试通过（1.017秒），覆盖checkpoint请求绑定、缺失/错误回执拒绝、resume传参及既有预检失败不调用submit。补充2GiB检查后远端探针源码语法编译通过。
 - 旧冻结包缺少validate_checkpoint_progress时新控制程序预检拒绝，不自动升级旧代码；旧冻结程序保持自己的原行为。本轮无真实API/SSH/GPU调用，仅mock资源回执及本地语法证据，尚未在真实checkpoint上跑完整CPU预检。
 - CPU进度门槛不证明全部权重/优化器/RNG张量、GPU运行时身份或8卡数值恢复；真实预算与完整上线门槛仍未完成，安装包尚未重建。
+
+## 冻结包CPU checkpoint预检真实链路（2026-10-10）
+
+- 新增显式--live-remote的tests/live_checkpoint_preflight_probe.py，固定预登记两种进度结果，创建独立远端fixture目录，不改实际COCO数据、权重或用户训练预算。
+- 实际部署当前冻结源代码，微型COCO结构train/val各1张图、80类定义，文件哈希核验通过；Torch真实序列化合成checkpoint，先epoch0/cursor0/step1拒绝，再step0通过，CPU回执绑定各自选定SHA。错误checkpoint另存invalid-checkpoint.pt，原拒绝证据保留。
+- 实际冻结bundle afd26853b8d0c93c8d686c9bd0bed1aebaa523f4e2c4f7fd23a05a9dfceaaa5d；证据runs/resource-bootstrap/cpu-progress-probe-2e59e72fb3144a5ba55152a2055de886/{preregistered.json,resources.json,deployment.json,invalid-result.json,valid-result.json,evidence.json}。
+- CUDA_VISIBLE_DEVICES为空，仅SSH CPU文件/序列化/冻结包预检，不调用LLM、不运行GPU或训练。checkpoint的model/optimizer及CUDA RNG是明确结构fixture，不能据此证明实际检测器状态有效、GPU运行时身份或8卡数值恢复；完整上线门槛仍未完成。
