@@ -3,7 +3,43 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from vision_rsi.media import image_request
+from vision_rsi.media import image_request,sample_request
+
+
+class JointMediaTransportTests(unittest.TestCase):
+    def test_joint_sample_keeps_order_text_video_policy_and_content_identity(self):
+        contract={'inputs':{'views':{'type':'image_list','required':True,'min_items':2,'max_items':2,'semantics':'joint'},
+                            'clip':{'type':'video','required':True,'processing':{'sampling':'2 fps','temporal':'ordered','audio':'ignore'}},
+                            'question':{'type':'text','required':True}}}
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            for name,data in [('left.jpg',b'left'),('right.jpg',b'right'),('clip.mp4',b'video-fixture')]:
+                (root/name).write_bytes(data)
+            sample={'sample_id':'joint-one','inputs':{'views':{'type':'image_list','items':[{'uri':'left.jpg'},{'uri':'right.jpg'}]},
+                    'clip':{'type':'video','uri':'clip.mp4'},'question':{'type':'text','value':'Compare the views and clip'}}}
+            path=root/'sample.json';path.write_text(json.dumps(sample))
+            packet=sample_request(contract,path)
+            self.assertEqual(packet['sample'],sample)
+            self.assertEqual([(a['field'],a['index']) for a in packet['assets']],[('views',0),('views',1),('clip',0)])
+            self.assertEqual([base64.b64decode(a['content_base64']) for a in packet['assets']],[b'left',b'right',b'video-fixture'])
+            self.assertEqual(packet['video_processing']['clip'],contract['inputs']['clip']['processing'])
+            self.assertFalse(packet['media_decoded']);self.assertFalse(packet['inference_performed'])
+            self.assertEqual(sample_request(contract,path)['input_fingerprint'],packet['input_fingerprint'])
+            (root/'right.jpg').write_bytes(b'changed')
+            self.assertNotEqual(sample_request(contract,path)['input_fingerprint'],packet['input_fingerprint'])
+            changed=json.loads(json.dumps(contract));changed['inputs']['clip']['processing']['sampling']='1 fps'
+            self.assertNotEqual(sample_request(changed,path)['input_fingerprint'],sample_request(contract,path)['input_fingerprint'])
+
+    def test_unreadable_remote_empty_and_oversized_media_fail_before_packet(self):
+        contract={'inputs':{'photo':{'type':'image','required':True}}}
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);path=root/'sample.json';media=root/'photo.jpg'
+            media.write_bytes(b'')
+            for uri in ('https://example.com/image.jpg','file:///photo.jpg?query=x','missing.jpg','photo.jpg'):
+                path.write_text(json.dumps({'sample_id':'one','inputs':{'photo':{'type':'image','uri':uri}}}))
+                with self.subTest(uri=uri),self.assertRaises((ValueError,OSError)):sample_request(contract,path)
+            with media.open('wb') as stream:stream.truncate(20*1024*1024+1)
+            with self.assertRaisesRegex(ValueError,'per-file limit'):sample_request(contract,path)
 
 
 class MediaTransportTests(unittest.TestCase):

@@ -14,7 +14,7 @@ ROOT=Path(__file__).resolve().parent
 
 def main():
     p=argparse.ArgumentParser(description='Frozen task controls; quality requires validated capability evidence')
-    p.add_argument('mode',choices=['check','validate-input','validate-output','training','test'])
+    p.add_argument('mode',choices=['check','validate-input','validate-output','prepare-input','training','test'])
     p.add_argument('--action',choices=['prepare','advance','watch','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate'],default='prepare')
     p.add_argument('--input');p.add_argument('--input-dir');p.add_argument('--samples-manifest');p.add_argument('--output');p.add_argument('--output-dir')
     p.add_argument('--version');p.add_argument('--run-id');p.add_argument('--campaign-id');p.add_argument('--steps',type=int,default=3)
@@ -40,6 +40,16 @@ def main():
     contract=json.loads((ROOT/'contract.json').read_text(encoding='utf-8'))
     from interface_runtime import validate_sample,validate_schema
     try:
+        if a.mode=='prepare-input':
+            if not a.input or not a.output:raise ValueError('prepare-input requires --input sample.json and --output packet.json')
+            from vision_rsi.media import sample_request
+            from vision_rsi.runner import atomic_json
+            packet=sample_request(contract,a.input)
+            destination=Path(a.output).resolve()
+            if destination==Path(a.input).resolve() or destination.is_relative_to(ROOT):raise ValueError('Output must not overwrite input or frozen harness artifacts')
+            if destination.exists():raise ValueError('Packet output already exists')
+            atomic_json(destination,packet)
+            print(json.dumps({k:v for k,v in packet.items() if k not in ('sample','assets')},ensure_ascii=False,indent=2));return 0
         if a.mode in ('check','validate-input','validate-output'):
             if a.mode=='check':
                 validate_sample(contract,contract['example_input']);validate_schema(contract['output_schema'],contract['example_output'])

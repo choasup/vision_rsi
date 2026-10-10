@@ -13,6 +13,28 @@ from vision_rsi.executable_harness import build_executable
 
 
 class ExecutableHarnessTests(unittest.TestCase):
+    def test_standalone_joint_media_packet_preserves_sample_and_rejects_overwrite(self):
+        sample=json.loads(json.dumps(self.session['versions'][-1]['contract']['example_input']))
+        for value in sample['inputs'].values():
+            for index,item in enumerate(value['items'] if value['type']=='image_list' else [value]):
+                name=f"{value['type']}-{index}.bin"
+                (self.root/name).write_bytes(name.encode())
+                item['uri']=name
+        path=self.root/'sample.json';path.write_text(json.dumps(sample))
+        output=self.root/'packet.json'
+        result=self.run_harness('prepare-input','--input',str(path),'--output',str(output))
+        self.assertEqual(result.returncode,0,result.stderr)
+        packet=json.loads(output.read_text())
+        self.assertEqual(packet['sample'],sample)
+        self.assertEqual(len(packet['assets']),3)
+        self.assertFalse(json.loads(result.stdout)['inference_performed'])
+        original=output.read_bytes()
+        result=self.run_harness('prepare-input','--input',str(path),'--output',str(output))
+        self.assertNotEqual(result.returncode,0);self.assertIn('already exists',result.stderr)
+        self.assertEqual(output.read_bytes(),original)
+        result=self.run_harness('prepare-input','--input',str(path),'--output',str(self.folder/'extra.json'))
+        self.assertNotEqual(result.returncode,0);self.assertIn('frozen harness',result.stderr)
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
         self.storage={key:str(self.root/key) for key in ('sessions','runs','campaigns','registry','plans')}
