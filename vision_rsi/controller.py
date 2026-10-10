@@ -177,6 +177,28 @@ def frozen_validation(config):
     return binding
 
 
+def bind_validation(ledger,config):
+    """Freeze development data before any planner sees an evaluation option."""
+    records=[e for e in ledger.events() if e['payload'].get('record_type')=='validation_binding']
+    supplied=config.get('research',{}).get('validation_dataset')
+    if not supplied:
+        if records:raise ValueError('Frozen validation dataset binding cannot be removed')
+        return
+    binding=frozen_validation(config)
+    path=Path(binding['path']).resolve()
+    with path.open('rb') as stream:raw=stream.read(2*1024*1024+1)
+    if len(raw)>2*1024*1024 or hashlib.sha256(raw).hexdigest()!=binding['sha256']:
+        raise ValueError('Frozen validation dataset changed before planning')
+    _,contract_hash=frozen_contract(config)
+    identity={'path':str(path),'sha256':binding['sha256'],'contract_sha256':contract_hash}
+    if records:
+        if records[0]['payload']['binding']!=identity:
+            raise ValueError('Validation binding is frozen; use a new research root')
+    else:
+        ledger.append('research-validation-binding','evidence',{'summary':'Fixed development validation identity',
+                      'record_type':'validation_binding','binding':identity})
+
+
 def validate_check_binding(arguments,events,refs=None):
     actions={event['key'] for event in events if event['kind']=='action' and event['payload'].get('tool')=='stage_candidate'}
     if not any(event['kind']=='result' and event['payload'].get('action') in actions
@@ -376,6 +398,7 @@ def research_step(config, directory, steps=1, repository='.'):
     from .campaign import lease
     with lease(lock,owner='Research controller'):
         limit = planning_limit(config, ledger.events())
+        bind_validation(ledger,config)
         last_step_status = 'no_action'
         for _ in range(steps):
             events = ledger.events()

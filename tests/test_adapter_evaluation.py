@@ -11,6 +11,21 @@ from test_event_eval import event
 
 
 class AdapterEvaluationTests(unittest.TestCase):
+    def test_validation_binding_cannot_change_or_disappear_between_steps(self):
+        from vision_rsi.controller import bind_validation
+        from vision_rsi.ledger import Ledger
+        ledger=Ledger(self.root/'binding-ledger')
+        ledger.append('objective','objective',{'summary':'fixed development experiment'})
+        config={'research':{'task_contract':{'path':str(self.contract),'sha256':hashlib.sha256(self.contract.read_bytes()).hexdigest()},
+                          'validation_dataset':{'path':str(self.dataset),'sha256':hashlib.sha256(self.dataset.read_bytes()).hexdigest()}}}
+        bind_validation(ledger,config);bind_validation(ledger,config)
+        self.assertEqual(len(ledger.events()),2)
+        with self.assertRaisesRegex(ValueError,'cannot be removed'):bind_validation(ledger,{})
+        self.dataset.write_text(json.dumps(dict(self.data,purpose='other')),encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'changed before planning'):bind_validation(ledger,config)
+        config['research']['validation_dataset']['sha256']=hashlib.sha256(self.dataset.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(ValueError,'binding is frozen'):bind_validation(ledger,config)
+
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     @patch('vision_rsi.remote.check_candidate')
     def test_controller_can_evaluate_only_a_staged_candidate_on_configured_data(self,remote,client):
