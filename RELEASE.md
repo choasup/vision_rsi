@@ -450,3 +450,11 @@
 - 新增结构化observation_context：仓库观察优先保留至多64个源码hash及少量片段，明确总数/收入数/截断标记和完整观察digest，约束投影≤9000字符。源码行读取保留path/hash/行号/EOF，片段截断另标；其它观察采用显式文本投影与digest，原始账本不删。
 - 12项controller测试通过（3.578秒），覆盖JSON排序回读后的hash保留、50K片段情况下实际模型提示仍含controller源码hash、128源码索引有界投影。测试fixture曾超过账本100K上限，调为50K后通过。投影修正尚未再次真实调用，不能宣称真实链路成功。
 - 无SSH/GPU/训练，安装包未更新，真实训练/通用修改/RSI效果及完整上线门槛仍未完成。
+
+## 真实源码研究链路与 dev3 回归（2026-10-10）
+
+- 结构化上下文修复后，新独立探针 runs/source-research-live/2812b3c371014dc38f876c77a1948318/evidence.json 通过：真实 DeepSeek Flash 选择 read_source，携带仓库观察中的完整 SHA256，读取 controller.py 第31至50行，结果逐字匹配源码。1次 responded，reported prompt4489/completion186/total4675 tokens，独立调用额度剩0，无语义重试；此前失败记录原样保留。
+- 此次只读源码身份为2f0d442f4ffcd0f8e9c98939d073c54c2e2b7eedc8ed2cbe284951e257bb4276，不证明自主研究质量、真实训练或RSI提升。无SSH/GPU。
+- 当前产品代码完整回归384项通过（129.292秒），日志 runs/current-full-tests.log。开发版本更新为0.1.0.dev3，包含dev2之后的源码研究、事件评测和恢复改动。
+- 新wheel runs/release-dev3/wheelhouse/vision_rsi_agent-0.1.0.dev3-py3-none-any.whl，SHA256=9a607d1aced6165df8b3d5d565f116e109a14e10bd23c8e120a093ee01f3b21d。新venv使用本地wheelhouse与哈希依赖锁离线安装，pip check通过；仓库外安装包回归尚待完成。
+- GPU预算仍未设置，未启动真实COCO训练；完整上线目标尚未完成。
