@@ -522,3 +522,8 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - Reproduced a direct serving-review defect: a NaN requirement threshold could pass the score comparison even with AP1. Normal Training acceptance already checks finite thresholds; serving review now independently rejects nonnumeric, boolean, nonfinite and out-of-range targets before promotion. Original finite target and boundary behavior remain enforced.
 - Two new threshold regressions and six remote capability lifecycle tests passed. These are synthetic lifecycle checks, not measured COCO quality or production acceptance. The preceding full suite passed226 tests before this two-line guard.
+
+## Official training split full pixel verification completed (2026-10-10)
+
+- Verifier45363 exited0 after decoding every118287 official training image and matching annotation dimensions;118286JPEG/1PNG,860001annotations,19314466396image bytes. Original zero-area annotations918/2206849 retained. Annotation SHA610fce4944abdeb15354cc765333805529359d12d88f2f711393ca586901d01d; ordered image manifest SHAc0e5d00a820644f0fc35e316a906a30aa1705e43958dfd26e0d7eaa91ec97fa7.
+- Full local receipt runs/resource-bootstrap/training-images-verification.json SHAc30547b3cd6a7baf9d5ed61a9da0f669e777b140ce06a4cdc23626c4254cfe9c; preparation handle now records authoritative terminal success. Prepared, but did not submit, frozen CPU equivalence-training-job-draft.json using that exact receipt. It must wait for authoritative transfer completion and successful remote archive import; no remote equivalence, real training or COCO AP is claimed. Transfer37077 and baseline watcher99400 remain live.
