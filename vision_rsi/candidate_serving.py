@@ -19,7 +19,8 @@ def _checked(path):
     return value
 
 
-def check(registry,session,version,dataset_path,remote,max_latency_seconds,*,cached_only=False):
+def check(registry,session,version,dataset_path,remote,max_latency_seconds,*,cached_only=False,read_only=False):
+    if read_only and not cached_only:raise ValueError('Read-only review requires cached serving evidence')
     if type(max_latency_seconds) not in (int,float) or not math.isfinite(max_latency_seconds) or not 0<max_latency_seconds<=120:
         raise ValueError('Specify an explicit finite end-to-end latency target in (0,120] seconds')
     max_latency_seconds=float(max_latency_seconds)
@@ -59,8 +60,9 @@ def check(registry,session,version,dataset_path,remote,max_latency_seconds,*,cac
              'input_manifest':rows,'selected_runtime_sha256':runtime_hash,'gate_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     root=registry.root/name/'candidate-serving'
     if cached_only and not root.is_dir():raise ValueError('Completed serving checks required; inference cannot start serving trials')
-    root.mkdir(parents=True,exist_ok=True)
-    with lease(root/'serving.lock',owner='Candidate serving checks'):
+    if not read_only:root.mkdir(parents=True,exist_ok=True)
+    from contextlib import nullcontext
+    with (nullcontext() if read_only else lease(root/'serving.lock',owner='Candidate serving checks')):
         seal_path=root/'binding.json'
         if seal_path.exists():
             _,saved=read_document(seal_path,4*1024*1024)

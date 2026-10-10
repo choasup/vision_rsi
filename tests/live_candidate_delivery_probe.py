@@ -117,7 +117,17 @@ def main():
             assert completed.returncode==0,completed.stderr
             assert json.loads(completed.stdout)==expected
         assert not output['acceptance']['production_accepted']
-        atomic_json(root/'delivery-result.json',{'delivery':delivery,'single':output,'batch':summary})
+        from vision_rsi.release_status import inspect
+        status=inspect(session['session_id'],sessions.root,registry.root)
+        assert status['local_release_evidence_complete'] and not status['production_accepted']
+        command=['training','release-status','--session-id',session['session_id'],'--sessions',str(sessions.root),
+                 '--registry',str(registry.root),'--json']
+        completed=subprocess.run([sys.executable,'-X','utf8',str(repo/'launch_agent.py'),'--cli']+command,
+                                 cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)
+        assert completed.returncode==0,completed.stderr
+        assert json.loads(completed.stdout)==status
+        assert len(calls)==6
+        atomic_json(root/'delivery-result.json',{'delivery':delivery,'single':output,'batch':summary,'release_status':status})
         passed=True
     except Exception as error:
         failure=type(error).__name__+': '+str(error)

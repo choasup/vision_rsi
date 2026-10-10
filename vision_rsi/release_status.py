@@ -23,9 +23,7 @@ def inspect(session_id,sessions,registry):
     latest=session['versions'][-1] if session['versions'] else {}
     contract=latest.get('contract')
     errors=issues(contract) if contract else ['No defined task contract']
-    if contract:
-        adapter=training_adapter(contract)
-        if not adapter['implementation_supported']:errors.extend(adapter['blockers'])
+    adapter=training_adapter(contract) if contract else None
     if session.get('pending_request'):errors.append('Task requirement request remains pending')
     if latest.get('review_required'):errors.append('Task requirement change needs review')
     rows=[];root=Path(registry).resolve();database=root/'registry.sqlite3'
@@ -43,6 +41,20 @@ def inspect(session_id,sessions,registry):
                 manifest=json.loads(raw)
                 if manifest.get('task_id')!=session['task_id'] or manifest.get('version')!=version:raise ValueError('Registered manifest identity mismatch')
                 if manifest.get('session_id')!=session_id:raise ValueError('Capability belongs to a different training session')
+                if manifest.get('spec',{}).get('kind')=='candidate_bundle':
+                    if status!='validated' or manifest.get('status')!='validated':raise ValueError('Candidate validation remains pending')
+                    from types import SimpleNamespace
+                    from .candidate_delivery import verify
+                    with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True)) as db:
+                        db.execute('BEGIN')
+                        frozen=verify(SimpleNamespace(root=root,db=db),manifest,read_only=True)
+                    if digest(frozen)!=digest(contract) or manifest['session']!=session:
+                        raise ValueError('Delivered candidate differs from current task contract or session')
+                    row.update(local_evidence_passed=True,kind='candidate_bundle',
+                               acceptance_scope=manifest['validation']['scope'],
+                               complete_development_history_verified=False,production_accepted=False)
+                    rows.append(row)
+                    continue
                 if manifest.get('spec',{}).get('kind')!='coco_detection':raise ValueError('This audit supports COCO serving evidence only')
                 if status!='validated' or manifest.get('status')!='validated':raise ValueError('Serving validation remains pending')
                 if digest(manifest['endpoint']['contract'])!=digest(contract):raise ValueError('Capability contract differs from current task')
@@ -65,8 +77,10 @@ def inspect(session_id,sessions,registry):
                     raise ValueError('Serving recipe or source identity mismatch')
                 serving=review_serving(manifest,artifacts['serving-report.json'])
                 row.update(local_evidence_passed=True,serving_box_AP=serving['box_AP'])
-            except (ValueError,KeyError,TypeError,OSError) as error:row['blocker']=str(error)
+            except (ValueError,KeyError,TypeError,OSError,RuntimeError,sqlite3.Error) as error:row['blocker']=str(error)
             rows.append(row)
+    if adapter and not adapter['implementation_supported'] and not any(row.get('kind')=='candidate_bundle' and row['local_evidence_passed'] for row in rows):
+        errors.extend(adapter['blockers'])
     ready=not errors and any(row['local_evidence_passed'] for row in rows)
     if not rows:errors.append('No registered capability for this task')
     elif not any(row['local_evidence_passed'] for row in rows):errors.append('No capability passed current-session training and serving evidence checks')
@@ -74,4 +88,6 @@ def inspect(session_id,sessions,registry):
         'status':'local_evidence_ready_for_test' if ready else 'blocked','local_release_evidence_complete':ready,
         'blockers':errors,'versions':rows,'read_only':True,'remote_called':False,'llm_called':False,
         'remote_availability_verified':False,'inference_executed':False,'rsi_efficiency_verified':False,
-        'scope':'Local COCO release artifact audit only; not live test execution, new-machine certification or whole-Agent launch completion.'}
+        'production_accepted':False,'complete_development_history_verified':False,
+        'training_adapter':adapter,
+        'scope':'Local task delivery artifact audit only; not live test execution, new-machine certification or whole-Agent launch completion.'}

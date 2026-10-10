@@ -8,12 +8,15 @@
 
 ```powershell
 Set-Location F:\vision-rsi-agent
-.\vision-rsi.cmd test --task-id delivery-fixture --version bd034cb74405ed0891caad134d5e54c4 --registry F:\vision-rsi-agent\runs\candidate-delivery-live\3ad98250c3a44fec8f94fcae1d6158ac\registry --input F:\vision-rsi-agent\runs\candidate-delivery-live\3ad98250c3a44fec8f94fcae1d6158ac\research\9eedb5bdaf0b4a69bc41998211bd0c60\single.json
-.\vision-rsi.cmd test --task-id delivery-fixture --version bd034cb74405ed0891caad134d5e54c4 --registry F:\vision-rsi-agent\runs\candidate-delivery-live\3ad98250c3a44fec8f94fcae1d6158ac\registry --manifest F:\vision-rsi-agent\runs\candidate-delivery-live\3ad98250c3a44fec8f94fcae1d6158ac\research\9eedb5bdaf0b4a69bc41998211bd0c60\batch.jsonl --output-dir F:\vision-rsi-agent\runs\candidate-delivery-live\3ad98250c3a44fec8f94fcae1d6158ac\batch-output --resume
+.\vision-rsi.cmd test --task-id delivery-fixture --version 0afaeeed6eb92bcea552c487a8a0b194 --registry F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\registry --input F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\research\6d38d3cdec4e4302b49a247bbe812096\single.json
+.\vision-rsi.cmd test --task-id delivery-fixture --version 0afaeeed6eb92bcea552c487a8a0b194 --registry F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\registry --manifest F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\research\6d38d3cdec4e4302b49a247bbe812096\batch.jsonl --output-dir F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\batch-output --resume
+.\vision-rsi.cmd training release-status --session-id 6d38d3cdec4e4302b49a247bbe812096 --sessions F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\sessions --registry F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\registry --json
 ```
 
 单样本输出含 `events: [{label: action, start_seconds: 0, end_seconds: 1}]`，批量摘要 `succeeded: 1, failed: 0`。联合多图/视频输入保持一个样本，不按图片数拆开。`acceptance.scope` 为选定研究账本及冻结验收集，`production_accepted` 为 false；它不保证任意新输入效果。
 
-证据：`runs/candidate-delivery-live/3ad98250c3a44fec8f94fcae1d6158ac/evidence.json` 和 `delivery-result.json`。最终探针实际 CPU 调用6次、LLM0次、GPU未使用。第一次探针仅执行1次开发评测，因原 bundle 合同字节格式与新会话冻结合同不同而停止，失败记录保留在 `runs/candidate-delivery-live/712f999824db43b58c9421b1b5bea396/evidence.json`；随后从已验证源码按新冻结合同重新组装，没有放宽哈希检查。
+证据：`runs/candidate-delivery-live/a6a382093986489bafe23375133cd198/evidence.json` 和 `delivery-result.json`。最终探针实际 CPU 调用6次、LLM0次、GPU未使用。第一次探针仅执行1次开发评测，因原 bundle 合同字节格式与新会话冻结合同不同而停止，失败记录保留在 `runs/candidate-delivery-live/712f999824db43b58c9421b1b5bea396/evidence.json`；随后从已验证源码按新冻结合同重新组装，没有放宽哈希检查。
 
 需要重新执行实际远端验证时，使用 `tests/live_candidate_delivery_probe.py --help`，必须显式传 `--live-remote --bundle PATH --config PATH`。每次生成独立证据目录，最多6次CPU调用，不触发LLM或GPU；失败与不确定结果不会覆盖为成功。现有 dev8 安装包不包含当前源码的晋升链路。
+
+本轮新版 Demo 同时通过本地 `release-status` 与仓库外 CLI 状态查询。状态为 `local_evidence_ready_for_test`，仅表示有限范围的本地产物检查通过，不代表远端当前可用、全量历史独立性或整个 Agent 已上线。旧一轮 `3ad98250c3a44fec8f94fcae1d6158ac` 证据保留，校验程序升级后不用于证明当前版本。

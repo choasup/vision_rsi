@@ -11,7 +11,7 @@ from .event_eval import read_document
 from .task_acceptance import pending_candidate,status
 
 
-def review(registry,session,version,research_root,remote):
+def review(registry,session,version,research_root,remote,*,read_only=False):
     from .research_history import inspect
     name,artifact,binding,bundle=pending_candidate(registry,session,version)
     history=inspect(session,research_root)
@@ -22,7 +22,7 @@ def review(registry,session,version,research_root,remote):
     report=_checked(registry.root/name/'candidate-serving/serving.json')
     _,serving_binding=read_document(registry.root/name/'candidate-serving/binding.json',4*1024*1024)
     serving=check(registry,session,version,report['acceptance_dataset_path'],remote,
-                  serving_binding['max_latency_seconds'],cached_only=True)
+                  serving_binding['max_latency_seconds'],cached_only=True,read_only=read_only)
     if serving['status']!='serving_contract_checks_met' or not serving.get('userspace_snapshot_verified'):
         raise ValueError('Require successful serving checks with frozen CPU userspace')
     return {'task_binding':binding,'source_version':version,'history_sha256':history['history_sha256'],
@@ -57,12 +57,12 @@ def promote(registry,session,version,research_root,remote):
     return manifest
 
 
-def verify(registry,manifest):
+def verify(registry,manifest,*,read_only=False):
     name=task_id(manifest['task_id']);folder=registry.root/name/manifest['version']
     if set(manifest['artifacts'])!={'bundle.json'} or sha(folder/'bundle.json')!=manifest['artifacts']['bundle.json']:
         raise ValueError('Delivery artifact integrity differs')
     evidence=manifest['delivery']
-    actual=review(registry,manifest['session'],manifest['parent_version'],evidence['research_root'],evidence['remote'])
+    actual=review(registry,manifest['session'],manifest['parent_version'],evidence['research_root'],evidence['remote'],read_only=read_only)
     if actual!=evidence:raise ValueError('Delivery acceptance or history evidence changed')
     return json.loads(base64.b64decode(json.loads((folder/'bundle.json').read_text(encoding='utf-8'))['contract_base64']))
 
