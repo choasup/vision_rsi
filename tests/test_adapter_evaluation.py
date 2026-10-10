@@ -318,7 +318,7 @@ class AdapterEvaluationTests(unittest.TestCase):
             'arguments':{'candidate_id':self.candidate,'module':'vision_rsi.adapter_fixture','function':'predict'}})}
         remote.side_effect=lambda endpoint,request:{'status':'executed_unverified','source_hashes':request['source_hashes'],
                                                      'observation':{'results':[{'events':[]}]}}
-        research_step(config,self.root,steps=1)
+        research_step(config,self.root,steps=1,repository=self.store.repository)
         result=ledger.events()[-1]['payload']
         self.assertEqual(result['status'],'completed')
         self.assertEqual(result['observation']['runtime_status'],'development_metric_not_met')
@@ -331,7 +331,7 @@ class AdapterEvaluationTests(unittest.TestCase):
         # structured evidence, rather than a potentially truncated JSON excerpt.
         client.return_value.complete.return_value={'content':json.dumps({'tool':'inspect_repository','summary':'inspect',
             'question':'q','expected_evidence':'source','refs':[]})}
-        research_step(config,self.root,steps=1)
+        research_step(config,self.root,steps=1,repository=self.store.repository)
         prompt=json.loads(client.return_value.complete.call_args.args[0][0]['content'])
         metrics=[row['observation'] for row in prompt['history']
                  if row['observation'].get('kind')=='candidate_development_metric']
