@@ -379,3 +379,9 @@
 - 仓库外site-packages导入验证全部Python/HTML文件集合及SHA一致、发行版本精确匹配dev2。176项安装回归及6个模块CLI入口通过（18.197秒），证据runs/release-dev2/{installed-evidence.json,installed-tests.log}。安装身份source-sha256:160debbc2c5d9135ee09aafbf17d6c97845a7a867aafc1cc6fd77328d0ee4f3e。
 - 探针新增可选--expected-version并记录实际发行版本，修正README当前版本说明。测试和文档变更不改变上述wheel产品代码。
 - 本轮无真实API/SSH/GPU调用，仅本机Windows/Python环境交付验证。真实GPU预算仍未给出，真实训练、AP60、视频训练/推理及可验证RSI效率提升未完成；dev2不是正式上线认证。
+## CPU单进程数值断点恢复探针（2026-10-10）
+
+- 提取生产epoch_batches迭代器，保持原DistributedSampler seed/epoch、DataLoader私有generator、num_workers=0和cursor跳过语义；生产训练与探针共用函数。没有新增数据随机增强。
+- 显式--live-remote的tests/live_cpu_resume_probe.py实际SSH执行Torch2.6.0+cu124 CPU fixture，CUDA_VISIBLE_DEVICES为空。17样本/批2/3epoch共27step，Linear/Dropout/SGD(momentum.9)模型在step1/8/9/10/26/27真实序列化checkpoint后重建恢复，全部loss/batch trace、模型张量、动量buffer、最终CPU RNG逐值完全一致。
+- 生产迭代器source SHA256=42c6cf1afe40af5af752f7dc7c20a9dd537e4c2dec13c098527c30b6b6701ef2；证据runs/resource-bootstrap/cpu-numerical-resume-1dd0eb2075d04423960b46af51972f8c/{preregistered.json,stdout.txt,stderr.txt,evidence.json}。数据/checkpoint仅内存fixture，不修改用户远端数据或训练预算。
+- 此证据仅单进程CPU合成数值恢复，不覆盖实际检测器、CUDA RNG、8卡DDP/NCCL、信号终止或真实COCO效果。本轮无LLM/GPU调用，安装dev2 wheel早于此次迭代器提取，完整上线目标仍未完成。

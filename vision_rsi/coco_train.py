@@ -166,6 +166,19 @@ def validate_checkpoint_rng(checkpoint,world,torch):
         finally:torch.set_rng_state(original)
 
 
+def epoch_batches(dataset,recipe,epoch,rank,world,start_cursor=0):
+    """Deterministic loader; its private generator must not advance model RNG."""
+    import torch
+    from torch.utils.data import DataLoader,DistributedSampler
+    sampler=DistributedSampler(dataset,num_replicas=world,rank=rank,seed=recipe['seed'],shuffle=True)
+    sampler.set_epoch(epoch)
+    loader=DataLoader(dataset,batch_size=recipe['batch_size_per_gpu'],sampler=sampler,num_workers=0,
+                    collate_fn=lambda rows:tuple(zip(*rows)),
+                    generator=torch.Generator().manual_seed(recipe['seed']+epoch))
+    for cursor,batch in enumerate(loader):
+        if cursor>=start_cursor:yield cursor,batch
+
+
 def run(recipe,output,resume=False):
     # Pinned torchvision ROIAlign has a deterministic Python fallback. Disable
     # lazy compilation so first-use compilation cannot consume an unbounded
@@ -175,7 +188,6 @@ def run(recipe,output,resume=False):
     import torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
-    from torch.utils.data import DataLoader,DistributedSampler
     from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2
     torch.use_deterministic_algorithms(True)
     torch.backends.cudnn.benchmark=False
@@ -231,12 +243,8 @@ def run(recipe,output,resume=False):
         if world>1: dist.barrier()
     interrupted=False
     for epoch in range(epoch_start,recipe['epochs']):
-        sampler=DistributedSampler(train,num_replicas=world,rank=rank,seed=recipe['seed'],shuffle=True)
-        sampler.set_epoch(epoch)
-        loader=DataLoader(train,batch_size=recipe['batch_size_per_gpu'],sampler=sampler,num_workers=0,collate_fn=lambda rows:tuple(zip(*rows)),generator=torch.Generator().manual_seed(recipe['seed']+epoch))
         wrapped.train()
-        for cursor,(images,targets) in enumerate(loader):
-            if epoch==epoch_start and cursor<cursor_start: continue
+        for cursor,(images,targets) in epoch_batches(train,recipe,epoch,rank,world,cursor_start if epoch==epoch_start else 0):
             images=[image.to(device) for image in images]
             targets=[{key:value.to(device) for key,value in target.items()} for target in targets]
             loss=sum(wrapped(images,targets).values())
