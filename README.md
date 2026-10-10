@@ -1074,3 +1074,5 @@ CPU 运行器会在候选执行前后记录并核对指定环境组件：沙箱 
 旧的 `{"sample_id":"image-001","input":"sample.json"}` 格式仍可使用，两个格式也可在同一清单中混用；一行同时提供 `inputs` 与 `input` 会失败。多图联合/视频仍是一个契约样本，不自动拆分；需要对应的已验证后端。当前 COCO 后端仅支持单图，输入多图或视频会明确失败，不表示新增了学习型多图/视频能力。测试入口仍要求已注册且已通过服务验收的能力。新格式已包含在 dev9 安装包。
 
 最终 `study compare` 与运行研究使用同一冻结控制源码/Git版本检查；版本不一致时拒绝输出提升结论，应回到该研究冻结的检出目录核验。结果包含 `comparison_control_identity`，仍不代表任务独立性、完整资源公平性或策略已采用。此检查为 dev9 之后的源码更新。
+
+交付流程状态可用 `training delivery-status --session-id SESSION --version ORIGINAL_CANDIDATE_VERSION --sessions SESSIONS_DIR --registry REGISTRY_DIR` 只读查看，无需服务配置。Ctrl+C 会保存中断阶段，不自动重发不确定调用；硬终止进程来不及保存时，记录中的“运行中”不代表进程存活。是否通过当前版本的交付验收需查询 `release-status`。此中断处理和状态命令是 dev9 之后的源码更新。

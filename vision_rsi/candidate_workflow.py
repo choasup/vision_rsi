@@ -56,6 +56,26 @@ def deliver(registry,session,version,dataset_path,research_root,remote,max_laten
             state.update(status='scoped_delivery_ready_for_test',version=delivery['version'],
                          acceptance_scope=delivery['validation']['scope'])
             save();return state
-        except Exception as error:
-            state.update(status='stopped',stopped_phase=phase,error_type=type(error).__name__)
+        except (Exception,KeyboardInterrupt) as error:
+            state.update(status='interrupted' if isinstance(error,KeyboardInterrupt) else 'stopped',
+                         stopped_phase=phase,error_type=type(error).__name__)
             save();raise
+
+
+def status(registry,session,version):
+    """Inspect persisted scheduling evidence; never infer a process is alive."""
+    name,_,binding,_=pending_candidate(registry,session,version)
+    root=registry.root/name/'delivery-workflows'/version
+    _,saved=read_document(root/'binding.json',2*1024*1024)
+    if not isinstance(saved,dict) or saved.get('task_binding')!=binding or saved.get('version')!=version:
+        raise ValueError('Delivery workflow belongs to different task requirements')
+    _,state=read_document(root/'state.json',2*1024*1024)
+    if not isinstance(state,dict) or state.get('binding_sha256')!=digest(saved) or state.get('record_sha256')!=digest({k:v for k,v in state.items() if k!='record_sha256'}):
+        raise ValueError('Delivery workflow state integrity differs')
+    if (state.get('task_id')!=name or state.get('source_version')!=version
+            or state.get('status') not in ('running','stopped','interrupted','acceptance_not_met','serving_not_met','scoped_delivery_ready_for_test')
+            or state.get('completed_phases') not in ([],['acceptance'],['acceptance','serving'],['acceptance','serving','promotion'])):
+        raise ValueError('Invalid persisted delivery workflow state')
+    return {'workflow':state,'read_only':True,'remote_called':False,'llm_called':False,
+            'process_liveness_verified':False,'production_accepted':False,
+            'scope':'Persisted workflow observation only; running state is not proof of a live process. Use release-status for current delivery evidence.'}

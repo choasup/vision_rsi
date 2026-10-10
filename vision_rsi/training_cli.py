@@ -157,7 +157,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','candidate-infer','promote-candidate','deliver-candidate','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','candidate-infer','promote-candidate','deliver-candidate','delivery-status','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -193,6 +193,21 @@ def main(argv):
     parser.add_argument('--research-watch-turns',type=int,default=6,help='Maximum foreground general-research steps (1..1000)')
     parser.add_argument('--repository',default='.',help='Git source repository for general research; required explicitly outside the checkout')
     args=parser.parse_args(argv)
+    if args.action=='delivery-status':
+        if not args.session_id or not args.version:
+            parser.error('delivery-status requires --session-id and original candidate --version')
+        import sqlite3
+        from types import SimpleNamespace
+        from contextlib import closing
+        from .candidate_workflow import status
+        try:
+            session=Sessions(args.sessions,read_only=True).show(args.session_id)
+            root=Path(args.registry).resolve()
+            with closing(sqlite3.connect((root/'registry.sqlite3').as_uri()+'?mode=ro',uri=True)) as db:
+                db.execute('BEGIN')
+                result=status(SimpleNamespace(root=root,db=db),session,args.version)
+        except (ValueError,KeyError,TypeError,OSError,RuntimeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
+        print(json.dumps(result,ensure_ascii=False,indent=2));return
     if args.action=='deliver-candidate':
         if not args.session_id or not args.version or not args.dataset or args.max_latency_seconds is None:
             parser.error('deliver-candidate requires --session-id, --version, --dataset and --max-latency-seconds')

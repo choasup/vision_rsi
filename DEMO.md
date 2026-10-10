@@ -26,9 +26,17 @@ Set-Location F:\vision-rsi-agent
 以下命令已通过当前源码仓库外 CLI，复用此 Demo 已有的验收和服务记录，返回相同固定版本；不会重新占用验收机会。
 
 ```powershell
-.\vision-rsi.cmd training deliver-candidate --session-id 6d38d3cdec4e4302b49a247bbe812096 --version daa7eb2141781cfd8ca2be9149ad8c4a --dataset F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\research\6d38d3cdec4e4302b49a247bbe812096\holdout.json --max-latency-seconds 30 --sessions F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\sessions --research-root F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\research --registry F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\registry --config F:\vision-rsi-agent\config.local.json
+& 'F:\vision-rsi-agent\runs\release-dev9\offline bundle\vision-rsi.cmd' training deliver-candidate --session-id 6d38d3cdec4e4302b49a247bbe812096 --version daa7eb2141781cfd8ca2be9149ad8c4a --dataset F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\research\6d38d3cdec4e4302b49a247bbe812096\holdout.json --max-latency-seconds 30 --sessions F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\sessions --research-root F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\research --registry F:\vision-rsi-agent\runs\candidate-delivery-live\a6a382093986489bafe23375133cd198\registry --config F:\vision-rsi-agent\config.local.json
 ```
 
 `--version` 在此传原候选版本；成功返回晋升后的版本。证据 `runs/candidate-workflow-cached-live.json` 记录了直接入口禁止远端调用时仍通过，以及实际 CLI 返回相同版本。这是对已完成真实 CPU 记录的恢复验证，不是新模型执行或质量验证。
 
 一体化交付的新建任务真实 CPU 探针也已通过：`runs/candidate-delivery-live/a7add08ce2fb4339a4b47d02afa69540/evidence.json`，`integrated_workflow: true`，6次CPU调用、LLM0次、GPU未使用。旧命令所指证据仍然保留且可以复用。
+
+## 查看持久交付状态（dev9 之后的源码入口）
+
+```powershell
+.\vision-rsi.cmd training delivery-status --session-id 2069c48b33aa482a8561d7e2e2cee58b --version e6fbd4a1e26beee600c02d18f7c7290c --sessions F:\vision-rsi-agent\runs\candidate-delivery-live\a7add08ce2fb4339a4b47d02afa69540\sessions --registry F:\vision-rsi-agent\runs\candidate-delivery-live\a7add08ce2fb4339a4b47d02afa69540\registry
+```
+
+该命令已只读核验真实保存的 CPU Demo 记录，证据为 `runs/workflow-status-real-saved.json`。无需 API 配置，不启动远端。显示的是持久调度状态，不证明进程还活着；当前产物是否仍可用于推理需查询 `release-status`。源码升级后旧一体化流程绑定会拒绝直接恢复，以上旧流程复核命令因此明确使用已验证的 dev9 安装环境，而不是新版源码；固定版本 Test 的证据也仍须通过自身检查。
