@@ -8,6 +8,17 @@ import sqlite3
 import time
 import uuid
 
+CALL_ADMISSION_TRIGGER='''CREATE TRIGGER IF NOT EXISTS api_usage_call_admission BEFORE INSERT ON api_usage
+    WHEN EXISTS (SELECT 1 FROM api_call_cap WHERE singleton=1 AND
+                 (SELECT COUNT(*) FROM api_usage)>=calls)
+    BEGIN SELECT RAISE(ABORT,'Project LLM call budget exhausted'); END'''
+
+
+def admission_trigger_verified(db):
+    row=db.execute("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='api_usage_call_admission'").fetchone()
+    def normalized(sql):return ''.join(sql.upper().replace('IF NOT EXISTS','').split())
+    return bool(row and isinstance(row[0],str) and normalized(row[0])==normalized(CALL_ADMISSION_TRIGGER))
+
 
 def ledger_path(value):
     if not isinstance(value,str) or not Path(value).is_absolute():
@@ -31,10 +42,10 @@ class UsageLedger:
                 created_ns INTEGER NOT NULL, ended_ns INTEGER, status TEXT NOT NULL,
                 prompt_tokens INTEGER, completion_tokens INTEGER, total_tokens INTEGER)''')
             db.execute('CREATE TABLE IF NOT EXISTS api_call_cap (singleton INTEGER PRIMARY KEY CHECK(singleton=1), calls INTEGER NOT NULL)')
-            db.execute('''CREATE TRIGGER IF NOT EXISTS api_usage_call_admission BEFORE INSERT ON api_usage
-                WHEN EXISTS (SELECT 1 FROM api_call_cap WHERE singleton=1 AND
-                             (SELECT COUNT(*) FROM api_usage)>=calls)
-                BEGIN SELECT RAISE(ABORT,'Project LLM call budget exhausted'); END''')
+            if db.execute('SELECT calls FROM api_call_cap WHERE singleton=1').fetchone() and not admission_trigger_verified(db):
+                raise ValueError('API admission trigger missing or changed; ledger not repaired or reset')
+            db.execute(CALL_ADMISSION_TRIGGER)
+            if not admission_trigger_verified(db):raise ValueError('API admission trigger changed')
             db.commit()
             if call_limit is not None:
                 db.execute('BEGIN IMMEDIATE')
@@ -54,6 +65,8 @@ class UsageLedger:
         identity=uuid.uuid4().hex
         try:
             with self.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if not admission_trigger_verified(db):raise ValueError('API admission trigger missing or changed')
                 db.execute('INSERT INTO api_usage VALUES (?,?,?,?,NULL,?,NULL,NULL,NULL)',
                            (identity,hashlib.sha256(payload).hexdigest(),model,time.time_ns(),'pending'))
         except sqlite3.IntegrityError as error:
@@ -87,14 +100,16 @@ def snapshot(path):
             row=db.execute('SELECT calls FROM api_call_cap WHERE singleton=1').fetchone()
             if row:
                 validate_call_limit(row[0]);cap=row[0]
+        trigger_verified=admission_trigger_verified(db)
     finally:db.close()
     groups=[dict(zip(('model','status','calls','unknown_token_calls','reported_prompt_tokens',
                        'reported_completion_tokens','reported_total_tokens'),row)) for row in rows]
     calls=sum(r['calls'] for r in groups)
     return {'ledger':str(path),'groups':groups,'calls':calls,
             'unknown_token_calls':sum(r['unknown_token_calls'] for r in groups),
-            'project_call_limit':cap,'project_call_limit_enforced':cap is not None,
-            'remaining_project_calls':None if cap is None else max(0,cap-calls),
+            'project_call_limit':cap,'project_call_limit_enforced':cap is not None and trigger_verified,
+            'admission_trigger_verified':trigger_verified,
+            'remaining_project_calls':None if cap is None or not trigger_verified else max(0,cap-calls),
             'budget_enforced':False,'provider_billing_verified':False,'historical_backfill_complete':False}
 
 

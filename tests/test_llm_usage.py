@@ -13,6 +13,23 @@ from vision_rsi.llm_usage import UsageLedger,snapshot
 
 
 class UsageTests(unittest.TestCase):
+    def test_changed_or_removed_admission_trigger_is_not_reported_enforced_or_repaired(self):
+        ledger=UsageLedger(str(self.path),1)
+        ledger.reserve(b'fixture','fixture')
+        with closing(sqlite3.connect(self.path)) as db,db:
+            db.execute('DROP TRIGGER api_usage_call_admission')
+            db.execute('CREATE TRIGGER api_usage_call_admission BEFORE INSERT ON api_usage BEGIN SELECT 1; END')
+        report=snapshot(str(self.path))
+        self.assertFalse(report['project_call_limit_enforced'])
+        self.assertFalse(report['admission_trigger_verified'])
+        self.assertIsNone(report['remaining_project_calls'])
+        with self.assertRaisesRegex(ValueError,'trigger'):ledger.reserve(b'next','fixture')
+        with self.assertRaisesRegex(ValueError,'trigger'):UsageLedger(str(self.path),1)
+        self.assertEqual(snapshot(str(self.path))['calls'],1)
+        with closing(sqlite3.connect(self.path)) as db,db:db.execute('DROP TRIGGER api_usage_call_admission')
+        with self.assertRaisesRegex(ValueError,'trigger'):UsageLedger(str(self.path),1)
+        self.assertFalse(snapshot(str(self.path))['project_call_limit_enforced'])
+
     def test_call_cap_is_atomic_across_clients_and_unknown_calls_stay_occupied(self):
         def attempt(i):
             ledger=UsageLedger(str(self.path),3)

@@ -570,3 +570,10 @@
 - 已配置全局usage ledger/call cap时拒绝此选项，不自动重置/扩容/复制全局授权；已有臂账本拒绝创建新研究重置。compare说明independent_per_arm或shared_or_unbounded，不声称Token/金额/CPU公平或自动采用。
 - 22项paired_study/study_resources/llm_usage测试通过（1.523秒），含4个臂独立路径、执行配置精确传递、真实SQLite额度一臂耗尽另一臂可预留、旧全局预算保留及新选项冲突拒绝。首次fixture传dict给reserve导致类型失败，改为实际字节载荷后重跑通过。最后比较字段与变量命名改动未再次运行完整回归。
 - 无实际API/SSH/GPU或真实配对研究，未采用候选。GPU预算仍待用户答复；安装包未更新，完整上线目标仍未完成。
+
+## API预算数据库准入触发器完整性（2026-10-10）
+
+- 外层配对审阅发现usage snapshot此前仅依据api_call_cap元数据称额度已执行，未检查准入触发器；UsageLedger的CREATE TRIGGER IF NOT EXISTS也会保留同名但已改写的触发器。
+- 现核对规范化触发器SQL；已有额度绑定而触发器缺失/变化时构造客户端账本拒绝，不自动修复或重置。每次reserve先BEGIN IMMEDIATE，在同一事务内核验触发器后插入，防止已创建对象绕过后续改动。snapshot只读报告admission_trigger_verified，未验证时enforced=false、remaining=null。
+- 41项llm_usage/llm/not_dispatched/paired_study测试通过（4.674秒）：同名空触发器与删除触发器均被拒绝、既有对象预留拒绝、账本计数保持；并发额度边界/旧预算恢复仍通过。首次fixture未关闭SQLite连接造成Windows清理失败，更正显式关闭后重跑通过。
+- 只读实际历史调用账本runs/task-research-live/81fe5c73c78e489f8922f5afe50b401d/usage.sqlite3：calls1/cap1/触发器通过/remaining0，兼容旧SQL格式。无新API/SSH/GPU。SQL守卫不证明历史账本未被删改或金额账单准确；不改变RSI统计/独立性/自动采用门槛。安装包未更新，完整上线目标未完成。
