@@ -76,7 +76,9 @@ def doctor(config):
     llm=llm if isinstance(llm,dict) else {}
     remote=remote if isinstance(remote,dict) else {}
     env_name=llm.get('api_key_env')
-    key_present=isinstance(env_name,str) and bool(env_name) and bool(os.environ.get(env_name))
+    from .credentials import read_key
+    key,key_scope=read_key(env_name)
+    key_present=bool(key)
     llm_valid=False
     try:
         from .llm import OpenAICompatibleClient
@@ -100,7 +102,7 @@ def doctor(config):
     return {'mode':config.get('mode'),'ssh_available':ssh_available,
             'llm_model_configured':isinstance(llm.get('model'),str) and bool(llm['model'].strip()),
             'llm_base_url_configured':isinstance(llm.get('base_url'),str) and bool(llm['base_url']),
-            'api_key_present':key_present,'api_key_scope':'current process environment only','llm_configuration_valid':llm_valid,
+            'api_key_present':key_present,'api_key_scope':key_scope,'llm_configuration_valid':llm_valid,
             'remote_configured':remote_valid,'real_training_implemented':True,
             'training_scope':'Fixed COCO single-image baseline and bounded recipe experiments; general harness/model adaptation is incomplete.',
             'checks_performed':['local_configuration_only'],'read_only':True,

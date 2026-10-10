@@ -69,7 +69,8 @@ class OpenAICompatibleClient:
 
     def validate_config(self):
         env_name=self.config.get('api_key_env')
-        if not isinstance(env_name,str) or not env_name or not os.environ.get(env_name):
+        from .credentials import read_key
+        if not read_key(env_name)[0]:
             raise ValueError('API key environment variable is missing')
         base=self.config.get('base_url')
         if not isinstance(base,str):raise ValueError('LLM base_url must use HTTPS')
@@ -93,7 +94,9 @@ class OpenAICompatibleClient:
         self.validate_config()
         if type(max_tokens) is not int or not 1 <= max_tokens <= MAX_OUTPUT_TOKENS:
             raise ValueError('LLM max_tokens must be an integer in 1..32768')
-        key = os.environ[self.config['api_key_env']]
+        from .credentials import read_key
+        key,_ = read_key(self.config['api_key_env'])
+        if not key:raise LLMNotDispatched('API key became unavailable before dispatch')
         base = self.config['base_url'].rstrip('/')
         payload = {'model': self.config['model'], 'messages': messages,
                    'max_tokens': max_tokens, 'stream': False}
