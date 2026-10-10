@@ -544,3 +544,9 @@
 - 实际现有COCO会话df8e8f8991ee496d859e35fab2085d8f初始化成功，任务my-vision-task、接口v5、合同内容digest b434c6a2ead7c32f6ae8cd8fb9d6533f16e8754bcadad7627327c23d8821620e，导出原始文件SHA e97395b4f3bbee24130f065c2bfead78bdfe995f00e8897991771c05be2fe4fb；会话SQLite前后哈希相同。目录runs/task-research/该session，未调用API/SSH/GPU。
 - 34项task_research/training_shell/cli_help/launcher_paths/controller测试通过（12.014秒），含幂等/需求和文件变化拒绝、首请求完整接口。首次命令误用不存在的test_launch_agent导致loader失败，更正为test_launcher_paths后重跑通过。测试fixture改用相对测试文件的绝对路径，避免仓库外安装验证依赖cwd；安装验证清单加入新模块，尚未重建安装包。
 - 完整训练→真实效果达标→注册→推理及同预算RSI采用验收仍未完成。
+
+## 现有COCO任务真实研究CLI推进与dev4准备（2026-10-10）
+
+- tests/live_task_research_probe.py对现有会话df8e8f8991ee496d859e35fab2085d8f调用真实training research-step CLI，独立API上限1，候选写入/检查关闭，固定合同从会话研究目录自动带入。
+- 实际通过：runs/task-research-live/81fe5c73c78e489f8922f5afe50b401d/{preregistered.json,evidence.json,cli-output.txt}，原始请求/响应在runs/task-research/该session/research.sqlite3。DeepSeek选择inspect_repository并完成，实际请求快照含精确导出合同及SHA，会话SQLite哈希不变。1次responded，reported prompt2123/completion191/total2314 tokens，额度剩0；无SSH/GPU/训练。
+- 此证据证明会话→CLI→真实规划→本地只读工具→账本衔接，不证明长期研究质量或视觉指标达标。开发版本更新0.1.0.dev4，包含dev3之后研究候选/合同/CLI改动；安装验证待完成。
