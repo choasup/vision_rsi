@@ -18,6 +18,33 @@ class FixtureRegistry:
         return {'output':{'fixture_text':Path(path).read_text()},'acceptance':{'fixture':True}}
 
 class BatchTests(unittest.TestCase):
+    def test_later_changed_input_or_cached_output_blocks_earlier_retry_before_dispatch(self):
+        class FailFirst(FixtureRegistry):
+            def infer(self,task,path,version):
+                if Path(path).name=='first.txt':
+                    self.calls.append('first.txt');raise RuntimeError('Synthetic transient failure')
+                return super().infer(task,path,version)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);first=root/'first.txt';second=root/'second.txt'
+            first.write_text('first');second.write_text('second')
+            rows=[{'sample_id':'first','input':str(first)},{'sample_id':'second','input':str(second)}]
+            folder=root/'output';registry=FailFirst()
+            result=batch(registry,'fixture',rows,folder)
+            self.assertEqual(result['failed'],1)
+            before=(folder/'batch-state.json').read_bytes()
+            registry.calls.clear();second.write_text('changed')
+            with self.assertRaisesRegex(ValueError,'content changed'):
+                batch(registry,'fixture',rows,folder,resume=True)
+            self.assertEqual(registry.calls,[])
+            self.assertEqual((folder/'batch-state.json').read_bytes(),before)
+            second.write_text('second')
+            state=json.loads(before)
+            (folder/state['items']['second']['output_file']).write_text('{}')
+            with self.assertRaisesRegex(ValueError,'output missing or changed'):
+                batch(registry,'fixture',rows,folder,resume=True)
+            self.assertEqual(registry.calls,[])
+            self.assertEqual((folder/'batch-state.json').read_bytes(),before)
+
     def test_actual_process_death_releases_lock_and_resume_skips_saved_success(self):
         with tempfile.TemporaryDirectory() as root:
             root=Path(root);first=root/'first.txt';second=root/'second.txt'

@@ -60,6 +60,8 @@ def batch(registry, task_id, rows, output_dir, version=None, resume=False):
             state=json.loads(path.read_text(encoding='utf-8'))
             if state['identity']!=identity: raise ValueError('Batch input list or capability version changed')
         else: state={'identity':identity,'items':{}}
+        # Validate the entire saved batch before any new inference is dispatched.
+        fingerprints={}
         for row in rows:
             key=row['sample_id']; error=None
             try: content_hash=(registry.input_fingerprint(task_id,row['input'],version) if hasattr(registry,'input_fingerprint') else digest_bytes(Path(row['input']).read_bytes())) if 'input' in row else digest_bytes(row['source'].encode())
@@ -70,7 +72,12 @@ def batch(registry, task_id, rows, output_dir, version=None, resume=False):
             if old and old['status']=='succeeded':
                 if not output_path.exists() or digest_bytes(output_path.read_bytes())!=old['output_sha256']:
                     raise ValueError('Saved output missing or changed: '+key)
-                continue
+            fingerprints[key]=(content_hash,error)
+        for row in rows:
+            key=row['sample_id'];content_hash,error=fingerprints[key]
+            old=state['items'].get(key)
+            if old and old['status']=='succeeded':continue
+            output_path=folder/(digest_bytes(key.encode())[:32]+'.json')
             result={'sample_id':key,'task_id':task_id,'capability_version':version,'status':'failed','output':None,'artifacts':[],'error':None}
             try:
                 if 'invalid' in row: raise ValueError(row['invalid'])
