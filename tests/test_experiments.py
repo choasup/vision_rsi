@@ -39,6 +39,19 @@ class ExperimentTests(unittest.TestCase):
         self.llm={'model':'fixture','base_url':'https://fixture.invalid'}
 
     @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_cached_method_request_rejects_different_usage_ledger(self,client):
+        client.return_value.complete.return_value={'content':json.dumps(proposal())}
+        config=dict(self.llm,usage_ledger=str(self.root/'usage.sqlite3'),usage_call_limit=2)
+        folder=self.root/'bound-ledger'
+        first=propose_next(self.record,self.runs,config,folder,'bound')
+        self.assertEqual(first,propose_next(self.record,self.runs,config,folder,'bound'))
+        for changed in (dict(config,usage_ledger=str(self.root/'other.sqlite3')),
+                        dict(config,usage_call_limit=3),self.llm):
+            with self.assertRaisesRegex(ValueError,'context changed'):
+                propose_next(self.record,self.runs,changed,folder,'bound')
+        self.assertEqual(client.return_value.complete.call_count,1)
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
     def test_not_dispatched_is_durable_and_requires_explicit_new_id(self,client):
         from vision_rsi.llm import LLMNotDispatched
         client.return_value.complete.side_effect=LLMNotDispatched('local cap exhausted')

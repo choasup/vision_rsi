@@ -142,6 +142,9 @@ def campaign_binding(session,config,run_store,policy,research_rounds):
              'remote':remote_identity(config['remote']),'training':config.get('training',{}),
              'coco_root':config['remote'].get('coco_root'),'run_store':str(Path(run_store).resolve()),'policy':policy,
              'research_rounds':research_rounds,'research_model':{key:config.get('llm',{}).get(key) for key in ('model','base_url')} if research_rounds else None}
+    if research_rounds:
+        for key in ('usage_ledger','usage_call_limit','thinking'):
+            if key in config.get('llm',{}):binding['research_model'][key]=config['llm'][key]
     return binding
 
 

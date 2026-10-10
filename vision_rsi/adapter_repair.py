@@ -86,6 +86,8 @@ def _repair(store,request_id,report_path,module,function,config):
     identity={'kind':'adapter_contract_repair_v1','base_revision':base,'parent_candidate_id':parent['candidate_id'],
               'parent_report_sha256':report_sha,'module':module,'function':function,'remote':config['remote'],
               'model':{key:config['llm'].get(key) for key in ('model','base_url','thinking')},'control_sources':controls}
+    for key in ('usage_ledger','usage_call_limit'):
+        if key in config['llm']:identity['model'][key]=config['llm'][key]
     child_module='vision_rsi.adapter_repair_'+digest(identity)[:16]
     child_path=child_module.replace('.','/')+'.py'
     if row:

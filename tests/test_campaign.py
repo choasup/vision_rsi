@@ -17,6 +17,26 @@ class CampaignTests(unittest.TestCase):
     def advance(self,**kwargs):
         return advance(self.session,self.config,self.root/'campaigns',self.root/'runs',**kwargs)
 
+    @patch('vision_rsi.campaign.prepare')
+    def test_selected_campaign_rejects_ledger_changes_on_resume_and_advance(self,prepare):
+        prepare.return_value={'status':'blocked','blockers':['fixture']}
+        original={'model':'fixture','base_url':'https://fixture.invalid',
+                  'usage_ledger':str(self.root/'usage.sqlite3'),'usage_call_limit':2,'thinking':'disabled'}
+        self.config['llm']=original.copy()
+        state=self.advance(research_rounds=1);cid=state['campaign_id']
+        for changed in (dict(original,usage_ledger=str(self.root/'different.sqlite3')),
+                        dict(original,usage_call_limit=3),
+                        {k:v for k,v in original.items() if k!='usage_ledger'},
+                        dict(original,thinking='enabled')):
+            self.config['llm']=changed
+            self.assertEqual(self.advance(control='show',selected_campaign=cid)['campaign_id'],cid)
+            self.assertTrue(self.advance(control='pause',selected_campaign=cid)['paused'])
+            for kwargs in ({'control':'resume'},{}):
+                with self.assertRaisesRegex(ValueError,'differs from selected campaign'):
+                    self.advance(selected_campaign=cid,**kwargs)
+        self.config['llm']=original
+        self.assertFalse(self.advance(control='resume',selected_campaign=cid)['paused'])
+
     @patch('vision_rsi.campaign.execute')
     @patch('vision_rsi.campaign.available')
     def test_known_unsent_pauses_until_explicit_resume(self,available,execute):

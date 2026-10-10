@@ -602,3 +602,5 @@ Image integrity verification identifies static JPEG/PNG from decoded content rat
 大压缩包可使用 `python -m vision_rsi.resource_unpack --archive ARCHIVE --destination NEW_DIRECTORY --sha256 FULL_SHA --seconds 240` 分段执行。每段重新核对压缩包完整哈希并核对已保存文件的哈希，使用独占锁与 SQLite 记录连续进度；重复调用同一参数继续处理。只有全部成员通过 CRC、尺寸与保存哈希检查后才发布目标目录，部分结果在独立 `.unpack` 控制目录中保留。已有目标目录不会被混入，代码或资源身份变化会拒绝恢复。每段有时限，外层调度仍需限制总步数/CPU费用；此工具不启动训练，也不证明数据集或模型质量已验收。
 
 安装版的控制程序不依赖当前工作目录是 Git 仓库。源码版的版本读取固定到程序自己的仓库；wheel 中没有 Git 时，历史字段 `git_revision` 使用 `source-sha256:` 前缀记录控制包 Python/HTML 文件的确定性哈希，不把它冒充 Git 提交。候选代码研究仍需要独立的真实 Git 仓库。
+
+研究流程及方法/策略候选/适配器修复请求会绑定配置中的共享 LLM 账本路径、调用上限和模型执行设置；对同一 campaign 或请求 ID 更换、删除这些配置会拒绝继续执行。指定 campaign 后仍可读取状态和暂停。未记录这些字段的历史流程不据此获得追溯性额度保证；显式新建项目或不同账本之间也没有全账户额度合并。API Key 不写入身份记录。

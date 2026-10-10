@@ -26,6 +26,35 @@ class CandidateTests(unittest.TestCase):
         samples=[dict(contract['example_input'],sample_id='development-valid'),dict(contract['example_input'],sample_id='development-invalid')]
         return self.store.check_adapter(parent['candidate_id'],{},'vision_rsi.adapter_fixture','predict',contract,samples)
 
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_candidate_request_binds_usage_config_but_not_api_key(self,client):
+        client.return_value.complete.return_value={'content':json.dumps(proposal())}
+        config={'model':'fixture','base_url':'https://fixture.invalid',
+                'usage_ledger':str(Path(self.temp.name)/'usage.sqlite3'),'usage_call_limit':2,'api_key':'DO_NOT_RECORD'}
+        self.store.propose('bound-candidate',{},[],config)
+        for changed in (dict(config,usage_call_limit=3),dict(config,usage_ledger=str(Path(self.temp.name)/'other.sqlite3'))):
+            with self.assertRaisesRegex(ValueError,'different research context'):
+                self.store.propose('bound-candidate',{},[],changed)
+        encoded=self.store.db.execute('SELECT identity FROM requests WHERE id=?',('bound-candidate',)).fetchone()[0]
+        self.assertNotIn('DO_NOT_RECORD',encoded)
+        self.assertEqual(client.return_value.complete.call_count,1)
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    @patch('vision_rsi.remote.check_candidate')
+    def test_repair_request_binds_project_ledger_even_when_unsent(self,remote,client):
+        from vision_rsi.adapter_repair import repair
+        from vision_rsi.llm import LLMNotDispatched
+        failed=self.failed_adapter(remote,call_limit=1)
+        config={'remote':{},'llm':{'model':'fixture','base_url':'https://fixture.invalid',
+                 'usage_ledger':str(Path(self.temp.name)/'usage.sqlite3'),'usage_call_limit':0}}
+        client.return_value.complete.side_effect=LLMNotDispatched('local cap exhausted')
+        with self.assertRaises(LLMNotDispatched):
+            repair(self.store,'bound-repair',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+        changed={'remote':{},'llm':dict(config['llm'],usage_ledger=str(Path(self.temp.name)/'other.sqlite3'))}
+        with self.assertRaisesRegex(ValueError,'different feedback/model/control sources'):
+            repair(self.store,'bound-repair',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',changed)
+        self.assertEqual(client.return_value.complete.call_count,1)
+
     @patch('vision_rsi.remote.check_candidate')
     def test_actual_project_cap_denial_does_not_spend_repair_budget(self,remote):
         from vision_rsi.adapter_repair import repair

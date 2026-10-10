@@ -59,6 +59,8 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None):
     root=Path(root);root.mkdir(parents=True,exist_ok=True)
     context={'run_id':record['run_id'],'parent_plan_id':record['plan_id'],'receipt_sha256':digest(receipt),
              'llm':{key:llm[key] for key in ('model','base_url')}}
+    for key in ('usage_ledger','usage_call_limit','thinking'):
+        if key in llm:context['llm'][key]=llm[key]
     if research_brief is not None:context['strategy_research_brief']=research_brief
     db=sqlite3.connect(root/'requests.sqlite3',timeout=10)
     try:

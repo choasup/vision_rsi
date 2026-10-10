@@ -116,6 +116,8 @@ class Candidates:
         base=self.base()
         identity={'base_revision':base,'contract':contract,'evidence':evidence,
                   'model':{key:llm[key] for key in ('model','base_url')}}
+        for key in ('usage_ledger','usage_call_limit','thinking'):
+            if key in llm:identity['model'][key]=llm[key]
         row=self.db.execute('SELECT identity,state,response FROM requests WHERE id=?',(request_id,)).fetchone()
         if row:
             if json.loads(row[0])!=identity:raise ValueError('Request ID belongs to a different research context')
