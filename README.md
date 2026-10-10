@@ -796,3 +796,16 @@ AP 比较完整性与成本完整性分别显示：`comparison_complete` 不代�
 设置 `research.allow_candidate_checks=true` 可让同一控制器选择 `check_candidate`，引用本研究已暂存候选，提供模块、函数及1–16个JSON关键字参数用例。它调用既有远端CPU沙箱，不使用GPU；原始报告单独保存，研究账本保留报告摘要、身份与路径。相同目标/候选/用例使用稳定检查ID，已完成结果复用、不确定发送拒绝重发。模型选择的开发用例不构成独立质量验收，更不构成RSI提升证据。
 
 `check_contract` 将候选的输入/输出检查绑定到固定任务接口。在本地配置的 `research.task_contract` 中设置 `path`（建议使用training导出的冻结contract.json绝对路径）和 `sha256`（该文件原始字节SHA256），并开启 `allow_candidate_checks`。控制器在规划前和执行时重核文件身份；模型只能提供候选、模块、函数和开发样本，不能传入或覆盖合同。样本按合同校验，候选输出由既有adapter检查器验证，报告区分 `adapter_contract_passed` / `adapter_contract_failed`。通过仅代表这些开发样本的接口符合性，不代表AP、F1或RSI效率达标。
+
+### 从 training 会话进入通用研究
+
+在项目目录执行（已有会话可直接使用其ID）：
+
+```powershell
+python -m vision_rsi training research-init --session-id SESSION
+python -m vision_rsi training research-step --session-id SESSION --steps 1 --repository F:\vision-rsi-agent
+```
+
+`research-init` 只读会话数据库，固定任务代号、接口版本、需求摘要身份，并导出研究用合同；不调用API/SSH。`research-step` 使用同一账本、固定合同和现有LLM配置，每次推进1–3个行动。创建候选/远端CPU检查仍分别由 `research.allow_candidate_writes` / `allow_candidate_checks` 配置控制；此入口不启动训练、不注册能力。
+
+会话需求或接口版本改变后，原研究不会被覆盖；可用新的 `--research-root` 建立另一研究。研究在第一次模型请求就收到完整固定接口。真实训练仍使用training的预算和执行门槛，候选开发用例通过不能代替任务效果验收。

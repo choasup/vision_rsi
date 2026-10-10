@@ -536,3 +536,11 @@
 - 首次 runs/research-candidate-live/9dd5352eed4a431b9c5040f55591fc7b 因探针tracked修改未提交，被stage候选clean门槛拒绝，未发SSH；原evidence沿用remote_requested=true措辞表示意图而非已调用，后续改为remote_allowed，原记录不改写。
 - 提交bc8ced6后真实探针通过：runs/research-candidate-live/dfadd9649f2d4ae1b92013db00e69ac9/{preregistered.json,evidence.json,controller-result.json,rejected-output.json,research/research.sqlite3}。实际CPU沙箱合规输出adapter_contract_passed，负start_seconds输出adapter_contract_failed；同目标/候选/样本另动作绑定恢复，在禁止运输调用时复用原报告digest。
 - 此轮无LLM/GPU，未训练/采用，不证明视觉效果或同预算RSI提升。安装包未更新，完整上线目标未完成。
+
+## Training会话绑定通用研究入口（2026-10-10）
+
+- 新增training research-init/research-step与task_research模块：只读Sessions读取已定义、无pending/review的任务，固定session/task/version/contract及需求turns摘要身份；研究目录独立导出原始字节固定的contract.json，目标不覆盖。需求/版本改变或冻结文件篡改/缺失拒绝，需新研究root。
+- 第一次规划就携带完整固定任务接口，无需等待候选创建；保留原配置中的候选写入/检查权限。研究入口不启动GPU训练或注册能力，训练预算门槛保持。新增显式--repository、--research-root及源launcher调用者路径处理，README给出命令。
+- 实际现有COCO会话df8e8f8991ee496d859e35fab2085d8f初始化成功，任务my-vision-task、接口v5、合同内容digest b434c6a2ead7c32f6ae8cd8fb9d6533f16e8754bcadad7627327c23d8821620e，导出原始文件SHA e97395b4f3bbee24130f065c2bfead78bdfe995f00e8897991771c05be2fe4fb；会话SQLite前后哈希相同。目录runs/task-research/该session，未调用API/SSH/GPU。
+- 34项task_research/training_shell/cli_help/launcher_paths/controller测试通过（12.014秒），含幂等/需求和文件变化拒绝、首请求完整接口。首次命令误用不存在的test_launch_agent导致loader失败，更正为test_launcher_paths后重跑通过。测试fixture改用相对测试文件的绝对路径，避免仓库外安装验证依赖cwd；安装验证清单加入新模块，尚未重建安装包。
+- 完整训练→真实效果达标→注册→推理及同预算RSI采用验收仍未完成。

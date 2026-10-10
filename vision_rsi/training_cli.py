@@ -157,7 +157,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','research-init','research-step','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -184,9 +184,24 @@ def main(argv):
     parser.add_argument('--poll-seconds',type=float,default=15)
     parser.add_argument('--candidate-id');parser.add_argument('--candidate-module')
     parser.add_argument('--candidate-store',default='runs/research-candidates')
+    parser.add_argument('--research-root',default='runs/task-research',help='Task-bound general research ledger root')
+    parser.add_argument('--repository',default='.',help='Git source repository for general research; required explicitly outside the checkout')
     args=parser.parse_args(argv)
     if args.interactive and args.action not in ('start','show','reply','define'):
         parser.error('--interactive is supported for start/show/reply/define')
+    if args.action in ('research-init','research-step'):
+        from .task_research import prepare,advance
+        if not args.session_id:parser.error('research requires --session-id')
+        try:
+            session=Sessions(args.sessions,read_only=True).show(args.session_id)
+            if args.action=='research-init':result=prepare(session,args.research_root)
+            else:result=advance(session,json.loads(Path(args.config).read_text(encoding='utf-8')),args.research_root,args.steps,args.repository)
+        except (ValueError,OSError,KeyError,TypeError,RuntimeError) as error:parser.exit(1,str(error)+'\n')
+        if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
+        else:
+            print('任务研究: '+result['directory']+'\n观测页: '+result['dashboard'])
+            print('固定接口版本: '+str(result['task_binding']['contract_version'])+'；未启动训练或采用候选。')
+        return
     if args.action=='readiness':
         import sqlite3
         from .task_readiness import inspect

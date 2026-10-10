@@ -82,7 +82,7 @@ class ControllerTests(unittest.TestCase):
                 self.assertEqual(remote.call_count,1)
             from vision_rsi.controller import validate_check_binding
             with self.assertRaises(ValueError):validate_check_binding(dict(check_args,candidate_id='f'*64),ledger.events())
-            contract=json.loads(Path('examples/interface-contract.json').read_text(encoding='utf-8'))
+            contract=json.loads((Path(__file__).resolve().parents[1]/'examples/interface-contract.json').read_text(encoding='utf-8'))
             contract_path=Path(folder)/'contract.json';contract_path.write_text(json.dumps(contract),encoding='utf-8')
             import hashlib
             config['research']['task_contract']={'path':str(contract_path),'sha256':hashlib.sha256(contract_path.read_bytes()).hexdigest()}
