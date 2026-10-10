@@ -265,3 +265,11 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - CLI recover applies received responses without API calls, checks the original context, preserves change review, and is idempotent. Explicit abandon-request preserves user turns and known contracts; unknown remote outcome/cost remains visible, never zeroed.
 - Actual child process forced exit after response persistence followed by a new CLI process recovered the contract using a nonexistent API config, proving recovery does not depend on API access. Added live-lock, context tamper, no-response and duplicate-resolution tests.
 - Legacy pending requests lack response association and remain unrecoverable automatically. No claims about remote API cancellation or billing reconciliation.
+
+
+## Preregistered paired execution (2026-10-10)
+
+- Added study create/show/advance/compare CLI, fresh independent sessions, equal task/GPU budget constraints, fixed per-pair seed, immutable candidate/control/config identity and preregistration time checks.
+- Actual execution delegates only to existing bounded durable campaign tools. Comparison requires every arm to finish research, settle accounting and pass independent real-measurement audit; all measurements must share frozen data, weights, seed, code and runtime within each pair.
+- Unit tests exercise execution binding and reject unequal budgets, reused sessions, prior execution, missing groups, manifest tampering and different data. Positive comparison logic uses explicitly fabricated metadata and is not real RSI evidence.
+- Actual real-data paired experiment, independent held-out selection verification, statistical replication, joint multi-resource budgets and candidate adoption remain incomplete.

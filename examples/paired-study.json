@@ -1,0 +1,14 @@
+{
+  "candidate": {
+    "candidate_id": "REPLACE_WITH_VERIFIED_CANDIDATE_SHA256",
+    "module": "vision_rsi.strategy_history_aware",
+    "store": "runs/research-candidates"
+  },
+  "pairs": [
+    {"baseline_session": "FRESH_BASELINE_SESSION_1", "candidate_session": "FRESH_CANDIDATE_SESSION_1", "seed": 11},
+    {"baseline_session": "FRESH_BASELINE_SESSION_2", "candidate_session": "FRESH_CANDIDATE_SESSION_2", "seed": 22}
+  ],
+  "research_rounds": 2,
+  "minimum_mean_ap_gain": 1.0,
+  "heldout_declaration": "Replace with task-selection provenance independent of candidate development. This declaration alone does not verify independence."
+}

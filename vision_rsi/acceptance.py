@@ -52,4 +52,5 @@ def review(plan,receipt):
     if score<target:reasons.append('Measured box AP is below task requirement')
     return {'status':'ready_for_registration' if passed else 'not_met','passed':passed,'box_AP':score,'threshold':target,
             'reasons':reasons,'checkpoint_sha256':hashes['checkpoint.pt'],
+            'training_identity':identity,
             'capability_registered':False,'note':'Acceptance evidence review only; inference registration requires a working adapter.'}

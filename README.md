@@ -397,3 +397,16 @@ Training 需求理解会在内部对已收到的接口格式错误最多修正�
 
 
 需求 API 中断恢复：`training show --session-id SESSION_ID` 会显示待处理请求 ID 和已保存响应数量。原进程退出后，使用 `training recover --session-id SESSION_ID --request-id REQUEST_ID` 从已落盘响应完成接口保存，不调用 API；同一恢复命令可重复执行，不会追加重复版本。若没有收到响应，需显式执行 `training abandon-request --session-id SESSION_ID --request-id REQUEST_ID` 才能解除本地 pending，再自行决定是否发送后续消息。解除不会取消服务端 API，请求结果和费用仍未知，用户原消息及旧契约保留。活跃进程持有会话锁时两种操作均拒绝；恢复要求原请求上下文未变，需求变更仍走接受/拒绝门槛。旧版 pending 请求没有关联标识时不支持自动恢复，不会猜测其响应。自定义存储需同时传入原 `--sessions` 路径。
+
+
+同预算配对实验入口（首个真实适配器为 COCO）：先为每组 baseline/candidate 建立两个独立、需求完全一致且有授权 GPU 预算的新会话，完成真实数据/权重哈希配置，再按 `examples/paired-study.json` 填入会话和候选 ID。提交当前源码后运行：
+
+```powershell
+.\vision-rsi.cmd study create --spec examples/paired-study.json --config config.local.json
+.\vision-rsi.cmd study show --study-id STUDY_SHA256
+.\vision-rsi.cmd study advance --study-id STUDY_SHA256 --pair 0 --arm baseline --steps 3
+.\vision-rsi.cmd study advance --study-id STUDY_SHA256 --pair 0 --arm candidate --steps 3
+.\vision-rsi.cmd study compare --study-id STUDY_SHA256
+```
+
+`advance` 每次只推进指定组，等待远端运行时重复同一组命令，不自动启动所有组。pair 从0编号；所有预登记组都需执行完成。登记会冻结同组随机种子、相同 GPU 预算、契约版本、候选 Git、控制源码及配置；已跑过实验的会话拒绝登记。执行要求保持登记时的控制源码版本，修改控制代码后旧实验不能混跑。比较会重新审计全部组的原始证据及整个会话成本，拒绝 fixture、缺组、未结算、未完成研究、事后登记、条件不一致和源码变化。其输出仅表示预登记 GPU 预算下的观测 AP 差异；保留任务独立性目前仍是声明，统计复现和多资源预算审核尚待实现，`rsi_efficiency_verified` 和 `agent_adopted` 始终为 false。该入口不会自动采用或覆盖现有 Agent。

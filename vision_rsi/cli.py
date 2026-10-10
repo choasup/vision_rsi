@@ -3,7 +3,10 @@ import sys
 
 
 def main():
-    if len(sys.argv)>1 and sys.argv[1]=='candidate':
+    if len(sys.argv)>1 and sys.argv[1]=='study':
+        from .paired_study import main as study_main
+        study_main(sys.argv[2:])
+    elif len(sys.argv)>1 and sys.argv[1]=='candidate':
         from .candidates import main as candidate_main
         candidate_main(sys.argv[2:])
     elif len(sys.argv)>1 and sys.argv[1]=='coco-train':

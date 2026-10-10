@@ -54,6 +54,7 @@ def audit(session_id,campaign_id,root='runs/campaigns',run_store='runs/training-
             eligible=not any(reason!='Measured box AP is below task requirement' for reason in verdict['reasons'])
             measurements.append({'run_id':record['run_id'],'box_AP':verdict['box_AP'],'threshold':verdict['threshold'],
                                  'receipt_sha256':hashlib.sha256(receipt_raw).hexdigest(),'plan_id':record['plan_id'],
+                                 'training_identity':verdict['training_identity'],
                                  'eligible_real_coco_measurement':eligible,'target_met':verdict['passed']})
             if not eligible:missing.append('Fixture/subset measurement cannot support a real RSI comparison: '+record['run_id'])
         except (ValueError,TypeError,KeyError,OSError) as error:
