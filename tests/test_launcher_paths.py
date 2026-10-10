@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from contextlib import closing
 import sqlite3
 from pathlib import Path
@@ -13,6 +14,22 @@ launcher=importlib.util.module_from_spec(spec);spec.loader.exec_module(launcher)
 
 
 class LauncherPathsTests(unittest.TestCase):
+    @unittest.skipUnless(os.name=='nt','Windows CMD launcher')
+    def test_cmd_explicit_python_from_external_directory_and_invalid_override(self):
+        from vision_rsi.contracts import Sessions
+        wrapper=str(Path(__file__).resolve().parents[1]/'vision-rsi.cmd')
+        with tempfile.TemporaryDirectory() as directory:
+            session=Sessions(Path(directory)/'sessions').create('external-task','Launcher developer fixture')
+            environment=dict(os.environ,VISION_RSI_PYTHON=sys.executable,USERPROFILE=directory)
+            command=[os.environ.get('COMSPEC','cmd.exe'),'/d','/c',wrapper,'training','list','--sessions','sessions','--json']
+            result=subprocess.run(command,cwd=directory,env=environment,capture_output=True,text=True,encoding='utf-8',timeout=30)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(json.loads(result.stdout)[0]['session_id'],session['session_id'])
+            environment['VISION_RSI_PYTHON']=str(Path(directory)/'missing-python.exe')
+            result=subprocess.run(command,cwd=directory,env=environment,capture_output=True,text=True,encoding='utf-8',timeout=30)
+            self.assertEqual(result.returncode,2)
+            self.assertIn('VISION_RSI_PYTHON',result.stderr)
+
     def call(self,directory,*arguments):
         return subprocess.run([sys.executable,'-X','utf8',str(Path(__file__).resolve().parents[1]/'launch_agent.py'),
                                '--cli',*arguments],cwd=directory,capture_output=True,text=True,encoding='utf-8',timeout=30)

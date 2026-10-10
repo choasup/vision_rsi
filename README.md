@@ -8,6 +8,15 @@
 
 安装环境从仓库外运行时，请显式传入配置、会话、研究目录和仓库的绝对路径。安装验证证据保存在 `runs/release-dev5/installed-evidence.json`，不包含密钥。
 
+Windows 源码启动器按以下顺序选择 Python：`VISION_RSI_PYTHON` 指定的可执行文件、项目 `.venv\Scripts\python.exe`、本机 Codex 运行时、PATH 中的 `python`。可显式指定自己安装的 Python 环境：
+
+```powershell
+$env:VISION_RSI_PYTHON = 'C:\path\to\python.exe'
+.\vision-rsi.cmd --help
+```
+
+显式路径无效时会报错退出，不会悄悄切换环境。`.cmd` 入口不要求开启 PowerShell 脚本执行策略；Python 与所需依赖仍须安装，源码启动器会读取项目源码。
+
 Windows 本地 CLI，通过 SSH 调度视觉研究任务。核心入口是 `training start`（自然语言定义与澄清）、`training watch`（持续研究控制）和 `test`（按已验收任务版本推理）。COCO 检测是首个真实任务适配器。
 
 当前开发状态：已实现真实 LLM、SSH 作业、固定检测器训练/恢复、官方 COCO 指标计算、结果验收及版本化推理接口；H20 小规模开发验证已执行。官方预训练权重在完整 COCO val2017 的 CPU 基线已测得 box AP46.7097，隔离本地环境复算一致；完整 COCO 训练和 AP≥60 验收尚未完成，没有真实达标 COCO 能力，也尚无通用 RSI 效率提升的独立证据。当前应用只支持可信本地用户，不是公网多用户服务。
