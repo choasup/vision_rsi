@@ -508,3 +508,7 @@ Run `vision-rsi resources --config config.local.json --root /absolute/remote/ass
 The current development download is already tracked under `runs/resource-bootstrap/cli-records`; use that directory to observe/continue it rather than creating another record set for the same resources.
 
 For a complete extracted validation dataset, `python -m vision_rsi.resource_verify --root COCO_ROOT` checks all5,000 referenced JPEGs with Pillow, decodes pixels, verifies dimensions and records deterministic image-content and annotation SHA-256 fingerprints. It does not execute a model or compute AP.
+
+### Fixed public baseline evaluation
+
+`vision-rsi baseline-evaluate --root COCO_ROOT --weights PUBLIC_WEIGHT --weights-sha256 SHA --annotation-sha256 SHA --image-manifest-sha256 SHA --output NEW_RECORDS --seconds 240` runs CPU inference of the fixed torchvision Faster R-CNN ResNet50 FPN v2 public weight with800/1333 resizing. Requires pinned torch2.6.0+cu124/torchvision0.21.0+cu124 and the full verified5,000-image validation dataset. Each input/output cache is bound to model/source/data identity and integrity checked on resume. Full COCO AP is computed only after complete coverage; this diagnostic never registers a validated Training capability. External scheduler timeout must bound execution because an individual model call can exceed the soft deadline.
