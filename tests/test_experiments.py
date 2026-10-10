@@ -20,6 +20,47 @@ def proposal():
 
 
 class ExperimentTests(unittest.TestCase):
+    def test_two_generation_lineage_rejects_return_to_original_method(self):
+        first=compile_plan(self.parent,self.record,proposal(),.5,self.root/'first')
+        frozen=json.loads(Path(first['plan_path']).read_text(encoding='utf-8'))
+        self.assertEqual(frozen['experiment']['method_ancestry'],[self.parent['recipe']])
+        record=dict(self.record,plan_id=first['plan_id'])
+        repeated=proposal();repeated['recipe_changes']={'learning_rate':self.parent['recipe']['learning_rate']}
+        with self.assertRaisesRegex(ValueError,'repeats an ancestor'):
+            compile_plan(frozen,record,repeated,.4,self.root/'repeat')
+        self.assertFalse((self.root/'repeat').exists())
+        changed=proposal();changed['recipe_changes']={'learning_rate':.00025}
+        second=compile_plan(frozen,record,changed,.4,self.root/'second')
+        self.assertEqual(second['experiment']['method_ancestry'],[self.parent['recipe'],frozen['recipe']])
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_lineage_reaches_prompt_and_duplicate_response_is_cached_rejection(self,client):
+        ancestor=dict(self.parent['recipe'],learning_rate=.0005)
+        self.parent['experiment']={'method_ancestry':[ancestor]}
+        Path(self.record['details']['plan_path']).write_text(json.dumps(self.parent),encoding='utf-8')
+        self.record['plan_id']=digest(self.parent)
+        client.return_value.complete.return_value={'content':json.dumps(proposal())}
+        folder=self.root/'duplicate'
+        first=propose_next(self.record,self.runs,self.llm,folder,'same')
+        self.assertEqual(first['status'],'proposal_rejected')
+        self.assertIn('ancestor',first['reason'])
+        self.assertEqual(first,propose_next(self.record,self.runs,self.llm,folder,'same'))
+        self.assertEqual(client.return_value.complete.call_count,1)
+        messages=client.return_value.complete.call_args.args[0]
+        prompt=json.loads(messages[1]['content'])
+        self.assertEqual(len(prompt['previous_methods_in_lineage']),2)
+        self.assertEqual(prompt['previous_methods_in_lineage'][0]['learning_rate'],.0005)
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_malformed_lineage_blocks_before_api_or_request_ledger(self,client):
+        self.parent['experiment']={'method_ancestry':[{'learning_rate':.0005}]}
+        Path(self.record['details']['plan_path']).write_text(json.dumps(self.parent),encoding='utf-8')
+        self.record['plan_id']=digest(self.parent)
+        with self.assertRaises((ValueError,KeyError)):
+            propose_next(self.record,self.runs,self.llm,self.root/'invalid-lineage','invalid')
+        client.assert_not_called()
+        self.assertFalse((self.root/'invalid-lineage').exists())
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
         parent,receipt=evidence(score=42)
