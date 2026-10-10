@@ -498,3 +498,12 @@
 - 新增tests/live_research_candidate_probe.py --live-remote：固定非LLM开发候选，由research_step恢复预写stage/check动作；禁止任何规划API调用。候选绑定实际仓库检查基线，独立Git提交；实际SSH调用现有CPU沙箱。
 - 真实探针通过，证据 runs/research-candidate-live/fcafdb462f674c2facb18d3815d8345a/{preregistered.json,evidence.json,controller-result.json,research/research.sqlite3}；候选原始检查报告在该研究目录/candidates下。输入1/3返回2/6，实际候选进程uid65534；返回运行限制gpu=false、network=false。未重新攻击验证全部隔离边界。
 - 相同检查改用另一action绑定，禁止远端运输调用后仍成功复用报告且digest相同。真实远端失败反馈、模型自主提案选择、真实训练与RSI效果不在本探针范围；未调用LLM/GPU，未采用候选。安装包未更新，完整上线目标未完成。
+
+## 真实失败反馈与修复探针暴露的协议缺口（2026-10-10）
+
+- 为stage_candidate结果保留base_revision与source_edits，模型上下文结构化投影最多两文件/每文件3000字符、整体约9000字符，并标明截断；原始提案不截断。34项controller/controller_budget/ledger/not_dispatched测试通过（10.431秒），含源码可见性。
+- 新增显式tests/live_research_repair_probe.py --live，预登记固定整数/字典输入、最多1次修正API、实际CPU检查且无GPU。首次实际运行 runs/research-repair-live/442c9a1b8ce047ae8ab946fbc549a68b 失败：初始沙箱确实因dict*int报TypeError；DeepSeek返回修复源码但外层JSON缺少闭合括号，JSONDecodeError拒绝，未创建/执行修复候选。reported prompt6239/completion504/total6743 tokens，1次responded，额度剩0，无语义重试。所有原始响应与快照保留。
+- 另发现响应refs未包含主仓库检查结果，即使JSON有效也会被基线引用门槛拒绝；提示现显式要求引用git_revision等于base_revision的inspect_repository结果。原检查不放宽。
+- 客户端新增可选llm.response_format=json_object并在调用前校验，发送response_format对象，研究请求快照同步记录；默认配置不改变，不自动回退或修补无效JSON。修复探针后续显式使用此选项，其实际服务支持尚未再次验证。本轮不增加第二次API。
+- 本轮真实失败不等于修复闭环通过；未训练/未采用/未证明RSI提升，安装包未更新，完整上线目标未完成。
+- JSON选项及研究控制器/未发送规则39项测试通过（11.298秒），覆盖HTTP载荷、无效选项发送前拒绝和请求快照记录一致。未声称服务端JSON格式保证已验证。

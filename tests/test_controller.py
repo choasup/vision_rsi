@@ -116,11 +116,12 @@ class ControllerTests(unittest.TestCase):
                 self.assertEqual(snapshot['messages'],messages)
                 self.assertEqual(snapshot['max_tokens'],max_tokens)
                 self.assertEqual(snapshot['thinking'],{'type':'disabled'})
+                self.assertEqual(snapshot['response_format'],{'type':'json_object'})
                 self.assertEqual(request['request_snapshot_sha256'],digest(snapshot))
                 self.assertNotIn('api_key_env',snapshot)
                 return {'content':json.dumps({'tool':'inspect_repository','summary':'inspect','question':'q','expected_evidence':'e','refs':['goal']})}
             client.return_value.complete.side_effect=complete
-            research_step({'llm':{'model':'deepseek-flash','api_key_env':'KEY'},'remote':{}},folder)
+            research_step({'llm':{'model':'deepseek-flash','api_key_env':'KEY','response_format':'json_object'},'remote':{}},folder)
 
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_synthesis_preserves_findings_and_rejects_non_result_citations(self,client):

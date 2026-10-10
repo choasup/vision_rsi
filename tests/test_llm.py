@@ -14,6 +14,18 @@ from vision_rsi.llm import OpenAICompatibleClient, NoRedirect, urlopen, _direct_
 
 
 class LLMTests(unittest.TestCase):
+    @patch.dict('os.environ', {'TEST_LLM_KEY':'fixture-secret'})
+    @patch('vision_rsi.llm.urlopen')
+    def test_optional_json_response_mode_is_transmitted_and_invalid_mode_never_sends(self,opened):
+        opened.return_value.__enter__.return_value=io.StringIO(json.dumps({'model':'fixture','choices':[{'message':{'content':'{}'}}]}))
+        client=OpenAICompatibleClient(dict(self.client.config,response_format='json_object'))
+        client.complete([{'role':'user','content':'Return JSON'}])
+        self.assertEqual(json.loads(opened.call_args.args[0].data)['response_format'],{'type':'json_object'})
+        opened.reset_mock()
+        for invalid in (None,{},True,'text'):
+            with self.assertRaises(ValueError):OpenAICompatibleClient(dict(self.client.config,response_format=invalid)).validate_config()
+        opened.assert_not_called()
+
     @patch.dict('os.environ', {'TEST_LLM_KEY': 'fixture-secret'})
     @patch('vision_rsi.llm.urlopen')
     def test_configuration_preflight_has_no_network_side_effect(self,opened):

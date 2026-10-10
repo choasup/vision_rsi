@@ -78,6 +78,8 @@ class OpenAICompatibleClient:
             raise ValueError('LLM base_url must use HTTPS')
         parts.port  # Validate port syntax before reserving any caller budget.
         if not isinstance(self.config.get('model'),str) or not self.config['model'].strip():raise ValueError('LLM model ID is missing')
+        if 'response_format' in self.config and self.config['response_format']!='json_object':
+            raise ValueError('Only explicit json_object response_format is supported')
         if 'usage_ledger' in self.config:
             from .llm_usage import ledger_path
             ledger_path(self.config['usage_ledger'])
@@ -97,6 +99,7 @@ class OpenAICompatibleClient:
                    'max_tokens': max_tokens, 'stream': False}
         if 'thinking' in self.config:
             payload['thinking'] = {'type': self.config['thinking']}
+        if 'response_format' in self.config:payload['response_format']={'type':self.config['response_format']}
         encoded = json.dumps(payload).encode()
         if len(encoded) > MAX_REQUEST_BYTES:
             raise ValueError('LLM request exceeds byte limit')

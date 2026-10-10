@@ -29,7 +29,7 @@ def main():
             if isinstance(value,str):os.environ[name]=value
     folder=repo/'runs/research-repair-live'/uuid.uuid4().hex;folder.mkdir(parents=True)
     print(str(folder),flush=True)
-    config={'llm':dict(local['llm'],usage_ledger=str(folder/'usage.sqlite3'),usage_call_limit=1),
+    config={'llm':dict(local['llm'],usage_ledger=str(folder/'usage.sqlite3'),usage_call_limit=1,response_format='json_object'),
             'remote':local['remote'],'research':{'allow_candidate_writes':True,'allow_candidate_checks':True}}
     atomic_json(folder/'preregistered.json',{'api_call_limit':1,'gpu_allowed':False,'path':'vision_rsi/adapter_cpu_repair.py',
         'cases':[{'value':1},{'value':{'value':3}}],'expected':[{'value':2,'uid':65534},{'value':6,'uid':65534}],
