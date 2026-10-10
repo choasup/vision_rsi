@@ -12,6 +12,31 @@ from test_event_eval import event
 
 class AdapterEvaluationTests(unittest.TestCase):
     @patch('vision_rsi.controller.OpenAICompatibleClient')
+    def test_controller_reads_bound_candidate_source_after_old_history_window(self,client):
+        from vision_rsi.controller import research_step,observation_context
+        from vision_rsi.ledger import Ledger
+        parent=json.loads((self.store.root/self.candidate/'candidate.json').read_text())
+        ledger=Ledger(self.root);ledger.append('objective','objective',{'summary':'read earlier candidate'})
+        ledger.append('stage','action',{'summary':'stage','tool':'stage_candidate','executor':'research-v1'})
+        ledger.append('stage:result','result',{'summary':'staged','action':'stage','status':'completed','observation':parent})
+        for i in range(20):ledger.append('noise'+str(i),'evidence',{'summary':'later observation'})
+        args={'candidate_id':self.candidate,'path':'vision_rsi/adapter_fixture.py',
+              'expected_sha256':parent['source_hashes']['vision_rsi/adapter_fixture.py'],'start_line':1,'max_lines':100}
+        client.return_value.complete.return_value={'content':json.dumps({'tool':'read_candidate_source','summary':'read',
+            'question':'q','expected_evidence':'source','refs':['stage:result'],'arguments':args})}
+        research_step({'llm':{'model':'fixture'}},self.root,repository=self.store.repository)
+        result=ledger.events()[-1]['payload']
+        self.assertEqual(result['status'],'completed');self.assertTrue(result['read_only'])
+        self.assertIn('def predict',result['observation']['source_excerpt'])
+        self.assertEqual(observation_context(result['observation'])['candidate_id'],self.candidate)
+        from vision_rsi.controller import execute
+        config={'_research_candidate_context':{'store':str(self.store.root)}}
+        restored=execute('read_candidate_source',config,self.store.repository,{key:value for key,value in args.items() if key!='expected_sha256'})
+        self.assertEqual(restored['source_sha256'],args['expected_sha256'])
+        with self.assertRaisesRegex(ValueError,'hash was not observed'):
+            execute('read_candidate_source',config,self.store.repository,dict(args,expected_sha256='0'*64))
+
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
     @patch('vision_rsi.remote.check_candidate')
     def test_controller_failed_metric_to_child_reevaluation(self,remote,client):
         from vision_rsi.controller import research_step

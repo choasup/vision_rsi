@@ -12,7 +12,7 @@ from .observatory import dashboard
 from .remote import probe
 from .runner import digest
 
-TOOLS = {'inspect_repository', 'read_source', 'remote_environment', 'synthesize','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run'}
+TOOLS = {'inspect_repository', 'read_source','read_candidate_source', 'remote_environment', 'synthesize','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run'}
 
 
 def observation_context(value):
@@ -89,7 +89,7 @@ def observation_context(value):
         result['included_source_hash_count']=len(result['source_sha256'])
         return result
     if isinstance(value,dict) and isinstance(value.get('source_sha256'),str) and 'source_excerpt' in value:
-        result={key:value.get(key) for key in ('path','source_sha256','start_line','end_line','total_lines','eof')}
+        result={key:value.get(key) for key in ('path','source_sha256','start_line','end_line','total_lines','eof','candidate_id','git_revision')}
         text=value['source_excerpt']
         result.update(source_excerpt=text[:5000],excerpt_truncated=len(text)>5000,observation_sha256=digest(value))
         return result
@@ -107,6 +107,14 @@ def source_arguments(value):
         raise ValueError('Invalid source line range')
     if not isinstance(value['expected_sha256'],str) or not re.fullmatch('[0-9a-f]{64}',value['expected_sha256']):
         raise ValueError('read_source requires an observed source hash')
+    return dict(value)
+
+
+def candidate_source_arguments(value):
+    if not isinstance(value,dict) or set(value) not in ({'candidate_id','path','start_line','max_lines','expected_sha256'},{'candidate_id','path','start_line','max_lines'}):
+        raise ValueError('Candidate source requires candidate_id and source range/hash')
+    if not isinstance(value['candidate_id'],str) or not re.fullmatch('[0-9a-f]{64}',value['candidate_id']):raise ValueError('Invalid candidate identity')
+    source_arguments(dict({key:item for key,item in value.items() if key!='candidate_id'},expected_sha256=value.get('expected_sha256','0'*64)))
     return dict(value)
 
 
@@ -239,6 +247,7 @@ def parse_plan(content, known):
         raise ValueError('Plan cites nonexistent evidence')
     result={k: plan[k] for k in ('tool', 'summary', 'question', 'expected_evidence')} | {'refs': refs}
     if plan['tool']=='read_source':result['arguments']=source_arguments(plan.get('arguments'))
+    if plan['tool']=='read_candidate_source':result['arguments']=candidate_source_arguments(plan.get('arguments'))
     if plan['tool']=='read_training_run':
         from .research_training import arguments
         result['arguments']=arguments(plan.get('arguments'))
@@ -260,6 +269,18 @@ def parse_plan(content, known):
 
 
 def execute(tool, config, repository,arguments=None):
+    if tool=='read_candidate_source':
+        from .candidates import Candidates
+        args=candidate_source_arguments(arguments);context=config.get('_research_candidate_context')
+        if not isinstance(context,dict):raise ValueError('Candidate source store is not bound')
+        store=Candidates(context['store'],repository)
+        try:
+            record=store.verify(json.loads((store.root/args['candidate_id']/'candidate.json').read_text(encoding='utf-8')))
+            if 'expected_sha256' not in args:args['expected_sha256']=record['source_hashes'].get(args['path'])
+            if record['source_hashes'].get(args['path'])!=args['expected_sha256']:raise ValueError('Candidate source hash was not observed')
+            result=execute('read_source',config,record['checkout'],{key:value for key,value in args.items() if key!='candidate_id'})
+            return dict(result,candidate_id=args['candidate_id'],git_revision=record['git_revision'])
+        finally:store.close()
     if tool=='evaluate_contract':
         from .adapter_evaluation import evaluate
         from .candidates import Candidates
@@ -438,7 +459,8 @@ def research_step(config, directory, steps=1, repository='.'):
             if pending is None:
                 completed_actions = {e['payload']['action'] for e in events if e['kind'] == 'result' and e['payload']['status'] == 'completed'}
                 completed_tools = {e['payload'].get('tool') for e in events if e['key'] in completed_actions}
-                available = TOOLS - (completed_tools-{'read_source','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run'})
+                available = TOOLS - (completed_tools-{'read_source','read_candidate_source','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run'})
+                if 'stage_candidate' not in completed_tools:available.discard('read_candidate_source')
                 if not config.get('_training_evidence_context') or not config.get('_task_readiness_context',{}).get('recent_run_ids'):
                     available.discard('read_training_run')
                 if config.get('research',{}).get('allow_candidate_checks') is not True or 'stage_candidate' not in completed_tools:
@@ -495,6 +517,9 @@ def research_step(config, directory, steps=1, repository='.'):
                         prompt['schema']['tool_argument_shapes']['read_training_run']={'run_id':'exact recent_run_snapshots run_id from task_readiness','expected_record_sha256':'matching record_sha256 from that same snapshot'}
                         prompt['schema']['arguments_rule']+=' read_training_run requires arguments exactly run_id,expected_record_sha256; never supply a path or session ID. An updated record has a new hash and may be inspected again; do not repeat the same run/hash.'
                         prompt['instruction']+=' A successful read_training_run result is also eligible synthesis evidence. Locally re-reviewed receipts are not independent authenticity, serving availability or RSI evidence.'
+                    if 'read_candidate_source' in available:
+                        prompt['tools']['read_candidate_source']='Read a hash-bound source excerpt from a candidate staged in this ledger; cite the staged result. No execution.'
+                        prompt['schema']['tool_argument_shapes']['read_candidate_source']={'candidate_id':'staged candidate identity','path':'path in candidate source_hashes','expected_sha256':'optional known hash; otherwise derive from verified candidate','start_line':'positive integer','max_lines':'1..100'}
                     if 'stage_candidate' in available:
                         prompt['schema']['arguments_rule']+=' stage_candidate may additionally include parent_candidate_id to iterate a previously staged candidate. Cite its staged result, set base_revision to that candidate git_revision, and use its source_hashes for edited files. Omit parent_candidate_id to start from the inspected main repository.'
                     prompt['response_contract']={
@@ -560,14 +585,14 @@ def research_step(config, directory, steps=1, repository='.'):
                     if plan['tool'] not in available:
                         raise ValueError('Tool already completed or not yet eligible')
                     if plan['tool']=='synthesize':validate_synthesis_evidence(plan['arguments'],ledger.events())
-                    if plan['tool'] in ('check_candidate','check_contract','evaluate_contract'):validate_check_binding(plan['arguments'],events,plan['refs'])
+                    if plan['tool'] in ('check_candidate','check_contract','evaluate_contract','read_candidate_source'):validate_check_binding(plan['arguments'],events,plan['refs'])
                     if plan['tool']=='stage_candidate' and plan['arguments'].get('parent_candidate_id'):
                         validate_check_binding({'candidate_id':plan['arguments']['parent_candidate_id']},events,plan['refs'])
                     if plan['tool']=='stage_candidate' and not any(e['kind']=='result' and e['payload'].get('status')=='completed'
                             and e['payload'].get('observation',{}).get('git_revision')==plan['arguments']['base_revision']
                             for e in events if e['key'] in plan['refs']):
                         raise ValueError('Candidate must cite the observed base revision result')
-                    if plan['tool'] in ('read_source','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run') and any(e['kind']=='action' and e['key'] in completed_actions
+                    if plan['tool'] in ('read_source','read_candidate_source','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run') and any(e['kind']=='action' and e['key'] in completed_actions
                             and e['payload'].get('tool')==plan['tool'] and e['payload'].get('arguments')==plan['arguments'] for e in events):
                         raise ValueError('Identical research action already completed')
                 except (ValueError, KeyError, TypeError, AttributeError) as error:
@@ -583,14 +608,14 @@ def research_step(config, directory, steps=1, repository='.'):
                 execution_config=config
                 if pending['payload']['tool']=='stage_candidate' and pending['payload']['arguments'].get('parent_candidate_id'):
                     validate_check_binding({'candidate_id':pending['payload']['arguments']['parent_candidate_id']},events,pending['payload']['refs'])
-                if pending['payload']['tool'] in ('check_candidate','check_contract','evaluate_contract'):validate_check_binding(pending['payload']['arguments'],events,pending['payload']['refs'])
-                if pending['payload']['tool'] in ('stage_candidate','check_candidate','check_contract','evaluate_contract'):
+                if pending['payload']['tool'] in ('check_candidate','check_contract','evaluate_contract','read_candidate_source'):validate_check_binding(pending['payload']['arguments'],events,pending['payload']['refs'])
+                if pending['payload']['tool'] in ('stage_candidate','check_candidate','check_contract','evaluate_contract','read_candidate_source'):
                     execution_config=dict(config,_research_candidate_context={
                         'store':str(ledger.directory/'candidates'),
                         'binding':{'action_key':pending['key'],'objective_sha256':digest(events[0]['payload'])}})
                 if pending['payload']['tool']=='synthesize':validate_synthesis_evidence(pending['payload'].get('arguments'),ledger.events())
                 observation = (execute(pending['payload']['tool'],execution_config,repository,pending['payload'].get('arguments'))
-                               if pending['payload']['tool'] in ('read_source','synthesize','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run') else execute(pending['payload']['tool'], config, repository))
+                               if pending['payload']['tool'] in ('read_source','read_candidate_source','synthesize','stage_candidate','check_candidate','check_contract','evaluate_contract','read_training_run') else execute(pending['payload']['tool'], config, repository))
                 status = 'completed'
                 summary = '研究工具已执行：' + pending['payload']['tool']
             except Exception as error:

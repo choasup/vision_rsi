@@ -92,6 +92,10 @@ from .runner import digest
 
 
 def metric_memory(events):
+    stage_actions={e['key'] for e in events if e['kind']=='action' and e['payload'].get('tool')=='stage_candidate'}
+    staged={e['payload']['observation']['candidate_id']:e['key'] for e in events if e['kind']=='result'
+            and e['payload'].get('status')=='completed' and e['payload'].get('action') in stage_actions
+            and isinstance(e['payload'].get('observation'),dict) and isinstance(e['payload']['observation'].get('candidate_id'),str)}
     actions={e['key'] for e in events if e['kind']=='action' and e['payload'].get('tool')=='evaluate_contract'}
     groups={};count=0
     fields=('contract_sha256','dataset_sha256','evaluator_sha256','gate_sha256')
@@ -107,6 +111,7 @@ def metric_memory(events):
         binding={key:identity[key] for key in fields};key=digest(binding)
         group=groups.setdefault(key,{'comparison_binding':binding,'best':None,'latest':None,'latest_failure':None,'last_index':index})
         row={'ref':event['key'],'candidate_id':value.get('candidate_id'),'report_sha256':value.get('report_sha256'),
+             'staged_ref':staged.get(value.get('candidate_id')),'module':identity.get('module'),'function':identity.get('function'),
              'observation_sha256':digest(value),'event_micro_f1':score,
              'threshold':metric.get('threshold'),'metric_threshold_met':metric.get('metric_threshold_met'),
              'tp':metric.get('tp'),'fp':metric.get('fp'),'fn':metric.get('fn')}
