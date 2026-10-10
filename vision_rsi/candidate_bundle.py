@@ -138,6 +138,8 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_director
     request={'files':bundle['files'],'source_hashes':identity['source_hashes'],
              'module':identity['module'],'function':identity['function'],'cases':cases}
     binding={'bundle_id':bundle['bundle_id'],'contract_sha256':identity['contract_sha256'],'request_sha256':digest(request),'input_sha256':digest(cases),'remote':remote,
+             'runtime_driver_sha256':hashlib.sha256(Path(__file__).with_name('candidate_runtime.py').read_bytes()).hexdigest(),
+             'transport_sha256':hashlib.sha256(Path(__file__).with_name('remote.py').read_bytes()).hexdigest(),
              'provenance_sha256':hashlib.sha256(Path(__file__).with_name('input_provenance.py').read_bytes()).hexdigest(),
              'executor_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
              'validator_sha256':hashlib.sha256(Path(__file__).with_name('contracts.py').read_bytes()).hexdigest()}

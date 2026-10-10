@@ -987,3 +987,13 @@ python -m vision_rsi training release-status --session-id SESSION --json
 该路径要求研究已暂停，无未完成动作、不确定 API 请求或未处理规划响应，且使用冻结的媒体候选包评测模式。逐条核对账本中的评测报告、执行内容与固定数据身份，并检查评测目录内是否有未挂账执行；不能混入手工挑选的 `--development` 子集。包含尚未覆盖输入来源的旧检查/训练读取工具时会拒绝。预留后、执行前封存账本快照，之后该账本无法恢复研究或调用规划器；失败和不确定执行同样保留封存。
 
 `ledger_history_verified` 仅覆盖所选任务账本，`complete_development_history_verified` 仍为 false：其他研究根目录、训练程序、人工实验和数据选择过程尚未纳入统一核验。封存不等于获得正式 `test` 资格。Windows 评测与执行目录使用缩短的哈希目录名，复用前仍核对完整身份，避免默认任务路径超过系统长度限制。
+
+留出指标达标后，可检查同一候选的 CPU 服务行为：
+
+```powershell
+.\vision-rsi.cmd training candidate-serving-check --session-id SESSION_ID --version VERSION --dataset heldout.json --max-latency-seconds 30 --registry runs/capabilities --json
+```
+
+这里的 `30` 是命令示例，需替换为这次检查明确选择的目标，并非原任务已授权的要求或资源预算。工具执行两次独立调用，比较整批输出与验收时输出是否完全一致，测量含传输及解码的整批耗时。固定候选、验收记录、输入内容、服务驱动源码及控制端实现；重复查询复用保存结果，不能换目标重跑覆盖失败，不确定的耗时测量不会自动补跑。
+
+`serving_contract_checks_met` 只说明两次观测满足输出一致性及显式耗时目标；不证明任意输入的延迟、完整环境身份或模型泛化，不自动提升候选、不开放正式 `test`。输入、源码或验收证据变化会拒绝复用；旧执行缺少服务驱动/传输身份时也会拒绝，不能自动补写历史证据。

@@ -30,8 +30,8 @@ def status(registry, name):
             'report_path':str(registry.root/name/'candidate-acceptance'/'acceptance.json'), 'production_accepted':False}
 
 
-def accept(registry, session, version, dataset_path, development_paths, remote, research_history=None, before_dispatch=None):
-    """Reserve before dispatch; neither changed versions nor sessions reset the slot."""
+def pending_candidate(registry, session, version):
+    """Resolve an intact pending artifact bound to current accepted requirements."""
     versions = session.get('versions',[])
     if session.get('pending_request') or not versions or versions[-1].get('review_required'):
         raise ValueError('Resolve task requirements before candidate acceptance')
@@ -56,6 +56,12 @@ def accept(registry, session, version, dataset_path, development_paths, remote, 
     bundle = verify(folder/'bundle.json')
     if bundle['bundle_id']!=binding.get('bundle_id') or digest(json.loads(base64.b64decode(bundle['contract_base64'])))!=expected['contract_sha256']:
         raise ValueError('Candidate bundle differs from registered task')
+    return name,folder,binding,bundle
+
+
+def accept(registry, session, version, dataset_path, development_paths, remote, research_history=None, before_dispatch=None):
+    """Reserve before dispatch; neither changed versions nor sessions reset the slot."""
+    name,folder,binding,bundle=pending_candidate(registry,session,version)
     if not development_paths or len(development_paths)>128:raise ValueError('Require 1..128 development records')
     from .bundle_acceptance import prepare, accept as evaluate
     prepared = prepare(folder/'bundle.json',dataset_path,development_paths,remote)
