@@ -29,7 +29,7 @@ def main():
     transport.decode_video=decode;transport.check_candidate=check
     store=None;passed=False;failure=None;execution=None
     try:
-        program="import subprocess,base64; p=subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=red:s=16x16:r=2:d=1','-c:v','ffv1','-f','matroska','pipe:1'],capture_output=True,timeout=20,check=True); print(base64.b64encode(p.stdout).decode())"
+        program="import subprocess,base64,tempfile,pathlib; t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/'fixture.mkv'; subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=red:s=16x16:r=2:d=1','-c:v','ffv1',str(p)],capture_output=True,timeout=20,check=True); print(base64.b64encode(p.read_bytes()).decode()); t.cleanup()"
         command=shlex.quote(remote.get('python','python3'))+' -c '+shlex.quote(program)
         clip=subprocess.run(transport.ssh_argv(remote)+[command],capture_output=True,text=True,timeout=30,check=True)
         raw=base64.b64decode(clip.stdout.strip(),validate=True);assert 0<len(raw)<512*1024
