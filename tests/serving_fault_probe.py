@@ -62,6 +62,11 @@ def predict(runtime,raw,sample):
                 if time.monotonic()>=deadline:raise TimeoutError('Prediction not reached')
                 time.sleep(.05)
             assert process.poll() is None
+            active_state=next((root/'serving').glob('*/state.json'))
+            before_concurrent=active_state.read_bytes()
+            code,out,err=run(job)
+            assert code!=0 and 'already active' in err
+            assert active_state.read_bytes()==before_concurrent
             process.kill();process.communicate(timeout=5)
             assert process.returncode==-signal.SIGKILL
         crash()
@@ -82,9 +87,23 @@ def predict(runtime,raw,sample):
         assert saved.read_bytes()==saved_bytes
         sample_calls=dict(Counter(path.read_text() for path in (root/'calls').iterdir()))
         assert sample_calls=={'val-1':2,'val-2':1},sample_calls
+        preserved_state=state_path.read_bytes()
+        for invalid in (-1,False,float('nan'),float('inf'),'0',None):
+            broken=json.loads(preserved_state);broken['spent_wall_seconds']=invalid
+            state_path.write_text(json.dumps(broken));bad_bytes=state_path.read_bytes()
+            code,out,err=run(job)
+            assert code!=0 and 'budget accounting state' in err
+            assert state_path.read_bytes()==bad_bytes
+        broken=json.loads(preserved_state);broken['items']['1']['file_sha256']='bad'
+        state_path.write_text(json.dumps(broken));bad_bytes=state_path.read_bytes()
+        code,out,err=run(job)
+        assert code!=0 and 'cache identity' in err
+        assert state_path.read_bytes()==bad_bytes
+        state_path.write_bytes(preserved_state)
         report={'status':'fixture_crash_resume_verified','directory':str(root),
                 'first_kill_reserved_seconds':first['spent_wall_seconds'],'after_resume_spent_seconds':second['spent_wall_seconds'],
                 'final_spent_seconds':third['spent_wall_seconds'],'saved_items':len(third['items']),
+                'concurrent_requests_rejected':2,'invalid_spending_states_rejected':6,'invalid_cache_identity_rejected':True,
                 'budget_increase_rejected':True,'cached_item_unchanged':True,'prediction_calls':sample_calls,'gpu_used':False,'model_inference':False,
                 'quality_verified':False,'capability_registered':False,
                 'serving_source_sha256':hashlib.sha256(base64.b64decode(request['serving_source'])).hexdigest()}

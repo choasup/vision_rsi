@@ -16,6 +16,27 @@ def save(path,value):
     temp=path.with_suffix('.tmp');temp.write_text(json.dumps(value));temp.replace(path)
 
 
+def validate_state(state):
+    """Malformed persisted costs are unknown evidence, never fresh budget."""
+    spent=state.get('spent_wall_seconds')
+    if isinstance(spent,bool) or not isinstance(spent,(int,float)) or not math.isfinite(spent) or spent<0:
+        raise ValueError('Invalid serving budget accounting state; refusing to reset spending')
+    items=state.get('items')
+    if not isinstance(items,dict) or state.get('status') not in ('pending','processing','failed','evaluated'):
+        raise ValueError('Invalid serving recovery state')
+    for key,item in items.items():
+        if (not isinstance(key,str) or not 1<=len(key)<=32 or not key.isascii() or not key.isdigit()
+                or str(int(key))!=key or not isinstance(item,dict)):
+            raise ValueError('Invalid serving cache index')
+        for field in ('file_sha256','image_sha256'):
+            value=item.get(field)
+            if not isinstance(value,str) or len(value)!=64 or any(c not in '0123456789abcdef' for c in value):
+                raise ValueError('Invalid serving cache identity')
+    if 'total_images' in state:
+        total=state['total_images']
+        if type(total) is not int or total<1 or len(items)>total:raise ValueError('Invalid serving coverage state')
+
+
 def step(request):
     endpoint=request['endpoint'];workspace=PurePosixPath(request['workspace'])
     if not workspace.is_absolute() or '..' in workspace.parts or str(workspace)=='/':raise ValueError('Dedicated workspace required')
@@ -36,6 +57,7 @@ def step(request):
             state=json.loads(state_path.read_text())
             if state['identity']!=identity or state['wall_seconds_budget']!=budget:raise ValueError('Serving evaluation configuration changed')
         else:state={'identity':identity,'wall_seconds_budget':budget,'spent_wall_seconds':0,'items':{},'status':'pending'}
+        validate_state(state)
         if state['status']=='evaluated':
             report=folder/'serving-report.json'
             if sha(report)!=state['report_sha256']:raise ValueError('Serving report changed')
