@@ -478,3 +478,10 @@
 - 研究规划现在在调用前持久保存实际messages/model/max_tokens/stream及thinking设置和request_snapshot_sha256，发送内容与账本快照相同；不保存API Key或连接配置。历史请求不回填虚构快照。
 - 请求快照序列化限制90000字符，为Ledger事件预留空间；超限时移除最早历史投影并明确original/included/omitted计数，目标原样保留。目标本身过大则在请求事件/API调用前拒绝，避免产生假的不确定请求。原始历史事件保持不变。
 - 32项controller/controller_budget/ledger/not_dispatched测试通过（6.190秒）：API mock执行时已能读到完整快照，快照SHA匹配，长历史有界，95K目标在预留前拒绝，既有恢复/不确定请求停止规则保持。无实际API/SSH/GPU，安装包未更新，真实训练和完整上线目标仍未完成。
+
+## 通用研究控制器连接隔离代码候选（2026-10-10）
+
+- 新增stage_candidate动作，配置research.allow_candidate_writes=true时开放，默认关闭；成功仓库检查后才可用，提案必须引用同Git基线结果。沿用Candidates的strategy/harness/adapter源码范围、语法及base_sha检查，不开放主仓库任意写入。
+- 候选写入研究目录/candidates，绑定持久动作ID及目标SHA；执行时重核主仓库tracked clean和HEAD，Candidates.create按内容身份复用。结果标read_only=false、code_executed=false、adopted=false，不将语法检查称为行为验收。允许不同提案继续研究，完全相同成功提案拒绝，仍受原6次规划上限。
+- 33项controller/controller_budget/ledger/not_dispatched测试通过（9.173秒），真实临时Git创建/提交/父提交核查/重复恢复通过，提案顶层raise未被执行，主仓库文件与HEAD未改变。LLM为mock，未调用真实API/SSH/GPU；尚未把远端沙箱检查接入此控制器，未声称完整代码RSI闭环或上线完成。
+- 更新配置示例、README及应用目标能力说明。安装包未重建，真实训练和质量验证仍待完成。

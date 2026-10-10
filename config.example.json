@@ -6,6 +6,9 @@
   "detector": "UNSELECTED",
   "pretrained_weights": "UNCONFIGURED",
   "dataset": "COCO val2017 (local validation only)",
+  "research": {
+    "allow_candidate_writes": false
+  },
   "llm": {
     "provider": "openai-compatible",
     "base_url": "https://api.deepseek.com",

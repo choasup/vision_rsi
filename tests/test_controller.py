@@ -10,6 +10,44 @@ from vision_rsi.ledger import Ledger
 
 
 class ControllerTests(unittest.TestCase):
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    def test_model_stages_isolated_candidate_without_executing_source(self,client):
+        from vision_rsi.candidates import git
+        with tempfile.TemporaryDirectory() as folder:
+            repo=Path(folder)/'repo';repo.mkdir()
+            git(repo,'init');(repo/'README.md').write_text('fixture')
+            git(repo,'add','.');git(repo,'-c','user.name=Fixture','-c','user.email=fixture@local.invalid','commit','-m','base')
+            base=git(repo,'rev-parse','HEAD')
+            ledger=Ledger(Path(folder)/'research');ledger.append('goal','objective',{'summary':'improve harness'})
+            ledger.append('inspect','action',{'executor':'research-v1','tool':'inspect_repository','summary':'inspect'})
+            ledger.append('inspect:result','result',{'action':'inspect','status':'completed','summary':'observed','observation':{'git_revision':base}})
+            proposal={'hypothesis':'fixture improvement','expected_improvement':'testable benefit','evaluation_plan':'independent evaluation',
+                      'edits':[{'path':'vision_rsi/harness_fixture.py','base_sha256':None,
+                                'content':'raise RuntimeError("must not execute proposal")\n'}]}
+            plan={'tool':'stage_candidate','summary':'stage','question':'q','expected_evidence':'isolated source','refs':['inspect:result'],
+                  'arguments':{'base_revision':base,'proposal':proposal}}
+            client.return_value.complete.return_value={'content':json.dumps(plan)}
+            config={'llm':{'model':'fixture'},'remote':{},'research':{'allow_candidate_writes':True}}
+            research_step(config,ledger.directory,repository=repo)
+            result=ledger.events()[-1]['payload']
+            self.assertEqual(result['status'],'completed')
+            self.assertFalse(result['read_only'])
+            self.assertFalse(result['observation']['code_executed'])
+            self.assertFalse(result['observation']['adopted'])
+            self.assertFalse((repo/'vision_rsi/harness_fixture.py').exists())
+            self.assertEqual(git(repo,'rev-parse','HEAD'),base)
+            checkout=Path(result['observation']['checkout'])
+            self.assertTrue((checkout/'vision_rsi/harness_fixture.py').exists())
+            self.assertEqual(git(checkout,'rev-parse','HEAD^'),base)
+            # Direct recovery of the same action is idempotent through candidate identity.
+            from vision_rsi.controller import execute
+            action=next(e for e in ledger.events() if e['kind']=='action' and e['payload'].get('tool')=='stage_candidate')
+            from vision_rsi.runner import digest
+            context={'store':str(ledger.directory/'candidates'),'binding':{'action_key':action['key'],'objective_sha256':digest(ledger.events()[0]['payload'])}}
+            repeated=execute('stage_candidate',dict(config,_research_candidate_context=context),repo,plan['arguments'])
+            self.assertEqual(repeated['candidate_id'],result['observation']['candidate_id'])
+            with self.assertRaises(ValueError):execute('stage_candidate',{},repo,plan['arguments'])
+
     @patch('vision_rsi.controller.execute',return_value={'observed':True})
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_snapshot_bounds_history_and_rejects_oversized_goal_before_admission(self,client,execute):

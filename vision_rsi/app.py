@@ -45,7 +45,10 @@ class TaskService:
                 return old['id']
             task_id = uuid.uuid4().hex
             ledger = Ledger(self.root / task_id)
-            ledger.append('objective', 'objective', {'summary': objective, 'capability': '只读研究准备：源码检查、远端环境检查、证据总结；不训练或修改代码。'})
+            capability=('研究准备与隔离代码提案：源码检查、环境检查、证据总结、独立Git候选；不执行候选、不训练、不自动采用。'
+                        if self.config.get('research',{}).get('allow_candidate_writes') is True
+                        else '只读研究准备：源码检查、远端环境检查、证据总结；不训练或修改代码。')
+            ledger.append('objective', 'objective', {'summary': objective, 'capability': capability})
             db.execute('INSERT INTO tasks VALUES (?,?,?,?,?,?)', (task_id, request_key, objective, 'queued', '', time.time()))
             return task_id
 
