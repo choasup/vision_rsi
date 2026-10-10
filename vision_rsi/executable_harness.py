@@ -72,8 +72,10 @@ def main():
         if a.mode in ('check','validate-input','validate-output'):
             if a.mode=='check':
                 validate_sample(contract,contract['example_input']);validate_schema(contract['output_schema'],contract['example_output'])
+                from vision_rsi.task_adapters import training_adapter
                 result={'status':'executable_controls_checked','task_id':identity['task_id'],'contract_version':identity['contract_version'],
-                        'training_performed':False,'model_quality_verified':False,'shared_storage':identity['storage'],'video_decoders':identity.get('video_decoders',{})}
+                        'training_performed':False,'model_quality_verified':False,'training_adapter':training_adapter(contract),
+                        'shared_storage':identity['storage'],'video_decoders':identity.get('video_decoders',{})}
             else:
                 if not a.input:raise ValueError('--input required')
                 value=json.loads(Path(a.input).read_text(encoding='utf-8-sig'))

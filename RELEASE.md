@@ -226,3 +226,10 @@
 - 新测试构造首项失败、后项成功，分别修改后项输入和缓存；恢复均拒绝，infer调用0、batch-state字节不变。原真实子进程中断/OS锁释放及续跑跳过成功项测试仍通过。
 - 20项batch/capability/remote capability/media相关测试通过（1.372秒）；初次模块名调用遇同级fixture导入失败，修正测试搜索路径后通过。无真实API/SSH/GPU调用。
 - 派发时既有expected_input_fingerprint验证保留；不声称阻止校验后并发修改或证明所有损坏状态均被识别。安装包尚未重建，真实任务效果与完整上线验收未完成。
+
+## 任务适配器兼容性职责抽取（2026-10-10）
+
+- 将training_plan中的COCO输入/指标/输出兼容性检查抽为确定性task_adapters.training_adapter，保留原阻塞条件；新计划保存adapter_id/implementation_supported及独立的未训练/未验收标记。
+- 新可执行任务包check同时报告训练适配器兼容性，避免仅控制接口检查通过被解读为任意视觉任务已有训练实现。现有COCO单图后端仍是唯一已实现训练路径；这次抽取没有新增多图/视频模型。
+- 27项适配器/可执行harness/COCO训练配置/需求/交互shell相关测试通过（5.788秒），包括兼容契约不变更、joint/video/text/F1/不兼容输出拒绝，以及冻结包check明确不支持其联合任务。
+- 无真实API/SSH/GPU调用。旧冻结任务包不自动升级，安装包尚未重建；真实COCO AP60及跨任务训练/模型效果、RSI效率与完整上线门槛仍未完成。

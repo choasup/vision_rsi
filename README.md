@@ -708,3 +708,5 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 `F:\vision-rsi-agent\vision-rsi.cmd training ...` 和 `test ...` 中显式指定的本地路径（例如`--input`、`--manifest`、`--config`、`--sessions`、`--output`）现在相对于调用目录解析，也支持`--flag=value`。省略这些参数时，源码启动器的默认配置/记录仍位于项目目录。安装版`python -m vision_rsi`保持其原有当前目录语义。其它源码CLI子命令的路径语义本轮未改；JSON文件内URI的解析规则也未改。
 
 批量恢复会先核查整批当前输入指纹和所有已成功缓存的输出哈希，再派发失败/未完成样本。若后面的样本输入或缓存发生变化，本次恢复会在推理之前拒绝，避免先消耗前面样本的重试预算。派发时现有能力后端的expected_input_fingerprint校验仍保留；这不把校验后发生的并发文件修改声称为不可能。
+
+任务包`check`和新训练计划现在输出`training_adapter`，区分接口有效与训练实现兼容。`implementation_supported=true`仅表示契约匹配现有COCO单图检测后端，不代表配置、预算、训练或质量已经通过。联合多图、视频或其它指标仍可定义接口和准备媒体，但当前训练后端返回不支持，不自动转换为COCO任务。旧冻结任务包保持原行为；需要重新build才能包含此字段。

@@ -65,6 +65,8 @@ class ExecutableHarnessTests(unittest.TestCase):
     def test_standalone_controls_keep_original_session_and_never_export_key(self):
         result=self.run_harness('check');self.assertEqual(result.returncode,0,result.stderr)
         checked=json.loads(result.stdout);self.assertFalse(checked['model_quality_verified'])
+        self.assertFalse(checked['training_adapter']['implementation_supported'])
+        self.assertIsNone(checked['training_adapter']['adapter_id'])
         self.assertEqual(checked['video_decoders']['clip']['status'],'ready')
         self.assertEqual(checked['video_decoders']['clip']['plan']['fps'],2)
         self.assertNotIn('MUST_NOT_EXPORT',(self.folder/'config.json').read_text())

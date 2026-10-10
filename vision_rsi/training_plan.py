@@ -3,7 +3,7 @@ import json
 import math
 from pathlib import Path
 
-from .contracts import issues, validate_schema
+from .contracts import issues
 from .coco_train import validate_recipe
 from .filesystem import native_path
 from .runner import atomic_json, digest, revision
@@ -38,20 +38,11 @@ def prepare(session,config,root):
     if session.get('pending_request'):blockers.append('需求请求尚未处理；先完成澄清或恢复，不能按旧要求执行。')
     blockers.extend(budget_blockers(contract))
     blockers.extend('待确认需求变更: '+change['path'] for change in latest.get('review_required',[]))
-    inputs=contract.get('inputs')
-    inputs=inputs if isinstance(inputs,dict) else {}
-    if len(inputs)!=1 or any(not isinstance(x,dict) or x.get('type')!='image' or x.get('required') is not True for x in inputs.values()):
-        blockers.append('当前 COCO baseline 适配器仅实现一个必需 image 输入；其他任务保留接口，不假装已实现。')
+    from .task_adapters import training_adapter
+    adapter=training_adapter(contract)
+    blockers.extend(adapter['blockers'])
     acceptance=contract.get('acceptance')
     acceptance=acceptance if isinstance(acceptance,dict) else {}
-    if acceptance.get('metric') not in ('AP','box_AP','bbox_AP') or acceptance.get('direction')!='maximize' or 'coco' not in str(acceptance.get('evaluation_protocol','')).lower():
-        blockers.append('此适配器要求 COCO bbox AP 标准协议；未自动转换其他任务指标。')
-    try:
-        from .detector import COCO_IDS
-        validate_schema(contract.get('output_schema'),{'detections':[]})
-        for category in COCO_IDS:
-            validate_schema(contract.get('output_schema'),{'detections':[{'bbox':[0.,0.,1.,1.],'category_id':category,'score':.5}]})
-    except (ValueError,TypeError,KeyError):blockers.append('任务输出接口与 COCO detections 适配器不兼容。')
     training=config.get('training') or {}
     if not isinstance(training,dict): raise ValueError('training config must be an object')
     recipe=dict(DEFAULT_RECIPE,**training)
@@ -79,7 +70,7 @@ def prepare(session,config,root):
     recipe.pop('timeout_seconds',None)
     sources={p.name:__import__('hashlib').sha256(p.read_bytes()).hexdigest() for p in sorted(Path(__file__).parent.glob('*.py'))}
     plan={'task_id':session['task_id'],'session_id':session['session_id'],'contract_version':latest['version'],
-          'contract':contract,'recipe':recipe,'source_hashes':sources,'git_revision':revision(),
+          'contract':contract,'recipe':recipe,'task_adapter':adapter,'source_hashes':sources,'git_revision':revision(),
           'scheduler':{'gpu_devices':list(range(recipe['world_size'])) if isinstance(recipe.get('world_size'),int) and 1<=recipe['world_size']<=8 else [],
                        'timeout_seconds':timeout,'gpu_hours_budget':budget},
           'status':'blocked' if blockers else 'ready_to_submit','blockers':blockers,
