@@ -115,7 +115,11 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None,research_hi
         if row:
             saved_context=json.loads(row[0])
             # Feedback is the original request's snapshot, not a fresh query on replay.
-            if {key:value for key,value in saved_context.items() if key!='previous_rejections'}!=context:raise ValueError('Experiment request context changed')
+            if {key:value for key,value in saved_context.items() if key not in ('previous_rejections','request_snapshot','request_snapshot_sha256')}!=context:raise ValueError('Experiment request context changed')
+            if 'request_snapshot' in saved_context:
+                if digest(saved_context['request_snapshot'])!=saved_context.get('request_snapshot_sha256'):
+                    raise ValueError('Experiment request snapshot changed')
+            context=saved_context
             if row[1]=='not_dispatched':raise LLMNotDispatched('Experiment request was not dispatched; explicit retry requires a new request ID')
             if row[1]!='responded':raise RuntimeError('Uncertain experiment API response; no automatic retry')
             response=json.loads(row[2])
@@ -149,14 +153,23 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None,research_hi
             if settings.get('model')=='deepseek-flash':settings.setdefault('thinking','disabled')
             client=OpenAICompatibleClient(settings)
             client.validate_config()
+            messages=[{'role':'system','content':instruction},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}]
+            context['request_snapshot']={'messages':messages,'max_tokens':2048,
+                                         'remaining_gpu_hours_snapshot':remaining}
+            context['request_snapshot_sha256']=digest(context['request_snapshot'])
             with db:db.execute('INSERT INTO requests VALUES (?,?,?,NULL)',(request_id,json.dumps(context),'reserved'))
             try:
-                response=client.complete([{'role':'system','content':instruction},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=2048)
+                response=client.complete(messages,max_tokens=2048)
             except LLMNotDispatched:
                 with db:db.execute('UPDATE requests SET state=? WHERE id=?',('not_dispatched',request_id))
                 raise
             with db:db.execute('UPDATE requests SET state=?,response=? WHERE id=?',('responded',json.dumps(response),request_id))
         folder=native_path(root/request_id);folder.mkdir(exist_ok=True);atomic_json(native_path(folder/'response.json'),response)
+        if 'request_snapshot' in context:
+            atomic_json(native_path(folder/'request.json'),
+                        {'request_id':request_id,'snapshot':context['request_snapshot'],
+                         'sha256':context['request_snapshot_sha256'],
+                         'scope':'Planner messages and budget snapshot, not provider wire payload or billing proof.'})
         saved=folder/'experiment.json'
         if saved.exists():
             result=json.loads(saved.read_text(encoding='utf-8'))

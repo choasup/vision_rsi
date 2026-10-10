@@ -21,6 +21,34 @@ def proposal():
 
 class ExperimentTests(unittest.TestCase):
     @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_exact_request_snapshot_persisted_before_call_and_replayed(self,client):
+        folder=self.root/'request-snapshot'
+        def complete(messages, max_tokens):
+            with closing(sqlite3.connect(folder/'requests.sqlite3')) as db:
+                context,state=db.execute('SELECT context,state FROM requests WHERE id=?',('snapshot',)).fetchone()
+            context=json.loads(context)
+            self.assertEqual(state,'reserved')
+            self.assertEqual(context['request_snapshot']['messages'],messages)
+            self.assertEqual(context['request_snapshot']['max_tokens'],max_tokens)
+            self.assertEqual(digest(context['request_snapshot']),context['request_snapshot_sha256'])
+            return {'content':json.dumps(proposal())}
+        client.return_value.complete.side_effect=complete
+        result=propose_next(self.record,self.runs,self.llm,folder,'snapshot')
+        artifact=json.loads((folder/'snapshot'/'request.json').read_text())
+        self.assertEqual(artifact['sha256'],digest(artifact['snapshot']))
+        original=(folder/'snapshot'/'request.json').read_bytes()
+        self.assertEqual(result,propose_next(self.record,self.runs,self.llm,folder,'snapshot'))
+        self.assertEqual(original,(folder/'snapshot'/'request.json').read_bytes())
+        self.assertEqual(client.return_value.complete.call_count,1)
+        with closing(sqlite3.connect(folder/'requests.sqlite3')) as db:
+            context=json.loads(db.execute('SELECT context FROM requests').fetchone()[0])
+            context['request_snapshot']['max_tokens']=1
+            with db:db.execute('UPDATE requests SET context=?',(json.dumps(context),))
+        with self.assertRaisesRegex(ValueError,'snapshot changed'):
+            propose_next(self.record,self.runs,self.llm,folder,'snapshot')
+        self.assertEqual(client.return_value.complete.call_count,1)
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
     def test_invalid_or_oversized_research_history_is_rejected_before_ledger(self,client):
         for history in ({},[{'unexpected':'field'}],[{'observation':{'text':'x'*(193*1024)}}]):
             with self.assertRaises(ValueError):

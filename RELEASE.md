@@ -318,3 +318,8 @@
 - 仓库外实际导入site-packages，所有Python/HTML文件集合及SHA与当前源码一致，控制器identity为source-sha256:3ddeed2090fcb5a035041bf146bbc02f5c064343c6344898295c7712dc1a03ca。161项安装回归及5个模块CLI帮助入口通过，含新增readiness、事件评测、checkpoint恢复和批处理。
 - 首轮安装回归发现两个批处理测试的相对样例路径错误，已改为基于__file__定位并重跑161项通过；原失败证据保留为installed-tests-first-failure.log及installed-evidence-first-failure.json。修正仅测试路径，不改变wheel内容。成功证据 runs/release-current/installed-evidence.json 和 installed-tests.log。
 - 本轮无真实API/SSH/GPU调用。仅证明本机当前Windows/Python安装与回归；不证明新机器兼容性、真实训练/恢复、COCO AP60、视频训练/推理或研究策略提升，完整上线门槛仍未完成。
+## 内层实验规划请求快照（2026-10-10）
+
+- propose_next 在API调用前的reserved账本记录中保存完整规划消息、max_tokens、剩余GPU小时快照及哈希，响应后导出request.json。缓存重放保留原快照并检查哈希，不自动补全旧记录。
+- 41项实验规划/campaign/未发送请求测试通过（4.875秒）。新增测试在mock complete内部读取SQLite，确认调用前已持久化；重放字节一致且仅一次调用，篡改快照拒绝且不再次调用。
+- 本轮无真实API/SSH/GPU调用。快照不含凭证，不是HTTP wire payload、计费证明或研究效率提升证明；同机操作者同时改写账本与哈希不受防护。执行额度仍实时检查。上一轮已验证wheel不包含本次产品变更，尚未重建；完整上线目标仍未完成。

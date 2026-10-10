@@ -747,3 +747,8 @@ checkpoint CPU预检进一步检查每rank CPU/CUDA RNG字段必须是非空的�
 输出记录原始文件 SHA256 和 `metric_threshold_met`。这是独立协议的评分工具，尚未接入视频训练适配器或能力注册；不验证标注来源、数据划分或真实模型质量。
 
 可追加 `--contract <任务接口JSON路径>` 绑定验收定义。此时 `acceptance` 必须明确包含 `metric="event_micro_f1"`、`direction="maximize"`、`evaluation_protocol="vision-rsi/event_micro_f1/v1"`、`iou_threshold`（大于0且不超过1）和 `threshold`（0..1）。评测使用合同中的两个阈值，拒绝冲突的命令行覆盖；每个预测样本的 `{ "events": [...] }` 还必须符合合同 `output_schema`。结果保存原始合同 SHA256。这里校验的是评测所需的合同字段，不验证 training 会话是否已接受该版本、视频采样策略或任务预算，也不自动执行训练。
+# 实验规划的可追溯记录
+
+新的内层实验规划请求会在调用模型前，将完整 system/user 消息、max_tokens 和当时剩余 GPU 小时快照写入 requests.sqlite3，并记录内容哈希。收到回复后，相应请求目录同时导出 request.json，便于对照模型收到的测量、历史、假设和预算。重放读取原快照并校验哈希，不重新调用模型；旧请求没有快照时不伪造补全。
+
+这是规划器消息记录，不包含 API Key，也不是底层 HTTP 请求、提供商计费证明或实验成功证明。预算快照用于解释决策，实际执行仍以调度器当前剩余额度为准；能同时改写整个本地账本与哈希的操作者不在此完整性检查的防护范围内。
