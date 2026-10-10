@@ -436,3 +436,10 @@
 - read_source可选不同区间，成功执行过的完全相同参数拒绝；仍受同账本6次规划请求上限，未开放任意路径、shell或写代码。源码hash在inspect_repository输出中前置，便于有界历史中保留身份。
 - 11项controller测试通过（2.931秒），含mock模型选择动作后的执行参数、真实Git tracked文件指定行读取、错误范围/路径/hash拒绝及文件改动拒绝。补充成功区间重复提议被拒绝、工具不重复执行的断言。
 - 本轮无实际API/SSH/GPU；扩大只读研究能力不等于实现通用模型/harness修改或真实RSI效率提升，安装包未更新，完整上线目标仍未完成。
+## 源码细读真实调用暴露的集成缺口（2026-10-10）
+
+- 新增显式--live的tests/live_source_research_probe.py，真实本地仓库检查后预登记一次DeepSeek调用，目标固定controller.py第31行起20行，独立API账本上限1，不重试语义失败。
+- 首次在API调用前发现实际仓库观察超Ledger 100000字符事件上限（runs/source-research-live/7cc659fd9b334308b04a9edbcbeae739）；当时未发API。修正inspect_repository最终序列化≤90000字符，为事件包装预留空间，按序省略片段/列表并明确报告省略/截断，完整文件hash尽量保留。
+- 随后真实调用一次responded，prompt4737/completion155/total4892 reported tokens，额度剩0。模型选择read_source但返回JSON漏arguments，被协议校验拒绝，工具未执行，没有自动重试。证据runs/source-research-live/14201a53de0b42a6a176949ba3b7479a/{preregistered.json,evidence.json,research/research.sqlite3}；probe失败类型StopIteration来自未产生工具result，原规划响应/拒绝记录保留。
+- 修正planner返回schema显式列出arguments四字段及read_source必需规则。11项controller测试通过（3.716秒），含大仓库观察可写入账本、模型收到完整参数schema。测试fixture曾漏objective/误用result事件，已纠正为合法evidence后重跑通过。
+- 修正后的提示尚未再次真实调用，不把mock通过替代真实工具链成功。无SSH/GPU/训练，完整上线目标仍未完成。

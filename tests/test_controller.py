@@ -23,6 +23,9 @@ class ControllerTests(unittest.TestCase):
             config={'llm':{'model':'fixture'},'remote':{}}
             research_step(config,folder)
             execute.assert_called_once_with('read_source',config,'.',args)
+            prompt=json.loads(client.return_value.complete.call_args.args[0][0]['content'])
+            self.assertIn('arguments',prompt['schema'])
+            self.assertIn('REQUIRED',prompt['schema']['arguments_rule'])
             self.assertEqual(ledger.events()[-1]['kind'],'result')
             research_step(config,folder)
             execute.assert_called_once()
@@ -106,6 +109,14 @@ class ControllerTests(unittest.TestCase):
             third=execute('inspect_repository',{},root)
             self.assertNotIn('vision_rsi/example.py',third['source_excerpts'])
             self.assertTrue(any(row['reason']=='source_byte_limit' for row in third['skipped_sources']))
+            for index in range(60):(root/'vision_rsi'/('source_'+str(index)+'.py')).write_text('x'*2500)
+            git('add','.')
+            bounded=execute('inspect_repository',{},root)
+            self.assertLessEqual(len(json.dumps(bounded,sort_keys=True,ensure_ascii=False)),90000)
+            self.assertGreater(bounded['source_excerpt_omitted_count'],0)
+            ledger=Ledger(root/'observations')
+            ledger.append('goal','objective',{'summary':'observation persistence fixture'})
+            ledger.append('inspect','evidence',{'summary':'bounded repository','observation':bounded})
 
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_actual_process_death_releases_lock_and_recovers_pending_action(self,client):
