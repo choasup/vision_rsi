@@ -516,3 +516,5 @@ For a complete extracted validation dataset, `python -m vision_rsi.resource_veri
 ### Official training image preparation
 
 `vision-rsi resources-train --root runs/coco-train-downloads --seconds 240` downloads/resumes the official19.34GB train2017 ZIP locally using pinned HTTPS URL/ETag/size. It reserves disk for the remaining archive plus extraction, uses an OS lease and inherits the download integrity checks. Repeat only after the current invocation finishes. Archive download alone never reports dataset_ready or starts training; extraction, CRC,118,287-image coverage and server transfer remain separate.
+
+For read-only inspection on the execution host, `vision-rsi baseline-audit --root COCO_ROOT --records BASELINE_OUTPUT --identity FROZEN_ID --annotation-sha256 SHA` validates saved cache checksums, exact model/source/input identity and detection categories/scores/box bounds. A partial audit reports its actual coverage and never claims model AP or a validated capability.
