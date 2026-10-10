@@ -1,5 +1,12 @@
 # Vision RSI Agent 实施计划
 
+## 导出包实际交付记录复验（2026-10-11）
+
+- 新增 `tests/exported_delivery_probe.py`：从指定已保存的真实 CPU 交付记录构建冻结包，在仓库外执行固定版本单样本 Test、原批量结果断点恢复、release-status 和 delivery-status；禁止新候选远端调用与 socket 网络连接。
+- 本次通过证据：`runs/exported-delivery-probes/294147958ad646b0a22272bacaf1a9f4/evidence.json`，复用 f0a64b67f7c2432c9e444c9b686fc8ee 的实际 CPU 探针；未调用 LLM 或 GPU。此为保存记录的离线交付复验，不是新视觉质量评测。
+- 初次扩展探针遇到 Windows 导出目录 rename 拒绝访问；残留构建目录保留。现仅对本地原子发布的 PermissionError 有界重试，目标已存在或重试耗尽仍报错，不重试训练或推理执行。新增回归检查重试始终使用原 staging/target。
+- 全目标仍未完成：COCO AP≥60、实际训练预算、通用学习模型、多资源公平外层 RSI 和第二台机器部署验收继续按下表追踪。
+
 ## 当前完整上线差距审计（2026-10-11；以下历史清单不代表当前验收）
 
 | 原始要求 | 当前证据与限制 | 判定 |

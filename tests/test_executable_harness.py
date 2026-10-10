@@ -13,6 +13,21 @@ from vision_rsi.executable_harness import build_executable
 
 
 class ExecutableHarnessTests(unittest.TestCase):
+    def test_transient_windows_publication_lock_retries_same_staging_directory(self):
+        original=Path.rename
+        attempts=[]
+        (self.root/'locked-export').mkdir()
+        def locked_once(path,target):
+            attempts.append((path,target))
+            if len(attempts)==1:raise PermissionError('temporary file scanner lock')
+            return original(path,target)
+        with patch.object(Path,'rename',locked_once),patch('vision_rsi.executable_harness.time.sleep') as sleep:
+            artifact=build_executable(self.session,self.interface,self.config,self.storage,self.root/'locked-export')
+        self.assertEqual(len(attempts),2)
+        self.assertEqual(attempts[0],attempts[1])
+        sleep.assert_called_once_with(.1)
+        self.assertTrue((Path(artifact['directory'])/'manifest.json').is_file())
+
     def test_frozen_event_evaluator_uses_task_threshold_and_preserves_bundle(self):
         from vision_rsi.contracts import EVENT_PROTOCOL
         contract=json.loads(json.dumps(self.session['versions'][-1]['contract']))

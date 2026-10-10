@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import uuid
+import time
 
 from .runner import digest
 
@@ -201,6 +202,14 @@ def build_executable(session,interface,config,storage,root):
         for name,raw in files.items():
             path=staging/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(raw)
         (staging/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
-        staging.rename(target)
+        # Windows antivirus/indexers can briefly hold a freshly written directory.
+        # Retry only this local atomic publication, never execution or dispatch.
+        for attempt in range(5):
+            try:
+                staging.rename(target)
+                break
+            except PermissionError:
+                if target.exists() or attempt==4:raise
+                time.sleep(.1*(attempt+1))
     return {'status':'executable_harness_ready','directory':str(target),'bundle_id':bundle_id,
             'training_performed':False,'model_quality_verified':False,'shared_storage':storage}
