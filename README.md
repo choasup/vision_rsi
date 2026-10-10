@@ -24,9 +24,13 @@ Training的自然语言澄清会保留已定义的要求。模型提出目标、
 # 按ID恢复已保存的策略和研究轮数，不必重新输入它们
 .\vision-rsi.cmd training agent-status --session-id SESSION_ID --campaign-id CAMPAIGN_SHA256
 .\vision-rsi.cmd training advance --session-id SESSION_ID --campaign-id CAMPAIGN_SHA256
+# 前台持续观察并推进同一个控制流程；Ctrl+C保留记录，不取消远端作业
+.\vision-rsi.cmd training watch --session-id SESSION_ID --campaign-id CAMPAIGN_SHA256 --watch-seconds 3600 --poll-seconds 15
 ```
 
 advance每次最多执行1..10个控制动作，持久化准备计划、提交、查询、收据收集和结果分析；远端仍在运行时返回等待，下次调用恢复同一个作业。动作选择使用控制步数，GPU预算独立由Training调度账本预留/结算，二者不混用。agent-pause只暂停继续决策，已经提交的远端作业仍按原超时/预算运行；需停止作业时使用training cancel。
+
+watch是有期限的前台监督，不是后台服务。它固定同一campaign，刷新最新会话与配置并推进可执行动作；等待远端时按5..60秒间隔观察，同一作业的观察失败最多重试3次。不自动重发不确定的LLM请求或提交/恢复操作。需求变更、缺配置、预算耗尽、暂停、丢失worker或需要人工处理时停止。watch-seconds范围1..86400，期限到达后不发起下一轮，已经开始的有界调用可能稍晚返回；远端作业仍遵循自己的GPU预算和超时。Ctrl+C也不会取消它。结束原因、次数和耗时保存在campaign的watch-runs目录；--json的进度写stderr，最终结果写stdout。
 
 默认research-rounds=0，未达标后返回needs_research。显式启用0..10轮时，Agent重核原始收据，将测得的失败交给LLM提出下一实验，并在剩余会话GPU预算内继续执行。首阶段只支持学习率、权重衰减、训练轮数、batch、输入分辨率和保存频率；检测器、预训练权重、数据与哈希、种子、卡数、源码、验收目标及总预算均冻结。新实验从父实验远端不可变release复用源码，不混入本地后续开发。非法提案保存但不提交；API响应不确定时不自动重复调用。每个提案响应占用一轮，预算耗尽停止。这是首任务的训练方法研究入口，不等于通用harness代码调整或Agent自身效率已提升。不同research-rounds/策略设置属于独立控制记录；建议用campaigns找出ID，再用--campaign-id查询/暂停/恢复。列表是本地最后保存状态，不代表刚刚核查远端进程；实时查询使用training status --run-id。
 

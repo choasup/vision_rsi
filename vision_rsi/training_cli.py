@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from .contracts import Sessions, validate_sample, validate_schema, validate_manifest
@@ -68,7 +69,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','accept','reject','list','build','prepare','advance','campaigns','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','accept','reject','list','build','prepare','advance','watch','campaigns','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -86,6 +87,8 @@ def main(argv):
     parser.add_argument('--steps',type=int,default=3)
     parser.add_argument('--research-rounds',type=int,help='Bounded automatic method proposals after measured training failure (0..10; default 0)')
     parser.add_argument('--campaign-id',help='Resume/query the exact persisted campaign and its frozen strategy/research settings')
+    parser.add_argument('--watch-seconds',type=float,default=3600)
+    parser.add_argument('--poll-seconds',type=float,default=15)
     parser.add_argument('--candidate-id');parser.add_argument('--candidate-module')
     parser.add_argument('--candidate-store',default='runs/research-candidates')
     args=parser.parse_args(argv)
@@ -107,21 +110,32 @@ def main(argv):
                     print(record['campaign_id']+' | '+record['status']+(' [paused]' if record['paused'] else '')+' | rounds='+str(record['research_rounds'])+' | run='+str(record['run_id']))
                 print('以上为本地保存的最近状态；实时核查作业请用training status --run-id。')
             return
-        if args.action in ('advance','agent-status','agent-pause','agent-resume'):
+        if args.action in ('advance','watch','agent-status','agent-pause','agent-resume'):
             from .campaign import advance
             if bool(args.candidate_id)!=bool(args.candidate_module):parser.error('Experimental policy requires both --candidate-id and --candidate-module')
             policy={'candidate_id':args.candidate_id,'module':args.candidate_module,'store':str(Path(args.candidate_store).resolve())} if args.candidate_id else None
             config=json.loads(Path(args.config).read_text(encoding='utf-8'))
-            result=advance(store.show(args.session_id),config,args.campaign_store,args.run_store,args.steps,policy,
-                           {'agent-status':'show','agent-pause':'pause','agent-resume':'resume'}.get(args.action),args.research_rounds,args.campaign_id)
+            if args.action=='watch':
+                from .watch import watch
+                def progress(event):
+                    print(json.dumps(event,ensure_ascii=False),flush=True,file=sys.stderr if args.json else sys.stdout)
+                result=watch(lambda:store.show(args.session_id),lambda:json.loads(Path(args.config).read_text(encoding='utf-8')),
+                             args.campaign_store,args.run_store,args.steps,policy,args.research_rounds,args.campaign_id,
+                             args.watch_seconds,args.poll_seconds,progress)
+            else:
+                result=advance(store.show(args.session_id),config,args.campaign_store,args.run_store,args.steps,policy,
+                               {'agent-status':'show','agent-pause':'pause','agent-resume':'resume'}.get(args.action),args.research_rounds,args.campaign_id)
             if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
             else:
                 print(execution_summary(result))
-                print('控制记录: '+result['state_path'])
-                print('Campaign: '+result['campaign_id'])
+                if result.get('state_path'):print('控制记录: '+result['state_path'])
+                if result.get('campaign_id'):print('Campaign: '+result['campaign_id'])
                 if result.get('paused'):print('控制器已暂停；已提交远端作业仍按原预算运行，取消作业请用training cancel。')
                 if result.get('analysis'):print('结果分析: '+json.dumps(result['analysis'],ensure_ascii=False))
                 if policy:print('使用实验候选策略；不代表策略已通过效率验收或被采用。')
+                if result.get('watch'):print('持续观察结束: '+result['watch']['stop_reason']+'；未取消远端作业。')
+            if result.get('watch',{}).get('stop_reason') in ('needs_attention','state_unavailable'):
+                parser.exit(1,result['watch'].get('last_observation_error','Controller needs attention')+'\n')
             return
         if args.action=='serving-evaluate':
             if not args.task_id or not args.version or args.wall_seconds_budget is None:
