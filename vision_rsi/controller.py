@@ -1,5 +1,6 @@
 """Bounded read-only research controller with durable planning and action records."""
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import uuid
@@ -33,16 +34,39 @@ def execute(tool, config, repository):
         return probe(config['remote'])
     if tool == 'inspect_repository':
         root = Path(repository).resolve()
-        files = subprocess.check_output(['git', 'ls-files'], cwd=root, text=True).splitlines()
-        revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
-        contents = {}
+        files = subprocess.check_output(['git', 'ls-files','-z'], cwd=root, text=True,timeout=10).split('\0')
+        files=[name for name in files if name]
+        revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True,timeout=10).strip()
+        dirty_before=subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=root,text=True,timeout=10)
+        contents = {};hashes={};skipped=[];remaining=128*1024
         for name in files:
             path = root / name
             # Fixed source allowlist: no secrets, untracked files or arbitrary paths.
-            if (name in ('README.md', 'PLAN.md') or name.startswith('vision_rsi/') and name.endswith('.py')) and not path.is_symlink():
-                contents[name] = path.read_text(encoding='utf-8-sig')[:2500]
-        return {'git_revision': revision, 'tracked_files': files, 'source_excerpts': contents,
-                'limitation': 'Read-only source excerpts; not a runtime correctness evaluation.'}
+            if not (name in ('README.md', 'PLAN.md') or name.startswith('vision_rsi/') and name.endswith('.py')):continue
+            if len(contents)>=128 or remaining<=0:
+                skipped.append({'path':name,'reason':'context_limit'});continue
+            if path.is_symlink() or not path.resolve().is_relative_to(root) or not path.is_file():
+                skipped.append({'path':name,'reason':'missing_or_escaping_source'});continue
+            with path.open('rb') as stream:raw=stream.read(1024*1024+1)
+            if len(raw)>1024*1024:
+                skipped.append({'path':name,'reason':'source_byte_limit'});continue
+            try:text=raw.decode('utf-8-sig')
+            except UnicodeDecodeError:
+                skipped.append({'path':name,'reason':'invalid_utf8'});continue
+            excerpt=text[:2500].encode('utf-8')[:remaining].decode('utf-8',errors='ignore')
+            contents[name]=excerpt;remaining-=len(excerpt.encode('utf-8'))
+            hashes[name]=hashlib.sha256(raw).hexdigest()
+        after_revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True,timeout=10).strip()
+        dirty_after=subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=root,text=True,timeout=10)
+        return {'git_revision': revision, 'tracked_files': files[:1024], 'source_excerpts': contents,
+                'source_sha256':hashes,'skipped_sources':skipped[:128],
+                'skipped_source_count':len(skipped),'tracked_file_count':len(files),
+                'tracked_file_list_truncated':len(files)>1024,
+                'content_source':'Working-tree bytes, not committed Git blobs',
+                'git_head_unchanged_during_read':revision==after_revision,
+                'tracked_worktree_clean_before_and_after':not dirty_before and not dirty_after,
+                'atomic_snapshot_verified':False,
+                'limitation': 'Bounded read-only working-tree excerpts with per-file hashes; not an atomic snapshot or runtime correctness evaluation.'}
     return {'limitation': 'LLM synthesis is an unverified research interpretation; no experiment executed.'}
 
 

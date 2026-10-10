@@ -9,6 +9,33 @@ from vision_rsi.ledger import Ledger
 
 
 class ControllerTests(unittest.TestCase):
+    def test_repository_observation_hashes_dirty_source_without_reading_secrets(self):
+        import hashlib
+        from vision_rsi.controller import execute
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'vision_rsi').mkdir()
+            source=root/'vision_rsi/example.py';source.write_bytes(b'print(1)\n')
+            (root/'README.md').write_text('fixture')
+            (root/'.env').write_text('MUST_NOT_READ')
+            def git(*args):
+                return subprocess.run(['git',*args],cwd=root,capture_output=True,check=True)
+            git('init');git('add','.')
+            git('-c','user.name=Fixture','-c','user.email=fixture@local.invalid','commit','-m','fixture')
+            first=execute('inspect_repository',{},root)
+            self.assertTrue(first['tracked_worktree_clean_before_and_after'])
+            self.assertNotIn('.env',first['source_excerpts'])
+            self.assertNotIn('MUST_NOT_READ',str(first))
+            source.write_bytes(b'print(2)\n')
+            second=execute('inspect_repository',{},root)
+            self.assertEqual(first['git_revision'],second['git_revision'])
+            self.assertFalse(second['tracked_worktree_clean_before_and_after'])
+            self.assertEqual(second['source_sha256']['vision_rsi/example.py'],hashlib.sha256(source.read_bytes()).hexdigest())
+            self.assertNotEqual(first['source_sha256'],second['source_sha256'])
+            source.write_bytes(b'x'*(1024*1024+1))
+            third=execute('inspect_repository',{},root)
+            self.assertNotIn('vision_rsi/example.py',third['source_excerpts'])
+            self.assertTrue(any(row['reason']=='source_byte_limit' for row in third['skipped_sources']))
+
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_actual_process_death_releases_lock_and_recovers_pending_action(self,client):
         with tempfile.TemporaryDirectory() as folder:
