@@ -9,6 +9,33 @@ from vision_rsi.harness import build
 
 class HarnessTests(unittest.TestCase):
     @patch('vision_rsi.harness.revision',return_value='fixture')
+    def test_runtime_change_builds_new_bundle_and_preserves_original(self,_):
+        contract=json.loads((Path(__file__).resolve().parents[1]/'examples/interface-contract.json').read_text())
+        session={'task_id':'inspection','session_id':'first','versions':[{'version':1,'contract':contract,'issues':[]}]}
+        with tempfile.TemporaryDirectory() as root:
+            first=build(session,root);folder=Path(first['directory'])
+            original={p.name:p.read_bytes() for p in folder.iterdir()}
+            read=Path.read_text
+            def changed(path,*args,**kwargs):
+                text=read(path,*args,**kwargs)
+                return text.replace('GPU_BUDGET_QUESTION =','\n# synthetic runtime revision\nGPU_BUDGET_QUESTION =',1) if path.name=='contracts.py' else text
+            with patch.object(Path,'read_text',changed):
+                second=build(session,root)
+                self.assertTrue(build(session,root)['reused'])
+            self.assertNotEqual(first['bundle_id'],second['bundle_id'])
+            self.assertNotEqual(first['directory'],second['directory'])
+            self.assertEqual(original,{p.name:p.read_bytes() for p in folder.iterdir()})
+            other=dict(session,session_id='second')
+            self.assertNotEqual(build(other,root)['bundle_id'],first['bundle_id'])
+            manifest=json.loads((folder/'manifest.json').read_text())
+            manifest['session_id']='wrong'
+            (folder/'manifest.json').write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError,'metadata conflict'):build(session,root)
+            result=subprocess.run([sys.executable,str(folder/'harness.py'),'check'],capture_output=True,text=True,cwd=root)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('differs from identity',result.stderr)
+
+    @patch('vision_rsi.harness.revision',return_value='fixture')
     def test_frozen_event_validation_without_package_imports(self,_):
         from vision_rsi.contracts import EVENT_PROTOCOL
         contract=json.loads((Path(__file__).resolve().parents[1]/'examples/interface-contract.json').read_text())

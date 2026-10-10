@@ -771,3 +771,6 @@ AP 比较完整性与成本完整性分别显示：`comparison_complete` 不代�
 # CLI 入口
 
 运行 `vision-rsi.cmd` 或 `vision-rsi.cmd --help` 查看实际任务工作流；安装版使用 `python -m vision_rsi --help`。不带动作的 `training` 显示需求会话和执行命令帮助。顶层帮助明确区分真实 training/test 流程与旧 run/demo/compare 合成演示，具体能力以任务适配器和已注册版本为准。
+# 接口包重建与版本
+
+新导出的纯接口包使用 format_version=2 身份，包含 task/session/contract版本、合同哈希及校验运行时代码哈希。相同任务与代码可复用；校验器或入口代码改变后，同一输出根目录的 build 会生成新的包目录，保留旧包。会话不同也不复用同一包。运行时核对manifest与身份一致性；哈希仅提供本地完整性校验，不能防止操作者整体改写包与所有哈希。旧格式包维持原冻结行为。

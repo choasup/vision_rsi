@@ -5,7 +5,7 @@ from pathlib import Path
 import uuid
 
 from .contracts import issues
-from .runner import revision
+from .runner import revision,digest
 
 
 def build(session, root):
@@ -28,6 +28,12 @@ def main():
     p.add_argument('--input');p.add_argument('--output')
     a=p.parse_args()
     manifest=json.loads((ROOT/'manifest.json').read_text(encoding='utf-8'))
+    identity=manifest['identity']
+    if hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()!=manifest['bundle_id']:
+        p.exit(1,'Interface bundle identity changed\n')
+    if (identity['artifacts']!=manifest['artifacts'] or any(identity[key]!=manifest[key]
+            for key in ('task_id','session_id','contract_version','contract_sha256'))):
+        p.exit(1,'Interface manifest differs from identity\n')
     for name,expected in manifest['artifacts'].items():
         if name not in ('contract.json','interface_runtime.py','harness.py'):
             p.exit(1,'Unknown artifact\n')
@@ -55,29 +61,37 @@ def main():
         p.exit(1,str(error)+'\n')
 if __name__=='__main__': raise SystemExit(main())
 '''
-    identity=hashlib.sha256(json.dumps(contract,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
-    name=session['task_id']+'-v'+str(latest['version'])+'-'+identity[:12]
+    contract_hash=hashlib.sha256(json.dumps(contract,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+    files={'contract.json':(json.dumps(contract,ensure_ascii=False,indent=2)+'\n').encode('utf-8'),
+           'interface_runtime.py':runtime.encode('utf-8'),'harness.py':runner.encode('utf-8')}
+    artifacts={name:hashlib.sha256(content).hexdigest() for name,content in files.items()}
+    identity={'format_version':2,'task_id':session['task_id'],'session_id':session['session_id'],
+              'contract_version':latest['version'],'contract_sha256':contract_hash,'artifacts':artifacts}
+    bundle_id=digest(identity)
+    name=session['task_id']+'-v'+str(latest['version'])+'-'+bundle_id[:12]
     root=Path(root).resolve();root.mkdir(parents=True,exist_ok=True)
     target=root/name
     if target.exists():
         manifest=json.loads((target/'manifest.json').read_text(encoding='utf-8'))
-        if manifest['contract_sha256']!=identity: raise ValueError('Existing harness contract conflict')
+        if (manifest.get('identity')!=identity or manifest.get('bundle_id')!=bundle_id
+                or manifest.get('artifacts')!=artifacts):raise ValueError('Existing harness identity conflict')
+        if any(manifest.get(key)!=identity[key] for key in ('task_id','session_id','contract_version','contract_sha256')):
+            raise ValueError('Existing harness metadata conflict')
         for file,expected in manifest['artifacts'].items():
             if file not in ('contract.json','interface_runtime.py','harness.py') or hashlib.sha256((target/file).read_bytes()).hexdigest()!=expected:
                 raise ValueError('Existing harness artifact changed; refusing overwrite')
-        return {'status':'interface_harness_ready','directory':str(target),'reused':True,'model_available':False}
+        return {'status':'interface_harness_ready','directory':str(target),'bundle_id':bundle_id,'reused':True,'model_available':False}
     staging=root/('.building-'+uuid.uuid4().hex);staging.mkdir()
     try:
-        (staging/'contract.json').write_text(json.dumps(contract,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-        (staging/'interface_runtime.py').write_text(runtime,encoding='utf-8')
-        (staging/'harness.py').write_text(runner,encoding='utf-8')
+        for filename,content in files.items():(staging/filename).write_bytes(content)
         manifest={'task_id':session['task_id'],'session_id':session['session_id'],'contract_version':latest['version'],
-                  'contract_sha256':identity,'git_revision':revision(),'status':'interface_only',
+                  'contract_sha256':contract_hash,'identity':identity,'bundle_id':bundle_id,
+                  'git_revision':revision(),'status':'interface_only',
                   'execution_blockers':latest['issues']+['No training/inference model adapter'],
-                  'artifacts':{f:hashlib.sha256((staging/f).read_bytes()).hexdigest() for f in ('contract.json','interface_runtime.py','harness.py')}}
+                  'artifacts':artifacts}
         (staging/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         staging.rename(target)
     except Exception:
         # Preserve staging for inspection; never overwrite a prior harness.
         raise
-    return {'status':'interface_harness_ready','directory':str(target),'reused':False,'model_available':False,'training_performed':False}
+    return {'status':'interface_harness_ready','directory':str(target),'bundle_id':bundle_id,'reused':False,'model_available':False,'training_performed':False}

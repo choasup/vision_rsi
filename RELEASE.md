@@ -360,3 +360,9 @@
 - 隔离Python -I进程复现：抽取contracts函数的interface_runtime.issues因新增event_eval相对导入失败；原check只校验示例未覆盖此调用。移除抽取校验的包内运行时依赖，协议常量/有限单位区间检查随校验函数冻结，测试确认常量与评测器一致。
 - 28项contracts/harness/executable_harness/event_eval测试通过（5.316秒）。新增隔离进程直接调用导出包issues，验证普通合同及事件合同通过、缺IoU拒绝，且未导入vision_rsi；安装包探针加入harness测试并修正其样例路径。
 - 原已生成接口包保持冻结内容，不自动篡改更新；需在新输出目录重新build以获得修复。无真实API/SSH/GPU/模型训练，安装包未重建，完整上线目标未完成。
+## 接口包按运行时代码版本重建（2026-10-10）
+
+- 修复纯接口harness仅按合同命名导致代码更新后复用旧运行时的问题：format_version=2身份绑定task/session/contract版本、合同hash及三个实际文件hash，目录由bundle ID派生，字节写入避免平台换行改变身份。
+- 重用时核对完整身份/metadata/artifact，独立包入口也核对manifest与identity一致。代码变化生成新包，旧包不覆盖；同合同不同session分包。已存在旧格式包不自动更改。
+- 22项harness/executable_harness/contracts测试通过（5.254秒），含模拟运行时代码变化后新包/复用、旧包字节不变、不同session隔离、篡改session元数据构建与独立入口拒绝。首次模拟把注释放在抽取片段外未改变运行时代码，测试修正为片段内变更后通过。
+- 无API/SSH/GPU/模型训练，身份哈希不防同机整体重写，安装包尚未重建，完整上线目标仍未完成。
