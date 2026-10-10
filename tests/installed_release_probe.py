@@ -34,7 +34,8 @@ def main():
             assert hashlib.sha256((package/relative).read_bytes()).hexdigest() == expected, relative
             checked[str(relative)] = expected
         commands = [['--help'], ['training', 'memory', '--help'], ['test', '--help'],
-                    ['training', 'readiness', '--help'], ['evaluate-events', '--help']]
+                    ['training', 'readiness', '--help'], ['evaluate-events', '--help'],
+                    ['experiment-request', '--help']]
         for command in commands:
             result = subprocess.run([sys.executable, '-X', 'utf8', '-m', 'vision_rsi']+command,
                                     capture_output=True, text=True, encoding='utf-8', timeout=30)
@@ -46,7 +47,7 @@ def main():
                  'test_remote_capability', 'test_controller_budget', 'test_watch', 'test_video_runtime',
                  'test_filesystem', 'test_experiments', 'test_executable_harness', 'test_not_dispatched',
                  'test_task_adapters', 'test_task_readiness', 'test_event_eval',
-                 'test_coco_train', 'test_training_preflight', 'test_batch']
+                 'test_coco_train', 'test_training_preflight', 'test_batch', 'test_experiment_observe']
         suite = unittest.defaultTestLoader.loadTestsFromNames(names)
         with (output/'installed-tests.log').open('w', encoding='utf-8') as log:
             result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)
