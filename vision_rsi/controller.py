@@ -17,6 +17,19 @@ TOOLS = {'inspect_repository', 'read_source', 'remote_environment', 'synthesize'
 
 def observation_context(value):
     """Preserve source identities across sorted ledger JSON and bounded prompts."""
+    if isinstance(value,dict) and isinstance(value.get('evaluation_identity'),dict) and 'metric_report' in value:
+        metric=value.get('metric_report')
+        result={key:value.get(key) for key in ('candidate_id','runtime_status','acceptance_evaluated',
+                'report_sha256','evaluation_identity','quality_verified','adopted','gpu_used')}
+        result.update(kind='candidate_development_metric',observation_sha256=digest(value),
+                      production_acceptance_verified=False,metric_report=None)
+        if isinstance(metric,dict):
+            result['metric_report']={key:metric[key] for key in ('protocol','threshold','iou_threshold',
+                'sample_count','tp','fp','fn','precision','recall','event_micro_f1','metric_threshold_met',
+                'contract_sha256','ground_truth_sha256','predictions_sha256','provenance_verified') if key in metric}
+        if len(json.dumps(result,ensure_ascii=False))>8800:
+            raise ValueError('Candidate metric context metadata too large')
+        return result
     if isinstance(value,dict) and isinstance(value.get('record_sha256'),str) and 'receipt_review' in value:
         result={key:value.get(key) for key in ('run_id','record_sha256','plan_id','recorded_status',
                 'reserved_gpu_hours','actual_gpu_hours','receipt_available','receipt_sha256',

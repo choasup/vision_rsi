@@ -38,6 +38,18 @@ class AdapterEvaluationTests(unittest.TestCase):
         self.assertIn('evaluate_contract',prompt['available_tools'])
         self.assertEqual(prompt['validation_dataset']['sha256'],config['research']['validation_dataset']['sha256'])
         self.assertNotIn('ground_truth',remote.call_args.args[1])
+        # The next persisted planner request must receive numeric failures as
+        # structured evidence, rather than a potentially truncated JSON excerpt.
+        client.return_value.complete.return_value={'content':json.dumps({'tool':'inspect_repository','summary':'inspect',
+            'question':'q','expected_evidence':'source','refs':[]})}
+        research_step(config,self.root,steps=1)
+        prompt=json.loads(client.return_value.complete.call_args.args[0][0]['content'])
+        metrics=[row['observation'] for row in prompt['history']
+                 if row['observation'].get('kind')=='candidate_development_metric']
+        self.assertEqual(len(metrics),1)
+        self.assertEqual(metrics[0]['metric_report']['event_micro_f1'],0)
+        self.assertFalse(metrics[0]['metric_report']['metric_threshold_met'])
+        self.assertFalse(metrics[0]['production_acceptance_verified'])
 
     @patch('vision_rsi.remote.check_candidate')
     def test_configured_dataset_hash_mismatch_refuses_remote(self,remote):
