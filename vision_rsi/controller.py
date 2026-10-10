@@ -10,8 +10,34 @@ from .ledger import Ledger
 from .llm import OpenAICompatibleClient,LLMNotDispatched
 from .observatory import dashboard
 from .remote import probe
+from .runner import digest
 
 TOOLS = {'inspect_repository', 'read_source', 'remote_environment', 'synthesize'}
+
+
+def observation_context(value):
+    """Preserve source identities across sorted ledger JSON and bounded prompts."""
+    if isinstance(value,dict) and isinstance(value.get('source_sha256'),dict):
+        hashes=value['source_sha256'];excerpts=value.get('source_excerpts') or {}
+        result={'kind':'repository_source_index','git_revision':value.get('git_revision'),
+                'source_sha256':dict(sorted(hashes.items())[:64]),
+                'source_excerpts':{key:text[:1000] for key,text in sorted(excerpts.items())[:4]},
+                'observed_source_hash_count':len(hashes),'original_excerpt_count':len(excerpts),
+                'projection_truncated':True,'observation_sha256':digest(value),
+                'atomic_snapshot_verified':False}
+        while len(json.dumps(result,ensure_ascii=False))>8800:
+            if result['source_excerpts']:result['source_excerpts'].pop(next(reversed(result['source_excerpts'])))
+            elif result['source_sha256']:result['source_sha256'].pop(next(reversed(result['source_sha256'])))
+            else:raise ValueError('Source observation context metadata too large')
+        result['included_source_hash_count']=len(result['source_sha256'])
+        return result
+    if isinstance(value,dict) and isinstance(value.get('source_sha256'),str) and 'source_excerpt' in value:
+        result={key:value.get(key) for key in ('path','source_sha256','start_line','end_line','total_lines','eof')}
+        text=value['source_excerpt']
+        result.update(source_excerpt=text[:5000],excerpt_truncated=len(text)>5000,observation_sha256=digest(value))
+        return result
+    text=json.dumps(value,ensure_ascii=False)
+    return {'text_excerpt':text[:8000],'projection_truncated':len(text)>8000,'observation_sha256':digest(value)}
 
 
 def source_arguments(value):
@@ -159,7 +185,7 @@ def research_step(config, directory, steps=1, repository='.'):
                     ledger.append(key, 'evidence', {'summary': '已预留一次研究规划 API 请求；若无响应记录则停止重试。', 'record_type': 'planning_request', 'model': config['llm']['model']})
                     dashboard(ledger)
                     history = [{'key': e['key'], 'kind': e['kind'], 'summary': e['payload']['summary'],
-                                'observation': str(e['payload'].get('observation', ''))[:10000]} for e in events[-16:]]
+                                'observation': observation_context(e['payload'].get('observation', ''))} for e in events[-16:]]
                     prompt = {'objective': events[0]['payload'], 'history': history,
                               'tools': {k: v for k, v in {'inspect_repository': 'Read tracked source excerpts without modifying code.', 'read_source':'Read up to 100 lines from an observed tracked source hash; arguments: path,start_line,max_lines,expected_sha256. Only source allowlist; no arbitrary files.', 'remote_environment': 'Inspect SSH GPU/Python/disk environment; no training.', 'synthesize': 'State evidence-grounded findings, limitations and next steps. No tool execution.'}.items() if k in available},
                               'schema': {'tool': 'one tool name', 'summary': 'Chinese decision summary', 'question': 'research question', 'expected_evidence': 'falsifiable expected observation or synthesis', 'refs': ['existing history event keys'],

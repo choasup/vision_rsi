@@ -10,13 +10,31 @@ from vision_rsi.ledger import Ledger
 
 
 class ControllerTests(unittest.TestCase):
+    def test_sorted_ledger_observation_projection_retains_source_hashes(self):
+        from vision_rsi.controller import observation_context
+        from vision_rsi.runner import digest
+        original={'source_excerpts':{'README.md':'x'*100000},'source_sha256':{
+            'vision_rsi/controller.py':'a'*64},'git_revision':'fixture'}
+        # Ledger serializes keys in sorted order, putting excerpts ahead of hashes.
+        reloaded=json.loads(json.dumps(original,sort_keys=True))
+        result=observation_context(reloaded)
+        self.assertEqual(result['source_sha256']['vision_rsi/controller.py'],'a'*64)
+        self.assertEqual(result['observation_sha256'],digest(original))
+        self.assertTrue(result['projection_truncated'])
+        self.assertLessEqual(len(json.dumps(result,ensure_ascii=False)),9000)
+        many={'source_sha256':{'vision_rsi/source_'+str(i).zfill(3)+'.py':'b'*64 for i in range(128)},'source_excerpts':{}}
+        result=observation_context(many)
+        self.assertLessEqual(result['included_source_hash_count'],64)
+        self.assertEqual(result['observed_source_hash_count'],128)
+
     @patch('vision_rsi.controller.execute',return_value={'fixture':True})
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_model_selected_source_read_is_dispatched_after_repository_inspection(self,client,execute):
         with tempfile.TemporaryDirectory() as folder:
             ledger=Ledger(folder);ledger.append('goal','objective',{'summary':'goal'})
             ledger.append('inspect','action',{'executor':'research-v1','tool':'inspect_repository','summary':'inspect'})
-            ledger.append('inspect:result','result',{'action':'inspect','status':'completed','summary':'observed'})
+            ledger.append('inspect:result','result',{'action':'inspect','status':'completed','summary':'observed',
+                'observation':{'source_excerpts':{'README.md':'x'*50000},'source_sha256':{'vision_rsi/controller.py':'a'*64}}})
             args={'path':'vision_rsi/controller.py','start_line':1,'max_lines':20,'expected_sha256':'a'*64}
             plan={'tool':'read_source','arguments':args,'summary':'inspect detail','question':'q','expected_evidence':'e','refs':['inspect:result']}
             client.return_value.complete.return_value={'content':json.dumps(plan)}
@@ -26,6 +44,8 @@ class ControllerTests(unittest.TestCase):
             prompt=json.loads(client.return_value.complete.call_args.args[0][0]['content'])
             self.assertIn('arguments',prompt['schema'])
             self.assertIn('REQUIRED',prompt['schema']['arguments_rule'])
+            observed=next(row['observation'] for row in prompt['history'] if row['key']=='inspect:result')
+            self.assertEqual(observed['source_sha256']['vision_rsi/controller.py'],'a'*64)
             self.assertEqual(ledger.events()[-1]['kind'],'result')
             research_step(config,folder)
             execute.assert_called_once()

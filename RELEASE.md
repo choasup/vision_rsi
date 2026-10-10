@@ -443,3 +443,10 @@
 - 随后真实调用一次responded，prompt4737/completion155/total4892 reported tokens，额度剩0。模型选择read_source但返回JSON漏arguments，被协议校验拒绝，工具未执行，没有自动重试。证据runs/source-research-live/14201a53de0b42a6a176949ba3b7479a/{preregistered.json,evidence.json,research/research.sqlite3}；probe失败类型StopIteration来自未产生工具result，原规划响应/拒绝记录保留。
 - 修正planner返回schema显式列出arguments四字段及read_source必需规则。11项controller测试通过（3.716秒），含大仓库观察可写入账本、模型收到完整参数schema。测试fixture曾漏objective/误用result事件，已纠正为合法evidence后重跑通过。
 - 修正后的提示尚未再次真实调用，不把mock通过替代真实工具链成功。无SSH/GPU/训练，完整上线目标仍未完成。
+## 研究上下文保留源码身份（2026-10-10）
+
+- 修正参数schema后使用新独立上限1探针真实调用，仍未通过：模型选择read_source并提供path/range，但expected_sha256为空，协议拒绝、未执行工具、无自动重试。证据runs/source-research-live/55affeee5e02438a84af6160b6e5d78c/，reported prompt4821/completion162/total4983 tokens、1次responded。
+- 定位真实根因：Ledger按key排序JSON，历史把完整observation转str截前10000字符时，source_excerpts先占满，后面的source_sha256丢失；单纯调整原dict插入顺序无效。
+- 新增结构化observation_context：仓库观察优先保留至多64个源码hash及少量片段，明确总数/收入数/截断标记和完整观察digest，约束投影≤9000字符。源码行读取保留path/hash/行号/EOF，片段截断另标；其它观察采用显式文本投影与digest，原始账本不删。
+- 12项controller测试通过（3.578秒），覆盖JSON排序回读后的hash保留、50K片段情况下实际模型提示仍含controller源码hash、128源码索引有界投影。测试fixture曾超过账本100K上限，调为50K后通过。投影修正尚未再次真实调用，不能宣称真实链路成功。
+- 无SSH/GPU/训练，安装包未更新，真实训练/通用修改/RSI效果及完整上线门槛仍未完成。
