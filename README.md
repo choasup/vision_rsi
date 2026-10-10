@@ -1,12 +1,14 @@
 # Vision RSI Agent
 
-最新本地可安装开发包为 `0.1.0.dev5`，位于 `runs/release-dev5/wheelhouse/vision_rsi_agent-0.1.0.dev5-py3-none-any.whl`。源码全量 410 项测试与独立安装环境 216 项回归通过；这些验证覆盖软件交付，不代表 COCO AP≥60 或 RSI 效率已验收。本机已验证的独立安装入口：
+最新本地可安装开发包为 `0.1.0.dev6`，位于 `runs/release-dev6/wheelhouse/vision_rsi_agent-0.1.0.dev6-py3-none-any.whl`。源码全量 420 项测试、安装器单独 1 项测试与独立安装环境 225 项回归通过；这些验证覆盖软件交付，不代表 COCO AP≥60 或 RSI 效率已验收。本机已验证的独立安装入口：
 
 ```powershell
-& .\runs\release-dev5\venv\Scripts\python.exe -m vision_rsi --help
+& '.\runs\release-dev6\offline bundle\vision-rsi.cmd' --help
 ```
 
-安装环境从仓库外运行时，请显式传入配置、会话、研究目录和仓库的绝对路径。安装验证证据保存在 `runs/release-dev5/installed-evidence.json`，不包含密钥。
+安装环境从仓库外运行时，请显式传入配置、会话、研究目录和仓库的绝对路径。安装验证证据保存在 `runs/release-dev6/installed-evidence.json`，不包含密钥。
+
+离线安装 ZIP：`runs/release-dev6/vision-rsi-agent-0.1.0.dev6-windows-py312.zip`。解压到新的目录，用 **Windows x64 Python 3.12** 执行 `python install.py`；完成后执行 `vision-rsi.cmd --help`。安装不联网，先校验文件哈希，再创建独立 venv；已有 venv 时拒绝覆盖。ZIP 不含 Python 解释器、API Key、SSH 配置、数据集或模型权重，配置和环境变量需要另行提供。文件哈希用于本地完整性检查，不是发行者身份签名。复现打包可用 `tools/package_bundle.py --help`。
 
 Windows 源码启动器按以下顺序选择 Python：`VISION_RSI_PYTHON` 指定的可执行文件、项目 `.venv\Scripts\python.exe`、本机 Codex 运行时、PATH 中的 `python`。可显式指定自己安装的 Python 环境：
 
@@ -859,7 +861,7 @@ python -m vision_rsi training release-status --session-id SESSION --json
 
 每轮执行一个研究步骤，并重新核对任务版本、接口及训练就绪状态。次数上限、时长到期、暂停、请求状态不确定、规划校验失败、工具失败或无进展都会停止；不自动重试 API 或工具调用。中断后记录仍保留，可查询状态再显式继续。时长限制阻止到期后启动新步骤，正在执行的有界调用可能稍后结束。停止报告保存在该任务研究目录的 `research-watch-runs`；此入口不等同于已有的固定检测训练 `training watch`，不会自动采用候选或绕过训练预算。
 
-通用研究的持久暂停/恢复（当前源码入口；既有 dev5 wheel 尚不含这两个新增命令）：
+通用研究的持久暂停/恢复（源码及 dev6 安装包均支持）：
 
 ```powershell
 .\vision-rsi.cmd training research-pause --session-id SESSION_ID
@@ -868,4 +870,4 @@ python -m vision_rsi training release-status --session-id SESSION --json
 
 暂停可在另一终端提交，阻止后续规划与工具调度，不取消已开始的调用。若规划响应在暂停后返回，保留响应，恢复后复用而不重复调用模型。恢复只改变调度意图，不自动启动进程、不清除未决请求、不重置规划/API/GPU 额度；再执行 `research-watch` 才会继续。重复暂停或恢复不会重复追加控制事件。
 
-当前源码的任务研究还可使用 `read_training_run` 工具读取已有训练记录。CLI 用 `--run-store` 绑定本地训练账本，就绪上下文列出最近 10 个运行代号；没有已有运行时不开放此工具。模型只能指定运行代号及就绪快照中的记录 SHA256，不能指定路径或另一会话。读取时再次核对记录哈希；记录已变化则拒绝旧快照，刷新后可用新哈希重读同一运行。工具核对计划身份与固定合同，重读按内容哈希存放的已收集回执，复用验收程序返回指标、未达标原因及错误摘要，忽略缓存的通过结论。它不会查询远端、提交训练或自动注册能力；本地证据复核也不是外部真实性、服务可用性或 RSI 提升证明。dev5 wheel 尚不包含该新增工具。
+当前源码的任务研究还可使用 `read_training_run` 工具读取已有训练记录。CLI 用 `--run-store` 绑定本地训练账本，就绪上下文列出最近 10 个运行代号；没有已有运行时不开放此工具。模型只能指定运行代号及就绪快照中的记录 SHA256，不能指定路径或另一会话。读取时再次核对记录哈希；记录已变化则拒绝旧快照，刷新后可用新哈希重读同一运行。工具核对计划身份与固定合同，重读按内容哈希存放的已收集回执，复用验收程序返回指标、未达标原因及错误摘要，忽略缓存的通过结论。它不会查询远端、提交训练或自动注册能力；本地证据复核也不是外部真实性、服务可用性或 RSI 提升证明。该工具已包含在 dev6 安装包中。
