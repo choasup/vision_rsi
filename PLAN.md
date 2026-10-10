@@ -542,3 +542,8 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - SCP37077 authoritatively exited0; remote ZIP size19336861798 matched. CPU import extract-train2017-3bb160bbbfe9-a0 was journaled before submission, spec2706a7626658fc6d95681f25c0370e0bb776240dae22bb3918029db3fbf736a5. It verified upload SHA before renaming the archive; readonly observation confirmed final archive and in-progress extraction.
 - Worker authoritatively timed_out at300.105774s,returncode-15,GPU0. No complete extraction or data-equivalence receipt. Partial directory .extract-9xav9e8s is retained, not merged/deleted/restarted. Evidence training-extract-observation.json and training-import-recovery.json. Need bounded resumable extraction to advance; planned equivalence job remains unsubmitted. Baseline watcher99400 still live.
+
+## Bounded resumable ZIP extraction (2026-10-10)
+
+- Added resource_unpack utility after authoritative one-shot import timeout. Rehashes whole archive and journaled outputs on each step; private staging, OS lease, contiguous SQLite file SHA journal, per-member CRC/size checks,100-entry commits and atomic final publication. Orphan files after interrupted rename are compared with archive bytes before journaling; final-directory publication before database commit can be reconciled. Existing unrelated destinations and changed sources/resources/outputs are rejected. Old timed-out extraction remains untouched.
+- Seven new regressions cover bounded continuation, active lease/deadline, CRC/path errors, changed source/output and failure injection after file and final-directory rename. All24 resource tests passed in19.920s. No true training-data import completion claimed yet. Each CPU worker remains hard bounded; total stage supervision must also be bounded.
