@@ -11,6 +11,24 @@ from test_event_eval import event
 
 
 class AdapterEvaluationTests(unittest.TestCase):
+    def test_task_bound_candidate_registration_is_stable_and_never_test_ready(self):
+        from vision_rsi.candidate_bundle import build
+        from vision_rsi.capability import Capabilities
+        contract=json.loads(self.contract.read_text())
+        session={'session_id':'a'*32,'task_id':'video-task','versions':[{'contract':contract}]}
+        bundle=build(self.store,self.candidate,'vision_rsi.adapter_fixture','predict',self.contract,self.root/'bundles')
+        registry=Capabilities(self.root/'registry');self.addCleanup(registry.close)
+        manifest=registry.register_candidate(session,bundle['path'])
+        self.assertEqual(manifest['status'],'pending_independent_validation')
+        self.assertEqual(registry.register_candidate(session,bundle['path']),manifest)
+        self.assertEqual(len(registry.list()),1)
+        with self.assertRaisesRegex(ValueError,'No validated'):registry.resolve_version('video-task',manifest['version'])
+        changed=dict(session,versions=[{'contract':dict(contract,goal='changed task')}])
+        with self.assertRaisesRegex(ValueError,'contract differs'):registry.register_candidate(changed,bundle['path'])
+        with self.assertRaisesRegex(ValueError,'Resolve task'):registry.register_candidate(dict(session,pending_request='pending'),bundle['path'])
+        artifact=registry.root/'video-task'/manifest['version']/'bundle.json';artifact.write_text('{}')
+        with self.assertRaisesRegex(ValueError,'artifact changed'):registry.register_candidate(session,bundle['path'])
+
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     @patch('vision_rsi.remote.check_candidate')
     def test_controller_evaluates_frozen_media_bundle_mode(self,remote,client):

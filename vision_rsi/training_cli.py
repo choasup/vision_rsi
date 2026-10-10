@@ -157,7 +157,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -169,6 +169,7 @@ def main(argv):
     parser.add_argument('--json',action='store_true',help='Emit full structured records')
     parser.add_argument('--registry',default='runs/capabilities')
     parser.add_argument('--version')
+    parser.add_argument('--bundle',help='Frozen candidate bundle to register as pending independent validation')
     parser.add_argument('--request-id',help='Exact pending clarification request ID shown by training show')
     parser.add_argument('--wall-seconds-budget',type=float)
     parser.add_argument('--chunk-size',type=int,default=10)
@@ -188,6 +189,19 @@ def main(argv):
     parser.add_argument('--research-watch-turns',type=int,default=6,help='Maximum foreground general-research steps (1..1000)')
     parser.add_argument('--repository',default='.',help='Git source repository for general research; required explicitly outside the checkout')
     args=parser.parse_args(argv)
+    if args.action=='register-candidate':
+        if not args.session_id or not args.bundle:parser.error('register-candidate requires --session-id and --bundle')
+        import sqlite3
+        from .capability import Capabilities
+        try:
+            session=Sessions(args.sessions,read_only=True).show(args.session_id)
+            registry=Capabilities(args.registry)
+            try:result=registry.register_candidate(session,args.bundle)
+            finally:registry.close()
+        except (ValueError,KeyError,TypeError,OSError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
+        if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
+        else:print('任务: '+result['task_id']+'\n版本: '+result['version']+'\n状态: 待独立验收；尚不能用于 test 推理')
+        return
     if args.interactive and args.action not in ('start','show','reply','define'):
         parser.error('--interactive is supported for start/show/reply/define')
     if args.action=='release-status':

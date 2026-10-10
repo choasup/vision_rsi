@@ -33,6 +33,40 @@ class Capabilities:
     def list(self):
         return [{'task_id':a,'version':b,'status':c} for a,b,c in self.db.execute('SELECT task_id,version,status FROM versions ORDER BY created')]
 
+    def register_candidate(self,session,bundle_path):
+        """Register a task-bound delivery artifact, never a quality-approved model."""
+        from .candidate_bundle import verify
+        from .runner import digest
+        versions=session.get('versions',[])
+        if session.get('pending_request') or not versions or versions[-1].get('review_required'):
+            raise ValueError('Resolve task requirements before candidate registration')
+        name=task_id(session['task_id']);session_id=session['session_id']
+        if not isinstance(session_id,str) or not re.fullmatch('[0-9a-f]{32}',session_id):raise ValueError('Invalid task session identity')
+        bundle=verify(bundle_path)
+        import base64
+        contract=json.loads(base64.b64decode(bundle['contract_base64']).decode('utf-8-sig'))
+        if digest(contract)!=digest(versions[-1]['contract']):raise ValueError('Candidate bundle contract differs from accepted task')
+        binding={'session_id':session_id,'task_id':name,'contract_version':len(versions),
+                 'contract_sha256':digest(contract),'bundle_id':bundle['bundle_id']}
+        version=digest(binding)[:32];folder=self.root/name/version
+        raw=(json.dumps(bundle,sort_keys=True,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+        checksum=hashlib.sha256(raw).hexdigest()
+        manifest={'task_id':name,'version':version,'session_id':session_id,'task_binding':binding,
+                  'spec':{'kind':'candidate_bundle'},'status':'pending_independent_validation',
+                  'artifacts':{'bundle.json':checksum},'production_accepted':False,'quality_verified':False,
+                  'limitations':'Task-bound delivery artifact only; independent quality and serving acceptance required before test.'}
+        row=self.db.execute('SELECT status,manifest_hash FROM versions WHERE version=?',(version,)).fetchone()
+        if row:
+            if row[0]!=manifest['status'] or sha(folder/'manifest.json')!=row[1]:raise ValueError('Registered candidate manifest changed')
+            saved=json.loads((folder/'manifest.json').read_text(encoding='utf-8'))
+            if saved!=manifest or sha(folder/'bundle.json')!=checksum:raise ValueError('Registered candidate artifact changed')
+            verify(folder/'bundle.json');return saved
+        if folder.exists():raise ValueError('Incomplete candidate registration retained; refusing overwrite')
+        folder.mkdir(parents=True);(folder/'bundle.json').write_bytes(raw);atomic_json(folder/'manifest.json',manifest)
+        with self.db:self.db.execute('INSERT INTO versions(task_id,version,status,manifest_hash) VALUES (?,?,?,?)',
+                                    (name,version,manifest['status'],sha(folder/'manifest.json')))
+        return manifest
+
     def train(self, spec_path):
         spec_path=Path(spec_path).resolve(); spec=json.loads(spec_path.read_text(encoding='utf-8'))
         name=task_id(spec['task_id'])
@@ -187,6 +221,7 @@ class Capabilities:
             path=self.root/name/candidate/'manifest.json'
             if sha(path)!=expected:raise ValueError('Manifest integrity failure')
             manifest=json.loads(path.read_text())
+            if manifest['spec']['kind'] not in ('toy_threshold_detection','coco_detection'):continue
             if manifest['spec']['kind']=='coco_detection' and manifest.get('validation',{}).get('serving_accuracy_verified') is not True:continue
             return candidate
         raise ValueError('No validated capability for task/version; serving validation may be pending')
