@@ -96,6 +96,7 @@ def check(registry,session,version,dataset_path,remote,max_latency_seconds):
                 'status':'serving_contract_checks_met' if passed else 'serving_contract_checks_not_met',
                 'trials':trials,'fresh_execution_count':2,'latency_scope':'Entire supplied batch, including transport and decode',
                 'selected_runtime_consistent':runtime_hash is not None,'environment_fully_verified':False,'quality_verified':False,'production_accepted':False,'capability_registered':False,
+                'userspace_snapshot_verified':runtime_hash is not None and baseline['runtime_identity']['protocol']=='vision-rsi/frozen-cpu-runtime/v2',
                 'limitations':'Two observed CPU runs on accepted samples, not workload-wide latency, complete environment or model-quality certification.'}
         result['record_sha256']=digest(result)
         result_path=root/'serving.json'

@@ -23,7 +23,8 @@ class CandidateRuntimeTests(unittest.TestCase):
     @patch('vision_rsi.candidate_runtime.subprocess.Popen')
     def test_drift_blocks_before_any_candidate_process(self,process):
         value=identity()
-        with patch('vision_rsi.candidate_runtime.runtime_identity',return_value=(value,digest(value))):
+        from pathlib import Path
+        with patch('vision_rsi.candidate_runtime.runtime_identity',return_value=(value,digest(value))), patch('vision_rsi.candidate_runtime.freeze_userspace',return_value=(Path('.'),{'files':1,'bytes':1},'c'*64)):
             with self.assertRaisesRegex(ValueError,'candidate was not executed'):
                 run({'workspace':'/owned-fixture','expected_runtime_identity_sha256':'0'*64})
         process.assert_not_called()
