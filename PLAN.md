@@ -537,3 +537,8 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - Added requirements-control-windows-py312.lock for the3 actually tested Windows x64 CPython3.12 media/COCO wheels, including NumPy2.5.3. Lock SHA52d3946d202d14748222ec8ee29475bccca5a3f22104eace8db9bc58305e3ff9. Does not freeze other platforms, remote training libraries, build tools or agent artifact.
 - A second new venv installed all3 dependencies offline with --no-index --require-hashes, then installed the built agent wheel with --no-deps. pip check passed;7 COCO fixture evaluator tests and1 multi-case image verifier test passed. External cwd/module paths prove installed packages are used. Native generated console exe was actually blocked by Windows application control (WinError4551); installed python -m vision_rsi training --help succeeds. No OS policy changed. Evidence runs/release-smoke-20261010/locked-runtime.json.
+
+## Training transfer complete; one-shot remote import timed out (2026-10-10)
+
+- SCP37077 authoritatively exited0; remote ZIP size19336861798 matched. CPU import extract-train2017-3bb160bbbfe9-a0 was journaled before submission, spec2706a7626658fc6d95681f25c0370e0bb776240dae22bb3918029db3fbf736a5. It verified upload SHA before renaming the archive; readonly observation confirmed final archive and in-progress extraction.
+- Worker authoritatively timed_out at300.105774s,returncode-15,GPU0. No complete extraction or data-equivalence receipt. Partial directory .extract-9xav9e8s is retained, not merged/deleted/restarted. Evidence training-extract-observation.json and training-import-recovery.json. Need bounded resumable extraction to advance; planned equivalence job remains unsubmitted. Baseline watcher99400 still live.
