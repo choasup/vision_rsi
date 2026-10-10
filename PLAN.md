@@ -560,3 +560,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Full current regression suite passed235 tests in100.789s; log runs/resource-bootstrap/tests-current-release.log. Includes resumable extraction and serving threshold guards added after the earlier226-test run. This is software regression evidence, not task accuracy or RSI improvement.
 - Bounded import supervisor is continuing the same frozen23988a269f72 extraction lineage; stepa4 completed68268/118288 ZIP entries (one directory), stepa5 submitted after authoritative worker success. GPU0, hard300s per worker,20-step/6000-worker-second total cap. No duplicate controller started and old timed-out extraction remains untouched.
 - Full training publication and remote byte-equivalence remain pending; the original task GPU budget remains null. No real COCO training or validated capability was started or claimed. The exact pre-existing equivalence draft must only be submitted after authoritative final import success.
+
+
+## Bounded LLM response ingestion (2026-10-10)
+
+- Replaced unbounded HTTP JSON loading with a fixed8MiB response-body cap. Oversized, malformed JSON/Unicode and invalid completion shapes close the HTTP context and raise a body-suppressed error; there is no automatic retry. Credentials and raw invalid responses are not included in these error messages.
+- Nine transport tests passed, including limited reads and malformed responses; eleven contract/clarification/media-schema regressions passed. This bounds response memory, not total HTTP wall time or a unified token/cost ledger, which remain incomplete.
+- CPU post-import equivalence supervisor90377 now observes the existing import lineage and only submits the pre-existing frozen verification job after authoritative final worker success. Intent persists before submission; uncertain/failed submission or worker never causes a replacement. It checks the full decoded reference SHA and original source guards. No GPU training is authorized by this supervisor. Import3923 remains live.

@@ -52,6 +52,34 @@ class LLMTests(unittest.TestCase):
             for target in ('https://other.invalid/collect','http://example.invalid/collect','https://example.invalid/new'):
                 self.assertIsNone(handler.redirect_request(request,None,code,'redirect',{},target))
 
+    @patch.dict('os.environ', {'TEST_LLM_KEY': 'fixture-secret'})
+    @patch('vision_rsi.llm.urlopen')
+    def test_response_size_is_bounded_and_closes_without_retry(self, opened):
+        with patch('vision_rsi.llm.MAX_RESPONSE_BYTES', 64):
+            body=io.BytesIO(b'x'*1000)
+            opened.return_value.__enter__.return_value=body
+            with self.assertRaisesRegex(RuntimeError,'byte limit'):
+                self.client.complete([])
+            self.assertEqual(body.tell(),65)
+            opened.assert_called_once()
+            opened.return_value.__exit__.assert_called_once()
+
+    @patch.dict('os.environ', {'TEST_LLM_KEY': 'fixture-secret'})
+    @patch('vision_rsi.llm.urlopen')
+    def test_invalid_response_does_not_echo_body_or_retry(self, opened):
+        cases=[b'fixture-secret invalid JSON', b'\xfffixture-secret', b'null',
+               b'[]', b'{}', b'{"choices":[]}',
+               json.dumps({'choices':[{'message':{'content':None}}]}).encode(),
+               json.dumps({'choices':[{'message':{'content':'ok'}}],'usage':[]}).encode()]
+        for raw in cases:
+            opened.reset_mock()
+            opened.return_value.__enter__.return_value=io.BytesIO(raw)
+            with self.subTest(raw=raw),self.assertRaises(RuntimeError) as error:
+                self.client.complete([])
+            self.assertNotIn('fixture-secret',str(error.exception))
+            opened.assert_called_once()
+            opened.return_value.__exit__.assert_called_once()
+
     @patch('vision_rsi.llm.build_opener')
     def test_transport_installs_nonredirecting_handler(self,build):
         request=Request('https://example.invalid')

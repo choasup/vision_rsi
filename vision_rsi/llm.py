@@ -5,6 +5,8 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -47,13 +49,24 @@ class OpenAICompatibleClient:
                                    'Content-Type': 'application/json'})
         try:
             with urlopen(request, timeout=60) as response:
-                result = json.load(response)
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                if len(raw.encode('utf-8') if isinstance(raw, str) else raw) > MAX_RESPONSE_BYTES:
+                    raise RuntimeError('LLM response exceeds byte limit; body suppressed')
         except HTTPError as error:
             code=error.code
             error.close()
             raise RuntimeError(f'LLM HTTP {code}; response body suppressed') from None
         except (URLError, TimeoutError):
             raise RuntimeError('LLM network error or timeout') from None
-        return {'model': result.get('model'),
-                'content': result['choices'][0]['message']['content'],
-                'usage': result.get('usage', {})}
+        try:
+            result = json.loads(raw)
+            content = result['choices'][0]['message']['content']
+            usage = result.get('usage', {})
+            model = result.get('model')
+            if not isinstance(content, str) or not isinstance(usage, dict):
+                raise ValueError('Invalid completion shape')
+            if model is not None and not isinstance(model, str):
+                raise ValueError('Invalid model identity')
+        except (ValueError, UnicodeError, KeyError, IndexError, TypeError, AttributeError):
+            raise RuntimeError('LLM response is invalid; body suppressed') from None
+        return {'model': model, 'content': content, 'usage': usage}
