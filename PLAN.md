@@ -321,3 +321,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - Control and remote candidate runtime now use the same finite-JSON cases encoder, 1..16-case bound and 1 MiB aggregate payload limit. This accommodates an individual 512 KiB strategy context while rejecting oversized aggregate cases before reserving evidence or contacting SSH. Other CPU, memory, wall time and output limits are unchanged.
 - Actual H20 CPU namespace check with 2,500 history rows / 401,615 serialized bytes passed strategy protocol. Candidate remained unadopted; no GPU training or LLM call. Ignored evidence: runs/long-context-integration/summary.json and its referenced protocol receipt. This does not establish unbounded history support or RSI efficiency.
+
+
+## Remote log reconciliation recovery evidence (2026-10-10)
+
+- Queried actual H20 logs/status for historical fixture job train-5aa3ffe7794b9f24e2bdf9dc9ed8541d: completed, 4,326 log bytes, unchanged settled cost 0.0037871319739820643 GPU hours; projected next action is collect. No new job or API call.
+- Copied the historical SQLite ledger via backup and simulated an unobserved submitted state only in the copied ledger. Injected a lost status response after actual SSH log retrieval: reservation stayed unsettled; subsequent actual logs/status observation recovered the same run ID and original settled cost without submission. This is explicit fault injection against a completed fixture, not a real mid-training outage. Ignored evidence: runs/log-observation-integration/{summary,fault-summary}.json.
+- Remaining release gates are unchanged: full real COCO resources/budget/quality, general harness code improvement, paired held-out RSI verification, joint media adapters and broader long-run deployment validation.
