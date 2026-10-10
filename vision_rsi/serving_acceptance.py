@@ -4,6 +4,8 @@ import math
 
 def review_serving(manifest,report):
     endpoint=manifest['endpoint'];target=endpoint['contract']['acceptance']['threshold']
+    if isinstance(target,bool) or not isinstance(target,(int,float)) or not math.isfinite(target) or not 0<=target<=100:
+        raise ValueError('Invalid serving acceptance threshold')
     expected={'backend':'cpu','protocol':'pycocotools.COCOeval/bbox/defaults','metric_scale':'0..100',
               'pycocotools_version':'2.0.11','checkpoint_sha256':endpoint['checkpoint_sha256'],
               'training_identity_hash':endpoint['training_identity_hash'],
