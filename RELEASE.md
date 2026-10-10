@@ -345,3 +345,9 @@
 - clarification prompt加入独立video_events评测说明，明确事件micro-F1/0..1、时间IoU最大数量匹配、events输出与额外iou_threshold字段；要求只在语义匹配/接受该协议时选用，保留用户已有指标，不发明F1目标，不声称视频训练可用。
 - issues对精确event_micro_f1/v1协议提前校验metric/direction、有限0..1目标、显式0<IoU<=1及events输出属性，错误properties类型返回问题而非崩溃。其它协议不自动转换。
 - 29项contracts/event_eval/training_shell/task_adapters测试通过（.576秒），含mock澄清消息、非法验收字段和无效schema。无真实API/SSH/GPU调用，视频训练适配器和质量证据仍缺失，安装包尚未重建，完整上线目标未完成。
+## 实际任务就绪复核与可执行下一步（2026-10-10）
+
+- 实际session df8e8f8991ee496d859e35fab2085d8f v5当前COCO适配器/本地配置检查通过，训练账本0记录，真实gpu_hours仍null；未启动训练，等待用户指定上限。
+- readiness新增suggested_actions结构化argv、原因、用户值要求及executed=false。缺预算且任务可实现/无待审或不确定请求时提供budget占位命令；已有预算且全部条件满足才提供prepare；未结算预留提供runs查询，阻塞任务提供show。保留自定义sessions/run-store/config路径，不执行建议。
+- 10项readiness/shell测试通过（.215秒），实际Windows命令显示正确会话的budget/show下一步。首次回归暴露新增函数内import遮蔽全局subprocess造成异常路径错误，已移除局部import并重跑通过。
+- 只读本地检查，无API/SSH/GPU；配置可用不证明远端实时状态、任务效果或上线。真实预算缺失与完整上线门槛仍未解决。

@@ -27,6 +27,7 @@ class TaskReadinessTests(unittest.TestCase):
             self.assertEqual(report['status'],'blocked');self.assertIsNone(report['authorized_gpu_hours'])
             self.assertFalse(report['release_verified']);self.assertEqual(report['task_quality_status'],'not_checked')
             self.assertEqual(path.read_bytes(),before);self.assertFalse((root/'runs').exists())
+            self.assertNotIn('budget',[action['action'] for action in report['suggested_actions']])
             with self.assertRaises(sqlite3.OperationalError):
                 with Sessions(root/'sessions',read_only=True).db() as db:db.execute('DELETE FROM sessions')
             self.assertEqual(path.read_bytes(),before)
@@ -42,7 +43,15 @@ class TaskReadinessTests(unittest.TestCase):
                       'budget':{'gpu_hours':1},'assumptions':[],'open_questions':[],
                       'example_input':{'sample_id':'one','inputs':{'image':{'type':'image','uri':'image.jpg'}}},'example_output':{'detections':[]}}
             store.define(session['session_id'],contract)
-            report=inspect(session['session_id'],{},root/'sessions',root/'runs')
+            report=inspect(session['session_id'],{},root/'sessions',root/'runs','custom config.json')
             self.assertEqual(report['status'],'ready_for_prepare');self.assertEqual(report['remaining_gpu_hours_snapshot'],1)
+            action=report['suggested_actions'][0]
+            self.assertEqual(action['action'],'prepare');self.assertFalse(action['executed'])
+            self.assertIn('custom config.json',action['argv']);self.assertIn(str(root/'runs'),action['argv'])
             self.assertFalse(report['training_performed']);self.assertFalse(report['release_verified'])
             self.assertEqual(report['task_quality_status'],'not_checked')
+            contract['budget']=None;store.define(session['session_id'],contract)
+            report=inspect(session['session_id'],{},root/'sessions',root/'runs')
+            action=next(a for a in report['suggested_actions'] if a['action']=='budget')
+            self.assertTrue(action['requires_user_value']);self.assertIn('<GPU_HOURS>',action['argv'])
+            self.assertNotIn('prepare',[a['action'] for a in report['suggested_actions']])

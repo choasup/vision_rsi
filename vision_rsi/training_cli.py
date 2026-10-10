@@ -191,7 +191,7 @@ def main(argv):
         import sqlite3
         from .task_readiness import inspect
         if not args.session_id:parser.error('readiness requires --session-id')
-        try:result=inspect(args.session_id,json.loads(Path(args.config).read_text(encoding='utf-8')),args.sessions,args.run_store)
+        try:result=inspect(args.session_id,json.loads(Path(args.config).read_text(encoding='utf-8')),args.sessions,args.run_store,args.config)
         except (ValueError,OSError,KeyError,TypeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
         if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
         else:
@@ -199,6 +199,9 @@ def main(argv):
             print('任务: '+result['task_id']+'；会话: '+result['session_id'])
             print('GPU小时预算: '+str(result['authorized_gpu_hours'])+'；本地剩余快照: '+str(result['remaining_gpu_hours_snapshot']))
             for blocker in result['blockers']:print('- '+blocker)
+            for action in result['suggested_actions']:
+                print('下一步: '+action['reason'])
+                print('  python -m vision_rsi '+subprocess.list2cmdline(action['argv']))
             print('未调用API/SSH或启动训练；任务效果未检查。ready_for_prepare仅表示可继续准备计划。')
         return
     if args.action=='memory':
