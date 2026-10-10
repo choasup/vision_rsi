@@ -38,6 +38,12 @@ class CampaignTests(unittest.TestCase):
             self.assertEqual(len(runs.list(session['session_id'])),2)
         finally:runs.close()
 
+    def test_compaction_never_allows_old_action_id_to_be_reused(self):
+        history=[{'action':{'id':'observe-'+str(i),'kind':'observe'},'status':'completed','result':{}} for i in range(1000)]
+        action={'id':'observe-0','kind':'observe','estimated_cost':1,'expected_gain':1,'uncertainty':0}
+        with self.assertRaisesRegex(ValueError,'full history'):
+            choose({'history':history},[action],1,None,self.config['remote'])
+
     @patch('vision_rsi.campaign.prepare')
     def test_selected_campaign_rejects_ledger_changes_on_resume_and_advance(self,prepare):
         prepare.return_value={'status':'blocked','blockers':['fixture']}

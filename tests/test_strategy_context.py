@@ -34,6 +34,35 @@ class StrategyContextTests(unittest.TestCase):
             self.assertNotIn('run_id',row['observation']);self.assertNotIn('gpu_cost_scope',row['observation'])
         self.assertEqual(rows,original)
 
+    def test_long_history_has_deterministic_bounded_view_and_keeps_research(self):
+        import json
+        rows=[{'action':{'id':'observe-'+str(i),'kind':'observe'},'status':'completed',
+               'result':{'run_id':'train-one','status':'running','actual_gpu_hours':None,'reserved_gpu_hours':.5}}
+              for i in range(2500)]
+        rows[20]={'action':{'id':'analyze-20','kind':'analyze'},'status':'completed',
+                  'result':{'run_id':'train-old','actual_gpu_hours':.2,'metric_gap':20,
+                            'acceptance_review':{'box_AP':40,'threshold':60,'error_summary':{'large':'x'*20000}}}}
+        rows[30]={'action':{'id':'propose-30','kind':'propose_experiment'},'status':'completed',
+                  'result':{'experiment':{'proposal':{'hypothesis':'Measured failure needs a separately tested method'}}}}
+        original=copy.deepcopy(rows)
+        legacy=history_context(rows,3)
+        with self.assertRaises(ValueError):validate_context(legacy,[],1)
+        view=history_context(rows,4)
+        validate_context(view,[],1)
+        self.assertLessEqual(len(json.dumps(view,sort_keys=True).encode()),192*1024)
+        self.assertEqual(view,history_context(rows,4));self.assertEqual(rows,original)
+        summary=view[0]['observation']
+        self.assertEqual(summary['total_rows'],2500)
+        self.assertEqual(summary['omitted_research_rows'],0)
+        self.assertEqual(summary['retained_rows']+summary['omitted_rows'],2500)
+        retained={row['id']:row for row in view}
+        self.assertIn('observe-2499',retained);self.assertIn('propose-30',retained)
+        measured=retained['analyze-20']['observation']
+        self.assertEqual(measured['measurement']['value'],40)
+        self.assertTrue(measured['memory_detail_omitted'])
+        changed=copy.deepcopy(rows);changed[0]['result']['reserved_gpu_hours']=.6
+        self.assertNotEqual(summary['full_context_sha256'],history_context(changed,4)[0]['observation']['full_context_sha256'])
+
     def test_research_brief_only_controls_research_hypothesis(self):
         action={'id':'next','kind':'propose_experiment','estimated_cost':1,'expected_gain':2,'uncertainty':.1}
         decision={'action_id':'next','rationale':'Use measured failure','research_brief':'Test whether lower LR helps; instability is unproven.'}

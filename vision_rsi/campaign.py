@@ -67,6 +67,9 @@ def available(state):
 
 
 def choose(state,actions,steps_left,policy,remote):
+    attempted={row['action']['id'] for row in state['history']}
+    if any(action['id'] in attempted for action in actions):
+        raise ValueError('Controller action ID already appears in full history')
     history=history_context(state['history'])
     if policy:
         from .candidates import Candidates
@@ -214,11 +217,11 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                     policy_elapsed=time.monotonic()-choice_started
                     if decision['action_id'] is None:
                         state['policy_stop']={'decision':decision,'policy_evidence':evidence,'policy_elapsed_seconds':policy_elapsed,
-                                              'control_sources':control_sources,'git_revision':revision(),'created_at_unix':time.time(),'strategy_context_version':3}
+                                              'control_sources':control_sources,'git_revision':revision(),'created_at_unix':time.time(),'strategy_context_version':4}
                         state['status']='policy_stopped';atomic_json(path,state);break
                     action=next(row for row in actions if row['id']==decision['action_id'])
                     intent={'action':action,'decision':decision,'policy_evidence':evidence,'status':'reserved',
-                            'strategy_context_version':3,
+                            'strategy_context_version':4,
                             'control_sources':control_sources,'git_revision':revision(),'policy_elapsed_seconds':policy_elapsed,
                             'created_at_unix':time.time(),'tool_attempts':[]}
                     state['intent']=intent;atomic_json(path,state)

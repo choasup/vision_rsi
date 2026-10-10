@@ -1,13 +1,16 @@
 """Bounded, task-neutral observations exposed to research strategies."""
 import math
+import hashlib
+import json
+from collections import Counter
 
 
 def finite(value):
     return not isinstance(value,bool) and isinstance(value,(int,float)) and math.isfinite(value)
 
 
-def history_context(rows,version=3):
-    if version not in (1,2,3):raise ValueError('Unsupported strategy context version')
+def history_context(rows,version=4):
+    if version not in (1,2,3,4):raise ValueError('Unsupported strategy context version')
     result=[]
     for row in rows:
         item={'id':row['action']['id'],'kind':row['action']['kind'],'status':row['status']}
@@ -51,4 +54,53 @@ def history_context(rows,version=3):
                     observation['gpu_budget_scope']='whole_session_snapshot'
             if observation:item['observation']=observation
         result.append(item)
+    return bounded_memory(result) if version==4 else result
+
+
+MEMORY_BYTES=192*1024
+MEMORY_ROWS=256
+
+
+def encoded(value):return json.dumps(value,sort_keys=True,allow_nan=False).encode()
+
+
+def bounded_memory(items):
+    """Deterministic policy view; original controller history is never changed."""
+    full=encoded(items)
+    if len(items)<=MEMORY_ROWS and len(full)<=MEMORY_BYTES:return items
+    checksum=hashlib.sha256(full).hexdigest()
+    critical=[i for i,row in enumerate(items) if row['kind'] not in ('observe','logs')]
+    measured=[i for i,row in enumerate(items) if finite(row.get('observation',{}).get('measurement',{}).get('value'))]
+    extrema=[]
+    if measured:
+        extrema=[min(measured,key=lambda i:items[i]['observation']['measurement']['value']),
+                 max(measured,key=lambda i:items[i]['observation']['measurement']['value'])]
+    # Recent execution state first, then measured extremes and research history.
+    order=list(range(max(0,len(items)-16),len(items)))+extrema+list(reversed(critical))+list(reversed(range(len(items))))
+    selected={};shortened=0;size=0
+    for index in dict.fromkeys(order):
+        item=items[index];raw=encoded(item)
+        if len(raw)>4096:
+            obs=item.get('observation',{})
+            keep={key:value for key,value in obs.items() if key not in ('error_summary','prior_hypothesis','measurement','method')}
+            if 'measurement' in obs:keep['measurement']={key:value for key,value in obs['measurement'].items() if key!='reasons'}
+            if 'method' in obs and len(encoded(obs['method']))<=1024:keep['method']=obs['method']
+            if isinstance(obs.get('prior_hypothesis'),str):keep['prior_hypothesis']=obs['prior_hypothesis'][:512]
+            keep.update(memory_detail_omitted=True,detail_sha256=hashlib.sha256(encoded(obs)).hexdigest())
+            item=dict(item,observation=keep);raw=encoded(item)
+            if len(raw)>4096:raise ValueError('Research memory core exceeds bounded observation limit')
+        if len(selected)>=MEMORY_ROWS-1 or size+len(raw)>MEMORY_BYTES-16384:continue
+        selected[index]=item;size+=len(raw)+2
+        shortened+=item is not items[index]
+    indices=sorted(selected)
+    summary={'id':'memory-'+checksum[:24],'kind':'memory_summary','status':'compacted',
+             'observation':{'schema':'vision-rsi-research-memory-v1','full_context_sha256':checksum,
+                            'total_rows':len(items),'retained_rows':len(indices),'omitted_rows':len(items)-len(indices),
+                            'shortened_observations':shortened,'source_indices':indices,
+                            'omitted_research_rows':sum(i not in selected for i in critical),
+                            'kind_counts':dict(sorted(Counter(row['kind'] for row in items).items())),
+                            'status_counts':dict(sorted(Counter(row['status'] for row in items).items())),
+                            'scope':'Partial policy view; complete evidence remains in controller history. Counts are not costs.'}}
+    result=[summary]+[selected[i] for i in indices]
+    if len(encoded(result))>MEMORY_BYTES:raise ValueError('Research memory summary exceeds byte limit')
     return result
