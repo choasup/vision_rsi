@@ -106,14 +106,23 @@ def execution_summary(result):
             'action_not_dispatched':'研究请求未发送；已暂停，解决准入条件后显式恢复','retry_authorized':'已允许重新提交未发送的研究请求',
             'controller_budget_exhausted':'本Campaign工具尝试预算已耗尽；保留作业与未完成意图','policy_stopped':'策略本次未选择动作','processing_result':'正在处理训练结果','ready':'训练计划已准备','new':'尚未推进'}
     lines=['状态: '+labels.get(result.get('status'),str(result.get('status')))]
-    for key,label in [('task_id','任务'),('session_id','会话'),('run_id','运行'),('version','能力版本'),('plan_path','计划文件')]:
+    for key,label in [('task_id','任务'),('session_id','会话'),('campaign_id','Campaign'),('run_id','运行'),('version','能力版本'),('plan_path','计划文件'),('state_path','控制记录')]:
         if result.get(key): lines.append(label+': '+str(result[key]))
+    if 'paused' in result:lines.append('继续决策: '+('已暂停（远端作业不会因此取消）' if result['paused'] else '未暂停'))
+    intent=result.get('intent')
+    if isinstance(intent,dict):
+        action=intent.get('action') or {}
+        attempts=intent.get('tool_attempts') or []
+        lines.append('待处理动作: '+str(action.get('kind','未知'))+'；状态 '+str(intent.get('status','未知'))+'；已预留尝试 '+str(len(attempts)))
     if result.get('actual_gpu_hours') is not None: lines.append('实际 GPU 小时: '+str(result['actual_gpu_hours']))
     budget=result.get('controller_tool_budget')
     if isinstance(budget,dict):
         if budget.get('valid') is False:lines.append('控制预算记录无效: '+budget['error'])
         else:lines.append('本Campaign工具尝试: '+str(budget['admitted_attempts'])+' / '+str(budget['limit'])+'；剩余 '+str(budget['remaining_attempts']))
-    blockers=result.get('blockers') or []
+    plan=result.get('plan')
+    plan=plan if isinstance(plan,dict) else {}
+    if not result.get('plan_path') and plan.get('plan_path'):lines.append('计划文件: '+str(plan['plan_path']))
+    blockers=result.get('blockers') or plan.get('blockers') or []
     immediate=[x for x in blockers if not x.startswith('待澄清:')]
     if immediate:
         lines.append('需求已保存；执行前需要解决:')
@@ -138,6 +147,11 @@ def execution_summary(result):
         lines.append('策略停止原因: '+stop['decision']['rationale'])
         if stop.get('policy_evidence'):lines.append('策略执行证据: '+stop['policy_evidence'])
         if result.get('run_id'):lines.append('策略停止不取消远端作业；请按运行 ID 继续查询或取消。')
+    if result.get('status')=='controller_budget_exhausted':
+        lines.append('恢复不会刷新上限；保留此Campaign记录，不要通过新建Campaign绕过预算。')
+        if result.get('run_id'):lines.append('下一步: training status/logs --run-id 查询原作业；确需终止时使用 cancel。')
+    elif result.get('paused') and result.get('status')!='action_not_dispatched':
+        lines.append('确认待处理动作后可 agent-resume；沿用同一会话、Campaign和存储配置。')
     return '\n'.join(lines)
 
 
@@ -239,9 +253,6 @@ def main(argv):
             if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
             else:
                 print(execution_summary(result))
-                if result.get('state_path'):print('控制记录: '+result['state_path'])
-                if result.get('campaign_id'):print('Campaign: '+result['campaign_id'])
-                if result.get('paused'):print('控制器已暂停；已提交远端作业仍按原预算运行，取消作业请用training cancel。')
                 if result.get('analysis'):print('结果分析: '+json.dumps(result['analysis'],ensure_ascii=False))
                 if policy:print('使用实验候选策略；不代表策略已通过效率验收或被采用。')
                 if result.get('watch'):print('持续观察结束: '+result['watch']['stop_reason']+'；未取消远端作业。')

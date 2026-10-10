@@ -169,3 +169,10 @@
 - 新增可复用`tests/installed_release_probe.py`，在仓库外临时目录导入site-packages、逐一核对Python/HTML文件集合及SHA，验证3个模块CLI帮助入口和120项相关回归（11.416秒）。包含近期控制预算、版本审计、记忆、视频、深路径/SQLite、可执行任务包及未发送API恢复逻辑。
 - 初次120项运行中12项因测试按cwd读取示例契约而失败，原日志/evidence保留于`runs/release-budget-video/`；修正两份测试的fixture路径后120项全部通过，成功证据另存`runs/release-budget-video/verified/{installed-evidence.json,installed-tests.log}`。产品源码和wheel未因此改动。
 - 已安装控制包identity为`source-sha256:127946a1957f0417fcea70d6d082194c1d28b863f220aadd99c35abc425662e4`。测试运行没有API/SSH/GPU调用，不替代真实COCO AP60、8GPU恢复、跨任务模型能力、统一成本预算或新机器验收；目标仍未完成。
+
+## CLI控制状态可观测性修正（2026-10-10）
+
+- 修正campaign人类可读摘要遗漏嵌套plan.blockers的问题；计划路径、Campaign/会话/运行标识、控制记录路径、暂停状态和待处理动作/尝试预留数量现在直接显示。去掉上层重复输出。
+- 控制工具尝试预算耗尽时明确显示剩余数、恢复不刷新上限、保留原记录；有原run_id时提示实时查询/日志/取消入口，暂停不等于取消远端作业。
+- 22项training shell/控制预算/watch相关测试通过（1.864秒）；去重后7项shell测试再次通过。实际对既有本地fixture运行agent-status，显示1/1、剩余0、原嵌套阻塞原因和路径，无API/SSH/GPU调用。
+- 本轮只改变源码CLI展示，不修改任务预算或campaign状态，也未重新构建上一轮安装包；完整上线门槛保持未完成。

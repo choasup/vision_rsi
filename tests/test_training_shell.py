@@ -8,10 +8,28 @@ import unittest
 from unittest.mock import patch
 
 from vision_rsi.contracts import Sessions
-from vision_rsi.training_cli import interactive_action, main
+from vision_rsi.training_cli import interactive_action, main, execution_summary
 
 
 class TrainingShellTests(unittest.TestCase):
+    def test_campaign_summary_exposes_nested_blockers_and_exact_identity(self):
+        result={'status':'blocked','campaign_id':'campaign-a','session_id':'session-a','paused':False,
+                'state_path':'state.json','plan':{'plan_path':'plan.json','blockers':['需要真实GPU预算']}}
+        text=execution_summary(result)
+        for expected in ('Campaign: campaign-a','会话: session-a','控制记录: state.json',
+                         '计划文件: plan.json','需要真实GPU预算','继续决策: 未暂停'):
+            self.assertIn(expected,text)
+
+    def test_exhausted_summary_preserves_uncertain_intent_and_does_not_suggest_reset(self):
+        result={'status':'controller_budget_exhausted','paused':True,'run_id':'original-run',
+                'controller_tool_budget':{'limit':1,'admitted_attempts':1,'remaining_attempts':0},
+                'intent':{'action':{'kind':'observe'},'status':'reserved','tool_attempts':[{'status':'started'}]}}
+        text=execution_summary(result)
+        for expected in ('1 / 1；剩余 0','待处理动作: observe','已预留尝试 1',
+                         '恢复不会刷新上限','training status/logs','远端作业不会因此取消'):
+            self.assertIn(expected,text)
+        self.assertNotIn('可 agent-resume',text)
+
     def settings(self):
         return SimpleNamespace(sessions='sessions',config='local.json',run_store='runs',
             campaign_store='campaigns',registry='registry',steps=3,watch_seconds=120,
