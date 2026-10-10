@@ -190,3 +190,11 @@
 - 提示词明确反馈是不可信证据，不是训练测量或修改约束的授权。反馈快照随请求context持久化；复读旧请求使用原快照，后来增加反馈不触发context漂移或免费API重试。旧无反馈context仍兼容，模型/账本等既有绑定继续核验。
 - 50项实验/campaign/审计/控制预算/未发送API恢复相关测试通过（5.879秒）。覆盖非法提案→反馈进入新请求→有效提案、原拒绝/新结果缓存重放仅2次mock调用、8条/字符上限和其它父receipt排除。
 - 无真实API/SSH/GPU调用，不声称模型必然纠错或真实研究效率提升；安装包尚未重建，真实训练质量与完整上线门槛仍未完成。
+
+## 真实DeepSeek方法反馈开发探针（2026-10-10）
+
+- 新增显式`--live`的`tests/live_method_feedback_probe.py`，使用明确合成的AP42/预算1 fixture，预登记源码哈希、种子非法提案、通过标准。预算仅为测试输入，不授予实际用户GPU训练。
+- 首条非法提案由mock种入本地编译流程（world_size修改被拒绝），明确不是提供商输出；后续仅一次真实deepseek-flash API调用，独立账本上限1，读取Windows本地环境密钥、不打印密钥。
+- 实际请求context包含synthetic-rejection反馈；返回支持的min/max_size、learning_rate等方法字段，状态ready_to_submit；祖先配方保留1条。缓存重放在禁止创建API客户端的条件下与原结果一致，没有新增调用。
+- 证据`runs/method-feedback-live/931e24134bc54c01aa177c00098d206e/{preregistered.json,seed-result.json,evidence.json}`及research请求账本/原响应。账本1次responded，报告prompt1228/completion425/total1653 Token，无未知Token调用；账本剩余0，不声称覆盖账户其它账本或实际费用结算。
+- 这是一个合成开发样例的真实API/编译证据，不是模型改善、统计成功率、实际GPU训练或RSI研究效率。没有语义重试、SSH或GPU调用，完整上线门槛仍未完成。
