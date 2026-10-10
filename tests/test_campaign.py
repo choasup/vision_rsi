@@ -17,6 +17,22 @@ class CampaignTests(unittest.TestCase):
     def advance(self,**kwargs):
         return advance(self.session,self.config,self.root/'campaigns',self.root/'runs',**kwargs)
 
+    @patch('vision_rsi.campaign.choose')
+    @patch('vision_rsi.campaign.submit')
+    @patch('vision_rsi.campaign.prepare')
+    def test_policy_stop_is_persisted_and_does_not_restart_on_next_advance(self,prepare,submit,choose):
+        prepare.return_value=self.plan
+        choose.side_effect=[({'action_id':'prepare-0','rationale':'prepare'},'first-report'),
+                            ({'action_id':None,'rationale':'Stop this research attempt'},'stop-report')]
+        policy={'store':'fixture','candidate_id':'fixture','module':'fixture'}
+        first=self.advance(policy=policy)
+        self.assertEqual(first['status'],'policy_stopped');self.assertEqual(len(first['history']),1)
+        self.assertEqual(first['policy_stop']['policy_evidence'],'stop-report')
+        self.assertGreaterEqual(first['policy_stop']['policy_elapsed_seconds'],0)
+        second=self.advance(policy=policy)
+        self.assertEqual(second['policy_stop'],first['policy_stop'])
+        self.assertEqual(choose.call_count,2);submit.assert_not_called()
+
     @patch('vision_rsi.campaign.TrainingRuns')
     @patch('vision_rsi.campaign.collect')
     @patch('vision_rsi.campaign.observe')

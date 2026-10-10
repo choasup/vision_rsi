@@ -126,16 +126,17 @@ def compare(study_id,root='runs/paired-studies'):
             bound=pair[arm]
             try:
                 path=Path(identity['campaigns'])/bound['session_id']/bound['campaign_id']/'state.json'
-                state=json.loads(path.read_text(encoding='utf-8'))
+                state_raw=path.read_bytes();state=json.loads(state_raw)
                 if state['binding']!=bound['binding']:raise ValueError('Campaign binding differs from preregistration')
-                if state.get('intent') or state.get('status') not in ('needs_research','awaiting_serving_validation','budget_exhausted','policy_stopped'):
+                if state.get('paused') or state.get('intent') or state.get('status') not in ('needs_research','awaiting_serving_validation','budget_exhausted','policy_stopped'):
                     raise ValueError('Campaign is not settled for final comparison')
                 from .campaign import available
                 if available(state):raise ValueError('Preregistered research actions remain')
-                for row in state['history']:
+                for row in state['history']+([state['policy_stop']] if state.get('policy_stop') else []):
                     if row.get('control_sources')!=identity['control_sources'] or row.get('git_revision')!=identity['git_revision']:raise ValueError('Control code changed during study')
                     if row.get('created_at_unix',0)<identity['registered_at_unix']:raise ValueError('Action predates study registration')
                 result=audit(bound['session_id'],bound['campaign_id'],identity['campaigns'],identity['runs'])
+                if result['campaign_state_sha256']!=hashlib.sha256(state_raw).hexdigest():raise ValueError('Campaign changed during comparison; repeat observation without restarting work')
                 if not result['evidence_complete_for_review'] or result['best_verified_real_box_AP'] is None:raise ValueError('Independent campaign evidence incomplete: '+'; '.join(result['missing_evidence']))
                 results[arm]=result
             except (ValueError,KeyError,TypeError,OSError) as error:missing.append({'pair':index,'arm':arm,'error':str(error)})

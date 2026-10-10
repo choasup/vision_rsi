@@ -273,3 +273,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Actual execution delegates only to existing bounded durable campaign tools. Comparison requires every arm to finish research, settle accounting and pass independent real-measurement audit; all measurements must share frozen data, weights, seed, code and runtime within each pair.
 - Unit tests exercise execution binding and reject unequal budgets, reused sessions, prior execution, missing groups, manifest tampering and different data. Positive comparison logic uses explicitly fabricated metadata and is not real RSI evidence.
 - Actual real-data paired experiment, independent held-out selection verification, statistical replication, joint multi-resource budgets and candidate adoption remain incomplete.
+
+
+## Terminal policy decisions and study consistency (2026-10-10)
+
+- Persist terminal no-action decisions with candidate evidence, selection timing and source identity. Repeated advance respects the recorded stop instead of restarting policy selection.
+- Policy audit now verifies terminal decisions and checks final plan/run/analysis/research state against a full action replay; changing only final state cannot bypass remaining research.
+- Paused campaigns cannot count as completed study arms. Comparison also checks that the independently audited state hash matches the phase-checked snapshot, rejecting concurrent state changes.

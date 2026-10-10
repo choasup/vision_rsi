@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -84,12 +85,25 @@ class PairedStudyTests(unittest.TestCase):
             pair=next(pair for pair in identity['pairs'] if sid in (pair['baseline']['session_id'],pair['candidate']['session_id']))
             from vision_rsi.training_plan import DEFAULT_RECIPE
             recipe={**DEFAULT_RECIPE,**pair['config']['training']};recipe['acceptance_threshold']=60
+            arm='candidate' if candidate else 'baseline';bound=pair[arm]
+            raw=(self.campaigns/sid/bound['campaign_id']/'state.json').read_bytes()
             return {'evidence_complete_for_review':True,'best_verified_real_box_AP':45 if candidate else 42,'missing_evidence':[],
+                    'campaign_state_sha256':hashlib.sha256(raw).hexdigest(),
                     'measurements':[{'training_identity':{'recipe':recipe,'image_contents_sha256':'e'*64,'sources':identity['control_sources']}}]}
         with patch('vision_rsi.paired_study.audit',side_effect=audited):
             result=compare(record['study_id'],self.studies)
         self.assertTrue(result['comparison_complete']);self.assertEqual(result['mean_paired_ap_gain'],3)
         self.assertTrue(result['preregistered_gain_rule_met']);self.assertFalse(result['rsi_efficiency_verified']);self.assertFalse(result['agent_adopted'])
+        bound=identity['pairs'][0]['candidate'];path=self.campaigns/bound['session_id']/bound['campaign_id']/'state.json'
+        original=path.read_text();state=json.loads(original);state['paused']=True;path.write_text(json.dumps(state))
+        with patch('vision_rsi.paired_study.audit',side_effect=audited):paused=compare(record['study_id'],self.studies)
+        self.assertFalse(paused['comparison_complete']);self.assertTrue(any('not settled' in row['error'] for row in paused['missing_evidence']))
+        path.write_text(original)
+        def stale(sid,*args):
+            result=audited(sid,*args);result['campaign_state_sha256']='0'*64;return result
+        with patch('vision_rsi.paired_study.audit',side_effect=stale):stale_result=compare(record['study_id'],self.studies)
+        self.assertFalse(stale_result['comparison_complete'])
+        self.assertTrue(all('changed during comparison' in row['error'] for row in stale_result['missing_evidence']))
         def changed(sid,*args):
             result=audited(sid,*args)
             if sid==identity['pairs'][0]['candidate']['session_id']:result['measurements'][0]['training_identity']['image_contents_sha256']='f'*64

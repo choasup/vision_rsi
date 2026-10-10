@@ -73,6 +73,10 @@ def audit(session_id,campaign_id,root='runs/campaigns',run_store='runs/training-
             value=attempt.get('elapsed_seconds')
             if not finite(value):timing_complete=False
             else:elapsed+=value
+    if state.get('policy_stop'):
+        value=state['policy_stop'].get('policy_elapsed_seconds')
+        if finite(value):elapsed+=value
+        else:timing_complete=False
     if not timing_complete:missing.append('Action wall-time evidence incomplete; interrupted/legacy time is not zero')
     if state.get('intent'):missing.append('Unresolved controller action remains')
     token_total=0;token_complete=True;api_requests=0

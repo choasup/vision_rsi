@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from vision_rsi.campaign import available
+from vision_rsi.campaign import available,project
 from vision_rsi.policy_audit import verify_trace
 from vision_rsi.runner import digest
 
@@ -15,8 +15,11 @@ class PolicyAuditTests(unittest.TestCase):
     def test_baseline_rejects_skipped_phase_and_changed_decision(self):
         action=available({'history':[]})[0]
         row={'action':action,'status':'completed','decision':{'action_id':action['id'],'rationale':'Deterministic baseline control order'},'result':{'status':'blocked'}}
-        state={'binding':{'policy':None},'history':[row]}
+        state={'binding':{'policy':None},'history':[row]};project(state,row['action'],row['result'])
         self.assertTrue(verify_trace(state)['verified'])
+        state['analysis']={'quality_verified':True}
+        with self.assertRaisesRegex(ValueError,'projection'):verify_trace(state)
+        state.pop('analysis')
         row['decision']['action_id']='submit-0'
         with self.assertRaises(ValueError):verify_trace(state)
         row['action']['kind']='submit'
@@ -37,7 +40,7 @@ class PolicyAuditTests(unittest.TestCase):
             report=dict(candidate_id=cid,git_revision=record['git_revision'],status='protocol_passed',protocol_failures=[],protocol_source_sha256='protocol',cases=cases,request_sha256=digest(request),response={'source_hashes':hashes,'observation':{'results':[decision]}})
             path=folder/'checks/one.protocol.json'
             row={'action':actions[0],'status':'completed','decision':decision,'result':{'status':'blocked'},'policy_evidence':str(path),'control_sources':{'strategy_protocol.py':'protocol'}}
-            state={'binding':{'policy':policy},'history':[row]}
+            state={'binding':{'policy':policy},'history':[row]};project(state,row['action'],row['result'])
             with patch('vision_rsi.policy_audit.verify_candidate',return_value=record):
                 path.write_text(json.dumps(report));self.assertTrue(verify_trace(state)['verified'])
                 for field,value in [('candidate_id','c'*64),('request_sha256','0'*64),('protocol_source_sha256','changed')]:
@@ -47,3 +50,8 @@ class PolicyAuditTests(unittest.TestCase):
                 report['response']['observation']['results']=[{'action_id':None,'rationale':'Stop'}]
                 path.write_text(json.dumps(report))
                 with self.assertRaises(ValueError):verify_trace(state)
+                stop={'decision':{'action_id':None,'rationale':'Stop'},'policy_evidence':str(path),'control_sources':row['control_sources']}
+                state={'binding':{'policy':policy},'history':[],'status':'policy_stopped','policy_stop':stop}
+                self.assertEqual(verify_trace(state)['decisions_verified'],1)
+                state.pop('policy_stop')
+                with self.assertRaisesRegex(ValueError,'stop evidence missing'):verify_trace(state)

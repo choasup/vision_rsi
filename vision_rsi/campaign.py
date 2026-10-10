@@ -51,7 +51,7 @@ def lease(path):
 
 
 def available(state):
-    if state.get('paused'):return []
+    if state.get('paused') or state.get('policy_stop'):return []
     if not state.get('plan'):kinds=['prepare']
     elif state['plan']['status']=='blocked':return []
     elif not state.get('run_id'):kinds=['submit']
@@ -190,7 +190,10 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                     choice_started=time.monotonic()
                     decision,evidence=choose(state,actions,steps-index,policy,config['remote'])
                     policy_elapsed=time.monotonic()-choice_started
-                    if decision['action_id'] is None:state['status']='policy_stopped';atomic_json(path,state);break
+                    if decision['action_id'] is None:
+                        state['policy_stop']={'decision':decision,'policy_evidence':evidence,'policy_elapsed_seconds':policy_elapsed,
+                                              'control_sources':control_sources,'git_revision':revision(),'created_at_unix':time.time()}
+                        state['status']='policy_stopped';atomic_json(path,state);break
                     action=next(row for row in actions if row['id']==decision['action_id'])
                     intent={'action':action,'decision':decision,'policy_evidence':evidence,'status':'reserved',
                             'control_sources':control_sources,'git_revision':revision(),'policy_elapsed_seconds':policy_elapsed,
