@@ -54,6 +54,22 @@ class LLMTests(unittest.TestCase):
 
     @patch.dict('os.environ', {'TEST_LLM_KEY': 'fixture-secret'})
     @patch('vision_rsi.llm.urlopen')
+    def test_invalid_output_limits_never_send_a_paid_request(self, opened):
+        for limit in (True,False,None,0,-1,1.5,'128',32769,float('inf'),float('nan')):
+            with self.subTest(limit=limit),self.assertRaisesRegex(ValueError,'max_tokens'):
+                self.client.complete([],max_tokens=limit)
+        opened.assert_not_called()
+
+    @patch.dict('os.environ', {'TEST_LLM_KEY': 'fixture-secret'})
+    @patch('vision_rsi.llm.urlopen')
+    def test_oversized_request_is_rejected_before_network(self, opened):
+        with patch('vision_rsi.llm.MAX_REQUEST_BYTES',100):
+            with self.assertRaisesRegex(ValueError,'request exceeds byte limit'):
+                self.client.complete([{'role':'user','content':'long input'*100}])
+        opened.assert_not_called()
+
+    @patch.dict('os.environ', {'TEST_LLM_KEY': 'fixture-secret'})
+    @patch('vision_rsi.llm.urlopen')
     def test_response_size_is_bounded_and_closes_without_retry(self, opened):
         with patch('vision_rsi.llm.MAX_RESPONSE_BYTES', 64):
             body=io.BytesIO(b'x'*1000)

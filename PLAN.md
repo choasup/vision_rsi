@@ -576,3 +576,9 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Actual DeepSeek Flash smoke passed on new bounded-response client734cb26: content OK,35 prompt/13 completion/48 total tokens. Metadata recorded in llm-bounded-live.json; no credentials persisted. GPU budget still null, no real COCO training authorized or started.
 
 - Frozen3bb160bbbfe9 full CPU training preflight also passed against official118287 train/5000 val images: exact torch/torchvision/pycocotools runtime versions, original annotation and weight hashes, split coverage/disjointness, frozen bundle artifacts, GPU hidden,90s alarm. Evidence full-training-cpu-preflight.json and observation.json. This directly invokes the frozen baseline resource validator with a pinned recipe; it is not GPU execution or authorization for a current Training plan. Original session training prepare remains blocked on missing real GPU budget, target60 unchanged.
+
+
+## LLM request admission limits (2026-10-10)
+
+- Added fixed8MiB serialized request cap and explicit integer output token limit1..32768. Boolean/nonfinite/negative/out-of-range values and oversized requests fail before network dispatch. Existing Agent call sites request at most6000 output tokens. This is an implementation safety ceiling, not a user resource-budget authorization or cross-stage token ledger.
+- All11 transport regressions passed, including proof that invalid limits and oversized requests never open a connection. Current urllib60s timeout remains a network-operation timeout, not an end-to-end hard deadline; this release gap remains open.

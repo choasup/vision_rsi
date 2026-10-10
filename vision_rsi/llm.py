@@ -6,6 +6,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_REQUEST_BYTES = 8 * 1024 * 1024
+MAX_OUTPUT_TOKENS = 32768
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -37,14 +39,19 @@ class OpenAICompatibleClient:
 
     def complete(self, messages, max_tokens=128):
         self.validate_config()
+        if type(max_tokens) is not int or not 1 <= max_tokens <= MAX_OUTPUT_TOKENS:
+            raise ValueError('LLM max_tokens must be an integer in 1..32768')
         key = os.environ[self.config['api_key_env']]
         base = self.config['base_url'].rstrip('/')
         payload = {'model': self.config['model'], 'messages': messages,
                    'max_tokens': max_tokens, 'stream': False}
         if 'thinking' in self.config:
             payload['thinking'] = {'type': self.config['thinking']}
+        encoded = json.dumps(payload).encode()
+        if len(encoded) > MAX_REQUEST_BYTES:
+            raise ValueError('LLM request exceeds byte limit')
         request = Request(base + '/chat/completions',
-                          data=json.dumps(payload).encode(),
+                          data=encoded,
                           headers={'Authorization': 'Bearer ' + key,
                                    'Content-Type': 'application/json'})
         try:
