@@ -250,3 +250,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Added read-only replay of controller phases and baseline/candidate decisions. Candidate evidence binds Git source, module, protocol source, history, available actions, request digest and returned decision to executed actions.
 - Missing or mismatched decision counts fail protocol validation. Legacy incomplete traces remain unverified.
 - This establishes trace consistency only. Equal-budget held-out paired evaluation, policy adoption and real COCO acceptance remain pending.
+
+
+## Natural-language interface validation (2026-10-10)
+
+- Real DeepSeek Flash probes reproduced array-root detection schemas, boolean video audio policies, dictionary assumptions, and evaluation resources incorrectly added to inference inputs. Failures retained under ignored runs/semantic-live-check.
+- Added bounded one-pass formatting correction, durable raw-response records and per-response usage, task/acceptance/budget/input preservation checks, explicit training-resource versus inference-input scope and adapter defaults. Added array length validation and checked all sparse COCO IDs before planning.
+- Final three development regression probes passed input shape, original threshold and missing-budget preservation; COCO schema also passed adapter compatibility. These are visible development cases, not held-out semantic or RSI quality evidence. No real training was started.

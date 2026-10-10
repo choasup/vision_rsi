@@ -74,7 +74,7 @@ def issues(contract):
 
 
 def validate_schema_definition(schema, path='output'):
-    allowed={'type','properties','required','items','description','enum','additionalProperties','minimum','maximum'}
+    allowed={'type','properties','required','items','description','enum','additionalProperties','minimum','maximum','minItems','maxItems'}
     if not isinstance(schema,dict) or set(schema)-allowed:
         raise ValueError(path+': unsupported schema keyword')
     kind=schema.get('type')
@@ -94,8 +94,13 @@ def validate_schema_definition(schema, path='output'):
         for name,child in props.items(): validate_schema_definition(child,path+'.'+name)
     elif 'properties' in schema or 'required' in schema or 'additionalProperties' in schema:
         raise ValueError(path+': object constraints on another type')
-    if kind=='array': validate_schema_definition(schema.get('items'),path+'[]')
-    elif 'items' in schema: raise ValueError(path+': items requires array')
+    if kind=='array':
+        validate_schema_definition(schema.get('items'),path+'[]')
+        for key in ('minItems','maxItems'):
+            if key in schema and (isinstance(schema[key],bool) or not isinstance(schema[key],int) or schema[key]<0):
+                raise ValueError(path+': invalid array length bound')
+        if schema.get('minItems',0)>schema.get('maxItems',math.inf):raise ValueError(path+': reversed array length bounds')
+    elif any(key in schema for key in ('items','minItems','maxItems')): raise ValueError(path+': array constraints require array')
     for key in ('minimum','maximum'):
         if key in schema:
             bound=schema[key]
@@ -108,7 +113,7 @@ def validate_schema_definition(schema, path='output'):
 def validate_schema(schema,value,path='output'):
     validate_schema_definition(schema,path)
     # Supported schema subset, deliberately rejects unsupported constraints.
-    allowed={'type','properties','required','items','description','enum','additionalProperties','minimum','maximum'}
+    allowed={'type','properties','required','items','description','enum','additionalProperties','minimum','maximum','minItems','maxItems'}
     if not isinstance(schema,dict) or set(schema)-allowed: raise ValueError(path+': unsupported schema keyword')
     kind=schema.get('type')
     ok={'object':isinstance(value,dict),'array':isinstance(value,list),'string':isinstance(value,str),
@@ -125,6 +130,7 @@ def validate_schema(schema,value,path='output'):
         for key,item in value.items():
             if key in props: validate_schema(props[key],item,path+'.'+key)
     if kind=='array':
+        if not schema.get('minItems',0)<=len(value)<=schema.get('maxItems',math.inf):raise ValueError(path+': array length bounds')
         if not isinstance(schema.get('items'),dict): raise ValueError(path+': array items schema required')
         for index,item in enumerate(value): validate_schema(schema['items'],item,f'{path}[{index}]')
 
@@ -159,6 +165,7 @@ class Sessions:
         try:
             with db:
                 db.execute('CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,task TEXT,turns TEXT,versions TEXT,pending INTEGER)')
+                db.execute('CREATE TABLE IF NOT EXISTS clarification_responses(id TEXT PRIMARY KEY,session TEXT,response TEXT)')
                 yield db
         finally: db.close()
     def list(self):
@@ -206,9 +213,33 @@ class Sessions:
             turns=json.loads(row[0]);versions=json.loads(row[1])
             if message: turns.append({'role':'user','content':message})
             db.execute('UPDATE sessions SET turns=?,pending=1 WHERE id=?',(json.dumps(turns,ensure_ascii=False),session))
-        prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask at most five critical questions per turn, record secondary choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output. Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
+        prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask at most five critical questions per turn, record secondary choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output. Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum,minItems,maxItems. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
         prompt['change_policy']='Preserve established goal wording, input/output interface, acceptance values and budget exactly unless the user explicitly requests a change. Put implementation choices in assumptions. Do not paraphrase unchanged goal/protocol descriptions. Structural changes are reviewed separately before execution.'
-        response=OpenAICompatibleClient(dict(config,**({'thinking':'disabled'} if config.get('model')=='deepseek-flash' else {}))).complete([{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=3072)
+        prompt['format_rules']='output_schema MUST have type=object and nonempty properties; place detection lists inside a detections property, never at the root. assumptions and open_questions MUST be lists of strings, never dictionaries. Video processing sampling, temporal, audio MUST each be nonempty strings; use audio="ignore" for no audio, never false. Missing budget is null, never invented. Examples must satisfy the exact interface. Batch means multiple samples, not image_list. Do not ask for batch size limits, model confidence filters, optimizer or architectural choices unless explicitly constrained by the user; record implementation defaults in assumptions. The inputs section describes INFERENCE-time per-sample inputs only. Training/validation/held-out datasets, annotation files, budgets, weights and evaluation protocols are training resources, NEVER required inference input fields unless the user explicitly requests them as per-sample inputs. Select conventional box coordinates as an assumption, never ask about JSON field names or coordinate syntax. Ask only unresolved task semantics (such as defect class taxonomy or event matching needed to define a metric), not internal representation choices. Resolve schema formatting internally; never ask the user to write JSON schemas.'
+        from .detector import COCO_IDS
+        prompt['available_adapter_defaults']={'coco_detection':{'use_only_if_matching_user_task':True,'inputs':{'image':{'type':'image','required':True}},'acceptance_metric':'box_AP','metric_units':'0..100','output':'object with detections array; each item has category_id (integer), bbox (4 numbers, COCO xywh pixels), score (0..1)','category_ids':list(COCO_IDS),'note':'80 COCO categories use sparse IDs in 1..90, NOT contiguous 1..80. These are optional implementation defaults, never override an explicit user interface. No claim of training, quality or other task adapter availability.'}}
+        client=OpenAICompatibleClient(dict(config,**({'thinking':'disabled'} if config.get('model')=='deepseek-flash' else {})))
+        messages=[{'role':'system','content':'You define a visual Agent task interface from the user conversation. Follow these format and scope rules exactly: '+prompt['format_rules']},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}]
+        responses=[];response_ids=[];first_draft=None
+        for attempt in range(2):
+            response=client.complete(messages,max_tokens=3072)
+            response_id=uuid.uuid4().hex
+            with self.db() as db:
+                db.execute('INSERT INTO clarification_responses VALUES (?,?,?)',(response_id,session,json.dumps(response,ensure_ascii=False)))
+            responses.append(response);response_ids.append(response_id)
+            # A bounded correction of a received schema is not a network retry.
+            # Missing task facts and resource authorization must never be invented.
+            try:
+                text=response['content'].strip()
+                if text.startswith('```'):text=text.split('\n',1)[1].rsplit('```',1)[0]
+                draft=normalize_contract(json.loads(text))
+                json.dumps(draft,allow_nan=False)
+                if not attempt and isinstance(draft,dict):first_draft=draft
+                formatting=[error for error in issues(draft) if error.startswith(('需定义 object','输出接口无效:','需记录 assumptions','需记录 open_questions','示例不符合接口:')) or '需明确视频采样、时序与音频处理' in error]
+            except (ValueError,TypeError,KeyError,AttributeError):break
+            if not formatting or attempt:break
+            messages.extend([{'role':'assistant','content':response['content']},
+                             {'role':'user','content':json.dumps({'instruction':'Correct these interface formatting errors only. Preserve goal, acceptance, budget, explicit input semantics and all user constraints exactly. Do not ask the user about schema fields. Return the complete corrected contract JSON only.','errors':formatting,'format_rules':prompt['format_rules']},ensure_ascii=False)}])
         review=[];proposed=None
         try:
             if not isinstance(response.get('content'),str):raise ValueError('Model response has no contract text')
@@ -217,6 +248,20 @@ class Sessions:
             contract=normalize_contract(json.loads(text))
             if not isinstance(contract,dict):raise ValueError('Model contract must be an object')
             json.dumps(contract,allow_nan=False)
+            if len(responses)>1:
+                if any(contract.get(key)!=first_draft.get(key) for key in ('goal','acceptance','budget')):
+                    raise ValueError('Schema correction changed task requirements')
+                original_inputs=first_draft.get('inputs') or {};corrected_inputs=contract.get('inputs') or {}
+                if set(corrected_inputs)!=set(original_inputs):raise ValueError('Schema correction changed input fields')
+                for name,field in original_inputs.items():
+                    corrected=corrected_inputs[name]
+                    if not isinstance(field,dict) or not isinstance(corrected,dict):raise ValueError('Invalid corrected input')
+                    for key in ('type','required','min_items','max_items','semantics'):
+                        if corrected.get(key)!=field.get(key):raise ValueError('Schema correction changed input semantics')
+                    if field.get('type')=='video' and isinstance(field.get('processing'),dict):
+                        for key,value in field['processing'].items():
+                            if isinstance(value,str) and value.strip() and corrected.get('processing',{}).get(key)!=value:
+                                raise ValueError('Schema correction changed video policy')
             errors=issues(contract)
             if versions:
                 from .requirements import changes
@@ -226,10 +271,11 @@ class Sessions:
                     proposed=contract;contract=previous
                     errors=issues(contract)+['待确认需求变更: '+change['path'] for change in review]
         except (ValueError,TypeError,KeyError,AttributeError) as error:
-            contract=normalize_contract(versions[-1]['contract']) if versions else {}
+            contract=normalize_contract(versions[-1]['contract']) if versions else first_draft or {}
             errors=issues(contract)+['解析失败: '+type(error).__name__+'；已保留上一版需求']
         with self.db() as db:
             version={'version':len(versions)+1,'origin':'llm_draft','contract':contract,'issues':errors,'usage':response.get('usage',{})}
+            version.update(response_ids=response_ids,response_usage=[item.get('usage',{}) for item in responses],format_correction_attempted=len(responses)>1)
             if review:version.update(review_required=review,proposed_contract=proposed)
             versions.append(version)
             turns.append({'role':'assistant','content':json.dumps({'contract':contract,'issues':errors},ensure_ascii=False)})

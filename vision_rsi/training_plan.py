@@ -24,7 +24,11 @@ def prepare(session,config,root):
     acceptance=contract.get('acceptance') or {}
     if acceptance.get('metric') not in ('AP','box_AP','bbox_AP') or acceptance.get('direction')!='maximize' or 'coco' not in str(acceptance.get('evaluation_protocol','')).lower():
         blockers.append('此适配器要求 COCO bbox AP 标准协议；未自动转换其他任务指标。')
-    try: validate_schema(contract.get('output_schema'),{'detections':[{'bbox':[0.,0.,1.,1.],'category_id':1,'score':.5}]})
+    try:
+        from .detector import COCO_IDS
+        validate_schema(contract.get('output_schema'),{'detections':[]})
+        for category in COCO_IDS:
+            validate_schema(contract.get('output_schema'),{'detections':[{'bbox':[0.,0.,1.,1.],'category_id':category,'score':.5}]})
     except (ValueError,TypeError,KeyError):blockers.append('任务输出接口与 COCO detections 适配器不兼容。')
     training=config.get('training') or {}
     if not isinstance(training,dict): raise ValueError('training config must be an object')
