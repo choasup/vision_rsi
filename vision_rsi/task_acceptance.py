@@ -30,7 +30,7 @@ def status(registry, name):
             'report_path':str(registry.root/name/'candidate-acceptance'/'acceptance.json'), 'production_accepted':False}
 
 
-def accept(registry, session, version, dataset_path, development_paths, remote):
+def accept(registry, session, version, dataset_path, development_paths, remote, research_history=None, before_dispatch=None):
     """Reserve before dispatch; neither changed versions nor sessions reset the slot."""
     versions = session.get('versions',[])
     if session.get('pending_request') or not versions or versions[-1].get('review_required'):
@@ -62,6 +62,7 @@ def accept(registry, session, version, dataset_path, development_paths, remote):
     request = {'task_binding':binding, 'version':version,
                'acceptance_binding_sha256':digest(prepared['binding']),
                'task_gate_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+    if research_history is not None:request['research_history_sha256']=research_history['history_sha256']
     encoded = json.dumps(request,sort_keys=True,ensure_ascii=False,allow_nan=False)
     _schema(registry)
     # DB uniqueness scopes the reservation to task ID, not caller's output directory.
@@ -72,6 +73,7 @@ def accept(registry, session, version, dataset_path, development_paths, remote):
     root = registry.root/name/'candidate-acceptance'; root.mkdir(parents=True,exist_ok=True)
     with lease(root/'task.lock',owner='Task candidate acceptance'):
         before = status(registry,name)
+        if before_dispatch is not None:before_dispatch()
         report = evaluate(folder/'bundle.json',dataset_path,development_paths,remote,root,
                           expected_binding_sha256=request['acceptance_binding_sha256'])
         if before['status']=='completed' and before['report_sha256']!=report['report_sha256']:

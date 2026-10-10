@@ -3,7 +3,7 @@ import base64
 import hashlib
 import json
 from pathlib import Path
-from .candidate_bundle import verify,run
+from .candidate_bundle import verify,run,bound_directory
 from .event_eval import read_document,evaluate
 from .runner import atomic_json,digest
 
@@ -22,8 +22,9 @@ def evaluate_bundle(bundle_path,dataset_path,remote,output,expected_dataset_sha2
     if {row.get('sample_id') for row in truth['samples']}!=set(ids):raise ValueError('Ground truth coverage differs')
     binding={'bundle_id':bundle['bundle_id'],'contract_sha256':bundle['identity']['contract_sha256'],'dataset_sha256':hashlib.sha256(raw).hexdigest(),
              'evaluator_sha256':hashlib.sha256(Path(__file__).with_name('event_eval.py').read_bytes()).hexdigest(),
-             'gate_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
-    root=Path(output).resolve()/digest(binding);root.mkdir(parents=True,exist_ok=True)
+             'gate_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+             'storage_sha256':hashlib.sha256(Path(__file__).with_name('candidate_bundle.py').read_bytes()).hexdigest()}
+    root=bound_directory(output,binding)
     contract_path=root/'contract.json';contract_bytes=base64.b64decode(bundle['contract_base64'])
     if contract_path.exists() and contract_path.read_bytes()!=contract_bytes:raise ValueError('Frozen bundle evaluation contract changed')
     if not contract_path.exists():contract_path.write_bytes(contract_bytes)
@@ -33,7 +34,7 @@ def evaluate_bundle(bundle_path,dataset_path,remote,output,expected_dataset_sha2
     execution=run(bundle_path,samples,remote,root/'executions',bundle['bundle_id'],Path(dataset_path).resolve().parent)
     identity=dict(binding,execution_record_sha256=execution['record_sha256'],input_set_sha256=execution['binding']['input_sha256'],
                   module=bundle['identity']['module'],function=bundle['identity']['function'])
-    folder=root/digest(identity);folder.mkdir(parents=True,exist_ok=True)
+    folder=bound_directory(root,identity)
     predictions={'labels':truth['labels'],'samples':[{'sample_id':key,'events':value['events']}
         for key,value in zip(ids,execution['outputs'])]}
     pred_path=folder/'predictions.json';atomic_json(pred_path,predictions)

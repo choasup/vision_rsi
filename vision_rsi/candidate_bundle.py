@@ -10,6 +10,18 @@ from .candidate_runtime import encode_cases
 from .contracts import validate_schema_definition
 
 
+def bound_directory(output,binding):
+    """Compact Windows paths, with the complete identity checked before reuse."""
+    folder=Path(output).resolve()/digest(binding)[:32]
+    folder.mkdir(parents=True,exist_ok=True);path=folder/'binding.json'
+    try:
+        with path.open('x',encoding='utf-8') as stream:json.dump(binding,stream,sort_keys=True,allow_nan=False)
+    except FileExistsError:
+        _,saved=read_document(path,2*1024*1024)
+        if saved!=binding:raise ValueError('Artifact directory full identity differs; refusing reuse')
+    return folder
+
+
 def verify(path):
     _,bundle=read_document(path,8*1024*1024)
     if not isinstance(bundle,dict) or set(bundle)!={'bundle_id','identity','files','contract_base64'}:raise ValueError('Invalid candidate bundle')
@@ -129,7 +141,7 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_director
              'provenance_sha256':hashlib.sha256(Path(__file__).with_name('input_provenance.py').read_bytes()).hexdigest(),
              'executor_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
              'validator_sha256':hashlib.sha256(Path(__file__).with_name('contracts.py').read_bytes()).hexdigest()}
-    folder=Path(output).resolve()/digest(binding);folder.mkdir(parents=True,exist_ok=True);path=folder/'execution.json'
+    folder=bound_directory(output,binding);path=folder/'execution.json'
     with lease(folder/'execution.lock',owner='Candidate bundle execution'):
         if path.exists():
             _,saved=read_document(path,8*1024*1024)

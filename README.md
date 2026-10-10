@@ -976,3 +976,14 @@ python -m vision_rsi training release-status --session-id SESSION --json
 在同一权威注册库中，任务代号只能预留一个候选验收槽；入口不接受输出目录覆盖，更换会话、合同版本、候选或验收内容不会重置槽。实际输入、标注、开发记录与控制实现身份都被绑定，执行前再次核对。无效合同或数据在预留前拒绝；预留后的中断保留原绑定，重复请求只恢复该请求，不确定的远程执行不自动重发。并发请求由数据库唯一约束和文件租约限制。
 
 这项约束以所选注册库为边界，不防止人工删除账本、另建注册库或直接调用底层开发工具；生产验收流程必须使用同一权威注册库。状态查询仅报告本地预留/完成状态，完成不等于质量验收或生产发布。尚未提供重置验收槽的命令。
+
+若开发实验通过任务研究账本运行，可让验收自动收集该账本的执行记录：
+
+```powershell
+.\vision-rsi.cmd training research-pause --session-id SESSION_ID --research-root runs/task-research
+.\vision-rsi.cmd training accept-candidate --session-id SESSION_ID --version VERSION --dataset heldout.json --from-research --research-root runs/task-research --registry runs/capabilities --json
+```
+
+该路径要求研究已暂停，无未完成动作、不确定 API 请求或未处理规划响应，且使用冻结的媒体候选包评测模式。逐条核对账本中的评测报告、执行内容与固定数据身份，并检查评测目录内是否有未挂账执行；不能混入手工挑选的 `--development` 子集。包含尚未覆盖输入来源的旧检查/训练读取工具时会拒绝。预留后、执行前封存账本快照，之后该账本无法恢复研究或调用规划器；失败和不确定执行同样保留封存。
+
+`ledger_history_verified` 仅覆盖所选任务账本，`complete_development_history_verified` 仍为 false：其他研究根目录、训练程序、人工实验和数据选择过程尚未纳入统一核验。封存不等于获得正式 `test` 资格。Windows 评测与执行目录使用缩短的哈希目录名，复用前仍核对完整身份，避免默认任务路径超过系统长度限制。
