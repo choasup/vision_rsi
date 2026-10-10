@@ -465,3 +465,14 @@ Training 需求理解会在内部对已收到的接口格式错误最多修正�
 `development-samples.json` 为 1..16 个符合任务契约的 sample 对象组成的 JSON 数组；隔离候选函数签名为 `predict(sample)`，每个返回值必须符合该契约的 `output_schema`。允许 `adapter_*.py` 或 `harness_*.py` 候选模块，仍执行于已有 CPU/无网络/无 GPU 沙箱。发送前验证输入，返回后由控制端独立校验每个输出；报告绑定候选 Git、契约、验证器源码及原始运行报告。
 
 这是开发样本的接口门槛，不能替代真实模型评测、保留集验收或 RSI 效率证明。通过不注册能力、不采用候选、不改变 Test；候选自行返回的达标声明不被采用。当前沙箱依赖仍为 Python 标准库，未接通训练型通用模型适配器。
+
+
+### 从接口失败反馈修复候选
+
+```powershell
+.\vision-rsi.cmd candidate adapter-repair --report FAILED_CHECK.adapter.json --module vision_rsi.adapter_candidate --function predict --request-id repair-001
+```
+
+命令核对原始运行请求、源文件/Git、契约、开发样本及实际失败后，最多调用一次配置的 LLM（输出上限 3000 tokens），生成一个新的完整适配器模块和独立 Git 候选，再用原开发样本与原契约复测。父候选和失败报告保留；报告记录父子关系、LLM 响应哈希及复测路径。这里传入报告必须位于当前候选仓库原始 checks 目录。
+
+同一 request-id 会复用已记录的 API 响应及固定 ID 的复测结果；不确定的 API/远程执行不自动重试。控制源码或反馈变化会拒绝复用旧请求。修复只针对开发接口错误，不自动修正任务要求、不注册 Test 能力、不采用 Agent，也不能替代保留集效果及研究效率验证。

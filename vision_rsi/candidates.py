@@ -160,7 +160,18 @@ class Candidates:
         return self.create(proposal,{'request_id':request_id,'contract_sha256':digest(contract),'evidence_sha256':digest(evidence),
                                     'response_sha256':digest(response),'model':response.get('model')},base)
 
-    def check(self,candidate_id,remote,module,function,cases):
+    def check(self,candidate_id,remote,module,function,cases,check_id=None):
+        if check_id is not None:
+            from .campaign import lease
+            if not isinstance(candidate_id,str) or not re.fullmatch('[0-9a-f]{64}',candidate_id):raise ValueError('Invalid candidate ID')
+            if not isinstance(check_id,str) or not re.fullmatch('[0-9a-f]{32}',check_id):raise ValueError('Invalid stable check ID')
+            folder=self.root/candidate_id
+            if not (folder/'candidate.json').is_file():raise ValueError('Unknown candidate for stable check')
+            with lease(folder/('check-'+check_id+'.lock')):
+                return self._check(candidate_id,remote,module,function,cases,check_id)
+        return self._check(candidate_id,remote,module,function,cases)
+
+    def _check(self,candidate_id,remote,module,function,cases,check_id=None):
         import base64
         import uuid
         from .remote import check_candidate
@@ -174,9 +185,16 @@ class Candidates:
         request={'files':{name:base64.b64encode(raw).decode() for name,raw in files.items()},
                  'source_hashes':{name:hashlib.sha256(raw).hexdigest() for name,raw in files.items()},
                  'module':module,'function':function,'cases':cases}
-        checks=folder/'checks';checks.mkdir(exist_ok=True);path=checks/(uuid.uuid4().hex+'.json')
+        if check_id is not None and (not isinstance(check_id,str) or not re.fullmatch('[0-9a-f]{32}',check_id)):raise ValueError('Invalid stable check ID')
+        checks=folder/'checks';checks.mkdir(exist_ok=True);path=checks/((check_id or uuid.uuid4().hex)+'.json')
         evidence={'candidate_id':candidate_id,'git_revision':record['git_revision'],'remote':remote,
                   'request_sha256':digest(request),'status':'reserved','adopted':False}
+        if path.exists():
+            saved=json.loads(path.read_text(encoding='utf-8'))
+            if any(saved.get(key)!=evidence[key] for key in ('candidate_id','git_revision','remote','request_sha256')):raise ValueError('Stable check belongs to different execution context')
+            if saved['status']=='reserved':raise RuntimeError('Uncertain candidate check; not executed again automatically')
+            if saved.get('response',{}).get('source_hashes')!=request['source_hashes']:raise ValueError('Cached candidate source identity mismatch')
+            return dict(saved,report_path=str(path))
         atomic_json(path,evidence)
         response=check_candidate(remote,request)
         if response.get('source_hashes')!=request['source_hashes']:raise ValueError('Candidate runtime source identity mismatch')
@@ -184,7 +202,7 @@ class Candidates:
         atomic_json(path,evidence)
         return dict(evidence,report_path=str(path))
 
-    def check_adapter(self,candidate_id,remote,module,function,contract,samples):
+    def check_adapter(self,candidate_id,remote,module,function,contract,samples,check_id=None):
         """Development contract gate only; independent task quality comes later."""
         from .contracts import issues,validate_sample,validate_schema
         if not isinstance(module,str) or not re.fullmatch(r'vision_rsi\.(?:adapter|harness)_[a-z][a-z0-9_]*',module):
@@ -196,7 +214,7 @@ class Candidates:
         if not isinstance(samples,list) or not 1<=len(samples)<=16:raise ValueError('Adapter check needs 1..16 development samples')
         for sample in samples:validate_sample(contract,sample)
         cases=[{'sample':sample} for sample in samples]
-        evidence=self.check(candidate_id,remote,module,function,cases)
+        evidence=self.check(candidate_id,remote,module,function,cases,check_id=check_id)
         failures=[]
         if evidence['status']=='executed_unverified':
             results=evidence['response']['observation'].get('results')
@@ -241,12 +259,13 @@ class Candidates:
 def main(argv):
     import argparse
     parser=argparse.ArgumentParser(prog='vision-rsi candidate')
-    parser.add_argument('action',choices=['create','propose','list','show','check','strategy-check','adapter-check'])
+    parser.add_argument('action',choices=['create','propose','list','show','check','strategy-check','adapter-check','adapter-repair'])
     parser.add_argument('--store',default='runs/research-candidates');parser.add_argument('--repository',default='.')
     parser.add_argument('--proposal');parser.add_argument('--evidence');parser.add_argument('--request-id');parser.add_argument('--candidate-id')
     parser.add_argument('--session-id');parser.add_argument('--sessions',default='runs/training-sessions')
     parser.add_argument('--module');parser.add_argument('--function');parser.add_argument('--cases')
     parser.add_argument('--contract')
+    parser.add_argument('--report')
     parser.add_argument('--json',action='store_true')
     parser.add_argument('--config',default='config.local.json')
     args=parser.parse_args(argv);store=Candidates(args.store,args.repository)
@@ -261,6 +280,11 @@ def main(argv):
             if not session['versions']:raise ValueError('Define the task contract first')
             config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
             result=store.propose(args.request_id,session['versions'][-1]['contract'],json.loads(Path(args.evidence).read_text(encoding='utf-8-sig')),config['llm'])
+        elif args.action=='adapter-repair':
+            if not all((args.report,args.request_id,args.module,args.function)):parser.error('adapter-repair requires --report, --request-id, --module and --function')
+            from .adapter_repair import repair
+            config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
+            result=repair(store,args.request_id,args.report,args.module,args.function,config)
         elif args.action in ('check','strategy-check','adapter-check'):
             if not all((args.candidate_id,args.module,args.cases)) or args.action in ('check','adapter-check') and not args.function:
                 parser.error('check requires --candidate-id, --module, --cases; generic check also requires --function')
@@ -275,6 +299,8 @@ def main(argv):
             result=store.verify(json.loads((store.root/args.candidate_id/'candidate.json').read_text(encoding='utf-8')))
         else:result=[json.loads(path.read_text(encoding='utf-8')) for path in sorted(store.root.glob('*/candidate.json'))]
         if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
+        elif args.action=='adapter-repair':
+            print('修复候选: '+result['candidate_id']+'\n接口复测: '+result['status']+'\n报告: '+result['repair_report_path']+'\n已采用: 否；尚未进行独立效果验收')
         elif args.action in ('check','strategy-check','adapter-check'):
             print('候选: '+result['candidate_id']+'\n运行检查: '+result['status']+'\n报告: '+result.get('adapter_report_path',result.get('protocol_report_path',result['report_path']))+'\n已采用: 否；尚未进行独立效果验收')
         else:

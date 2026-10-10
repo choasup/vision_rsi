@@ -365,3 +365,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Runtime self-claims cannot set quality/adoption; this gate always leaves acceptance_evaluated/quality_verified/adopted false. This is only development contract conformance; no hidden/held-out task feedback, model training or serving promotion. Tests cover a failing second output, missing results, malformed task schema, missing inputs and untrusted runtime adoption claims.
 
 - Actual CLI/H20 CPU isolation verification at source9831d98 used manual fixture candidate9c9c5eb39d045478e2bda101ea05cb84bad5bc990bf6c80c99e72fb77ad6d43f (candidate Git4cc6d28ad82730993b2ff449f2ab6ff578363183). One conforming development sample passed; the same candidate with a second intentionally negative start_seconds result failed at sample_index1. Both reports retained quality/adoption false. No model inference/training/API call. Evidence runs/adapter-contract-integration/summary.json and referenced adapter receipts. This is a schema fixture, not a learned visual adapter or task-quality demonstration.
+
+
+## Bounded adapter code repair from development failures (2026-10-10)
+
+- adapter-repair reconstructs original candidate source/request hashes and independently replays input/output contract failures before any API call. One bounded LLM response proposes exactly one deterministic new module; isolated child Git candidate retests original development samples/contract. Parent/response/report/control identities retained; no quality/adoption or requirement changes.
+- Per-request OS lease and SQLite response journal prevent duplicate API calls. Stable runtime check IDs/leases reuse known results and retain unknown execution without automatic reexecution. Recorded responses remain reusable after documentation-only Git movement when frozen controls/feedback/model match.
+- Regression coverage includes parent-child lineage, response/runtime cache replay, API uncertainty, modified feedback and SSH uncertainty. Actual visual-model training, held-out quality and general Agent research-efficiency adoption remain independent incomplete gates.

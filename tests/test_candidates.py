@@ -15,6 +15,58 @@ def proposal():
 
 
 class CandidateTests(unittest.TestCase):
+    def failed_adapter(self,remote):
+        contract=json.loads(Path('examples/interface-contract.json').read_text())
+        changed=proposal();changed['edits'][0].update(path='vision_rsi/adapter_fixture.py',content='def predict(sample):\n    return {"defects": [{"label":"fixture", "start_seconds":-1}]}\n')
+        parent=self.store.create(changed,{'fixture':True})
+        remote.side_effect=lambda endpoint,request: {'status':'executed_unverified','source_hashes':request['source_hashes'],
+                    'observation':{'results':[{'defects':[{'label':'fixture','start_seconds':-1 if request['module']=='vision_rsi.adapter_fixture' else 0}]}]}}
+        return self.store.check_adapter(parent['candidate_id'],{},'vision_rsi.adapter_fixture','predict',contract,[contract['example_input']])
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    @patch('vision_rsi.remote.check_candidate')
+    def test_adapter_repair_retains_lineage_and_replays_without_api_or_runtime(self,remote,client):
+        from vision_rsi.adapter_repair import repair
+        failed=self.failed_adapter(remote)
+        def respond(messages,**kwargs):
+            prompt=json.loads(messages[-1]['content'])
+            value={'hypothesis':'Repair invalid temporal bound','expected_improvement':'Development schema conformity',
+                   'evaluation_plan':'Same development cases only; not quality or adoption',
+                   'edits':[{'path':prompt['required_module'].replace('.','/')+'.py','base_sha256':None,
+                             'content':'def predict(sample):\n    return {"defects": [{"label":"fixture", "start_seconds":max(0,-1)}]}\n'}]}
+            return {'model':'fixture','content':json.dumps(value),'usage':{'total_tokens':100}}
+        client.return_value.complete.side_effect=respond
+        config={'remote':{},'llm':{'model':'fixture','base_url':'https://fixture.invalid'}}
+        result=repair(self.store,'repair-one',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+        again=repair(self.store,'repair-one',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+        self.assertEqual(result['candidate_id'],again['candidate_id']);self.assertEqual(result['status'],'adapter_contract_passed')
+        self.assertEqual(result['parent_candidate_id'],failed['candidate_id']);self.assertFalse(result['quality_verified']);self.assertFalse(result['adopted'])
+        client.return_value.complete.assert_called_once();self.assertEqual(remote.call_count,2)
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    @patch('vision_rsi.remote.check_candidate')
+    def test_adapter_repair_refuses_changed_feedback_and_uncertain_api(self,remote,client):
+        from vision_rsi.adapter_repair import repair
+        failed=self.failed_adapter(remote)
+        config={'remote':{},'llm':{'model':'fixture','base_url':'https://fixture.invalid'}}
+        client.return_value.complete.side_effect=TimeoutError('API response lost')
+        with self.assertRaises(TimeoutError):repair(self.store,'repair-lost',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+        with self.assertRaisesRegex(RuntimeError,'Uncertain repair API'):repair(self.store,'repair-lost',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+        client.return_value.complete.assert_called_once()
+        path=Path(failed['adapter_report_path']);changed=json.loads(path.read_text());changed['development_samples'][0]['sample_id']='tampered'
+        path.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError,'original runtime request'):repair(self.store,'repair-tampered',path,'vision_rsi.adapter_fixture','predict',config)
+        client.return_value.complete.assert_called_once()
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_stable_candidate_check_does_not_retry_unknown_remote_execution(self,remote):
+        record=self.store.create(proposal(),{})
+        remote.side_effect=TimeoutError('SSH response lost')
+        for index in range(2):
+            expected=TimeoutError if index==0 else RuntimeError
+            with self.assertRaises(expected):self.store.check(record['candidate_id'],{},'vision_rsi.strategy_candidate','choose',[{'rows':[]}],check_id='a'*32)
+        remote.assert_called_once()
+
     @patch('vision_rsi.remote.check_candidate')
     def test_adapter_gate_checks_each_output_without_accepting_quality_claims(self,remote):
         contract=json.loads(Path('examples/interface-contract.json').read_text())
