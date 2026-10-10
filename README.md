@@ -925,3 +925,7 @@ python -m vision_rsi training release-status --session-id SESSION --json
 需要候选代码实际接收本地媒体字节时，导出包增加 `--media-input`，入口定义为 `predict(sample, media)`。`media` 使用已校验的 `vision_sample_transport_v1`，保留多图顺序、视频策略、每份资产字节与哈希；`candidate-run` 从输入 JSON 所在目录解析相对路径。仅允许可读本地文件。内容变化会改变执行身份，不会复用旧结果。
 
 此开发沙箱入口每样本媒体内容上限 512 KiB，整批 JSON 请求上限 1 MiB，超限拒绝且不缩图/截断。传输不进行图像解码、视频采样或视觉模型推理；候选需明确实现处理逻辑，现有已验收 COCO 服务入口保持独立。
+
+开发包还可增加 `--decode-video`（同时需要 `--media-input`），入口定义为 `predict(sample, media, video_frames)`。训练任务合同必须已有可编译的显式视频采样策略及 decoder 上限；导出时固定计划和解码程序身份，不能在推理时临时更改。`video_frames` 按字段携带经校验的 RGB PPM 帧、源 PTS/time_base/seconds 和内容哈希。每个视频计划的最大 RGB 数据不得超过 256 KiB，整批请求仍受 1 MiB 限制，不隐式缩放。
+
+解码先保存请求预留，再执行有界 CPU FFmpeg；重复输入复用校验后的解码结果，未知状态拒绝重发。冻结程序变化后需重新导出和验证。此功能完成帧输入链路，不提供视频理解模型或准确率承诺。
