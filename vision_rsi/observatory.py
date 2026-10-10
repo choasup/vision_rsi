@@ -4,6 +4,8 @@ import json
 
 def dashboard(ledger):
     events = ledger.events()
+    from .research_state import snapshot
+    state = json.dumps(snapshot(events), ensure_ascii=False).replace('<', '\\u003c')
     serialized = json.dumps(events, ensure_ascii=False).replace('<', '\\u003c')
     document = '''<!doctype html><html lang="zh"><meta charset="utf-8"><title>Vision RSI · Observatory</title>
 <style>body{background:#0b1220;color:#e2e8f0;font:16px system-ui;margin:0;padding:30px;line-height:1.65}main{max-width:1200px;margin:auto}h1{margin-bottom:4px}small{color:#94a3b8}.notice{color:#fbbf24}.cards{display:flex;gap:12px;margin:20px 0}.card,article{background:#182438;border-radius:10px;padding:16px;margin:10px 0}.card{flex:1}b{display:block;font-size:26px;color:#5eead4}button,input{background:#22324a;color:#fff;border:1px solid #475569;padding:10px;border-radius:6px;margin:4px}button{cursor:pointer}button[aria-pressed=true]{border-color:#5eead4;color:#5eead4}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}summary{cursor:pointer}label{display:block;margin:12px 0}.kind{color:#7dd3fc}#objective{font-size:20px}a{color:#5eead4}</style>
@@ -18,14 +20,15 @@ def dashboard(ledger):
 const labels={objective:'研究目标',evidence:'证据',hypothesis:'假设',action:'行动',result:'结果',reflection:'反思',self_change:'自我修改提案',paused:'暂停',resumed:'恢复'};
 document.querySelector('#objective').textContent=events[0]?.payload.summary||'尚未创建研究目标';
 document.querySelector('#count').textContent=events.length;
-const controls=events.filter(e=>['paused','resumed'].includes(e.kind));document.querySelector('#status').textContent=controls.at(-1)?.kind==='paused'?'已暂停':'可继续（有界行动执行器）';
+const researchState=RESEARCH_STATE;const stateLabels={no_objective:'尚无目标',paused:'已暂停',pending_action_recovery:'待恢复行动',uncertain_api_request:'API 请求状态不确定，禁止自动重发',cached_response_available:'已有响应待处理',planning_limit_exhausted:'规划额度耗尽',manual_step_available:'可手动推进（未验证运行中）'};document.querySelector('#status').textContent=stateLabels[researchState.state];
+const budget=document.createElement('p');budget.textContent='规划尝试：'+researchState.planning_attempts_used+' / '+researchState.planning_limit+'，剩余 '+researchState.planning_attempts_remaining+'。这是本地记录，不证明进程存活或任务达标。';document.querySelector('#objective').after(budget);
 const finished=new Set(events.filter(e=>e.kind==='result').map(e=>e.payload.action));document.querySelector('#pending').textContent=events.filter(e=>e.kind==='action'&&!finished.has(e.key)).length;
 function render(){let root=document.querySelector('#events');root.replaceChildren();const term=document.querySelector('#search').value.toLowerCase();let rows=events.filter(e=>(view==='all'||groups[view].includes(e.kind))&&JSON.stringify(e).toLowerCase().includes(term));
 if(!rows.length){let p=document.createElement('p');p.textContent='暂无记录。自我修改不会自动采用，需要后续独立对照验证。';root.append(p)}
 for(const e of rows){let a=document.createElement('article');a.id='event-'+e.seq;let tag=document.createElement('div');tag.className='kind';tag.textContent='#'+e.seq+' · '+labels[e.kind]+' · '+new Date(e.created_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'});a.append(tag);let p=document.createElement('p');p.textContent=e.payload.summary;a.append(p);
 for(const ref of [...(e.payload.refs||[]),...(e.payload.action?[e.payload.action]:[])]){let target=events.find(x=>x.key===ref);if(target){let link=document.createElement('a');link.href='#event-'+target.seq;link.textContent='引用 #'+target.seq+' ';link.onclick=()=>{view='all';document.querySelector('#search').value='';sync();render();};a.append(link)}}
 let details=document.createElement('details');let summary=document.createElement('summary');summary.textContent='查看证据、命令与完整记录';let pre=document.createElement('pre');pre.textContent=JSON.stringify(e,null,2);details.append(summary,pre);a.append(details);root.append(a)}}
-function sync(){document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.view===view)))}document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;sync();render()});document.querySelector('#search').oninput=render;render();</script></html>'''.replace('EVENTS', serialized)
+function sync(){document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.view===view)))}document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;sync();render()});document.querySelector('#search').oninput=render;render();</script></html>'''.replace('RESEARCH_STATE', state).replace('EVENTS', serialized)
     path = ledger.directory / 'observatory.html'
     path.write_text(document, encoding='utf-8')
     return str(path.resolve())

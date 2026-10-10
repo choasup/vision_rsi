@@ -819,8 +819,17 @@ python -m vision_rsi training release-status --session-id SESSION --json
 ```
 
 此命令只读会话与能力注册表，重核当前合同、能力清单/产物SHA、训练验收和CPU服务评测；缺少预算、能力未注册、接口不支持或产物变化均报告阻塞。`local_evidence_ready_for_test` 仅表示本地证据齐备，仍需实际运行test验证远端可用性，不代表整个Agent上线、任意输入效果保证或RSI提升。
-# 长程研究的规划次数
+## 长程研究的规划次数
 
 配置 `research.max_planning_requests` 可设置单个研究账本最多 1–1000 次规划请求，默认 6 次。首次规划前冻结此上限，断点恢复继续累计；省略配置会沿用已冻结值，修改已有账本的上限会被拒绝。旧账本按原来的 6 次上限继续。更换上限需要新的 research root，旧账本和调用记录仍保留。
 
 响应无效或确定未发送的请求也计入规划尝试次数。此限制不是 API 费用、Token 或 GPU 预算；API 调用配额仍单独执行，GPU 训练仍需要明确预算授权。每次规划保存的请求上下文包含剩余次数。
+
+只查询任务研究状态，不调用模型、SSH 或执行工具：
+
+```powershell
+.\vision-rsi.cmd training research-status --session-id SESSION_ID
+.\vision-rsi.cmd training research-status --session-id SESSION_ID --json
+```
+
+状态区分暂停、待恢复行动、API 请求状态不确定、已有响应待处理及规划额度耗尽。使用自定义研究目录时传入相同的 `--research-root`。查询核对任务版本及冻结接口哈希，缺失账本不会自动创建。SQLite 只读连接可能创建 WAL 共享内存辅助文件，不追加研究事件。观测页在下次生成时显示相同状态与额度；两者均不代表进程存活或任务效果已验收。

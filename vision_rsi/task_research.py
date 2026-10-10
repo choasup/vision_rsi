@@ -10,6 +10,32 @@ from .observatory import dashboard
 from .runner import digest
 
 
+def status(session, root='runs/task-research'):
+    """Read the bound research database without creating or modifying it."""
+    import re
+    import sqlite3
+    from contextlib import closing
+    from .research_state import snapshot
+    session_id=session['session_id']
+    if not isinstance(session_id,str) or not re.fullmatch('[0-9a-f]{32}',session_id):
+        raise ValueError('Invalid session ID')
+    folder=Path(root).resolve()/session_id
+    path=folder/'research.sqlite3'
+    with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)) as db:
+        db.execute('BEGIN')
+        events=Ledger._events(db)
+    if not events:raise ValueError('Research objective missing')
+    binding=events[0]['payload'].get('task_binding')
+    expected={'session_id':session_id,'task_id':session['task_id'],'contract_version':len(session['versions']),
+              'contract_sha256':digest(session['versions'][-1]['contract']),'requirements_sha256':digest(session['turns'])}
+    if binding!=expected:raise ValueError('Task changed since research binding; inspect the original research ledger')
+    contract_path=folder/'contract.json'
+    if hashlib.sha256(contract_path.read_bytes()).hexdigest()!=events[0]['payload']['frozen_contract_sha256']:
+        raise ValueError('Frozen research contract hash mismatch')
+    return {'directory':str(folder),'task_binding':binding,'research_status':snapshot(events),
+            'events':len(events),'read_only':True}
+
+
 def prepare(session,root='runs/task-research'):
     if session.get('pending_request') or not session.get('versions'):
         raise ValueError('Resolve task requirements before starting research')

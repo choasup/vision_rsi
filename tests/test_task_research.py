@@ -9,6 +9,27 @@ from vision_rsi.task_research import prepare,advance
 
 
 class TaskResearchTests(unittest.TestCase):
+    def test_status_is_read_only_and_missing_ledger_is_not_created(self):
+        from vision_rsi.task_research import status
+        import sqlite3
+        with tempfile.TemporaryDirectory() as folder:
+            _,session=self.task(folder)
+            root=Path(folder)/'research'
+            with self.assertRaises(sqlite3.OperationalError):status(session,root)
+            self.assertFalse(root.exists())
+            prepared=prepare(session,root)
+            directory=Path(prepared['directory'])
+            before={p.name:p.read_bytes() for p in directory.iterdir()
+                    if p.is_file() and not p.name.endswith(('-wal','-shm'))}
+            result=status(session,root)
+            self.assertEqual(result['research_status']['state'],'manual_step_available')
+            self.assertEqual(result['research_status']['limit_source'],'default_not_frozen')
+            # SQLite mode=ro can create WAL shared-memory sidecars; canonical files remain unchanged.
+            self.assertEqual(before,{p.name:p.read_bytes() for p in directory.iterdir()
+                                    if p.is_file() and not p.name.endswith(('-wal','-shm'))})
+            (directory/'contract.json').write_text('{}',encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'hash mismatch'):status(session,root)
+
     @patch('vision_rsi.controller.execute',return_value={'observed':True})
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_first_model_request_receives_task_interface_before_candidate_exists(self,client,execute):

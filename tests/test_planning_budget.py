@@ -7,6 +7,22 @@ from vision_rsi.ledger import Ledger
 
 
 class PlanningBudgetTests(unittest.TestCase):
+    def test_observation_prioritizes_recovery_over_exhaustion(self):
+        from vision_rsi.research_state import snapshot
+        def event(key,kind,**payload):return {'key':key,'kind':kind,'payload':payload}
+        events=[event('goal','objective'),event('budget','evidence',record_type='planning_budget',max_planning_requests=1),
+                event('request','evidence',record_type='planning_request')]
+        self.assertEqual(snapshot(events)['state'],'uncertain_api_request')
+        events.append(event('response','evidence',record_type='planning_response',request_key='request'))
+        self.assertEqual(snapshot(events)['state'],'cached_response_available')
+        events.append(event('action','action',executor='research-v1',planning_response='response'))
+        self.assertEqual(snapshot(events)['state'],'pending_action_recovery')
+        events.append(event('result','result',action='action'))
+        self.assertEqual(snapshot(events)['state'],'planning_limit_exhausted')
+        events.append(event('pause','paused'))
+        self.assertEqual(snapshot(events)['state'],'paused')
+        self.assertFalse(snapshot(events)['live_process_verified'])
+
     def test_invalid_limits(self):
         for value in (None, True, 1.5, 0, 1001, '20'):
             with self.subTest(value=value), self.assertRaises(ValueError):

@@ -429,4 +429,6 @@ def research_step(config, directory, steps=1, repository='.'):
                           'observation': observation, 'synthetic': False, 'read_only': pending['payload']['tool'] not in ('stage_candidate','check_candidate','check_contract')})
             dashboard(ledger)
             print(summary, flush=True)
-        return {'dashboard': dashboard(ledger), 'events': len(ledger.events()), 'autonomous_background_loop': False}
+        from .research_state import snapshot
+        return {'dashboard': dashboard(ledger), 'events': len(ledger.events()),
+                'research_status': snapshot(ledger.events()), 'autonomous_background_loop': False}

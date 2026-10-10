@@ -590,3 +590,9 @@
 Source controller now freezes research.max_planning_requests per ledger (integer 1..1000, default 6), includes remaining attempts in the saved request context, and rejects configuration changes to existing limits. Legacy request ledgers retain 6. Invalid responses and known-not-dispatched attempts still count. Pending action recovery and cached responses do not consume another planning request. This is separate from API call admission and is not a billing or GPU budget.
 
 Validation: 30 tests passed across test_planning_budget, test_controller, test_task_research and test_not_dispatched (11.217 seconds). No real API calls or remote/GPU execution were performed. The dev4 wheel has not been rebuilt for this change. Real COCO AP>=60 acceptance and general RSI efficiency evidence remain outstanding.
+
+## Read-only research status and observable planning state (2026-10-11)
+
+Added training research-status with session binding and frozen-contract verification, SQLite mode=ro, no API/SSH/tool execution, no missing-ledger creation. It reports planning attempts, remaining limit, pending action recovery, uncertain API requests, cached responses, paused state and exhaustion. The observatory uses the same state projection; research-step includes it in structured output. A snapshot does not prove live process availability or task quality. SQLite may create WAL shared-memory sidecars during read-only queries; canonical database and contract files remain unchanged in the regression test.
+
+Validation: 37 related tests passed in 11.085 seconds. Actual source launcher vision-rsi.cmd queried session df8e8f8991ee496d859e35fab2085d8f: legacy limit 6, used 1, remaining 5, no pending actions or uncertain requests. No paid API calls or GPU execution. Existing installed dev4 wheel remains unchanged; not a release or COCO quality acceptance.
