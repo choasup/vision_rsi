@@ -1,4 +1,5 @@
 import tempfile
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -9,6 +10,41 @@ from vision_rsi.ledger import Ledger
 
 
 class ControllerTests(unittest.TestCase):
+    @patch('vision_rsi.controller.execute',return_value={'fixture':True})
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    def test_model_selected_source_read_is_dispatched_after_repository_inspection(self,client,execute):
+        with tempfile.TemporaryDirectory() as folder:
+            ledger=Ledger(folder);ledger.append('goal','objective',{'summary':'goal'})
+            ledger.append('inspect','action',{'executor':'research-v1','tool':'inspect_repository','summary':'inspect'})
+            ledger.append('inspect:result','result',{'action':'inspect','status':'completed','summary':'observed'})
+            args={'path':'vision_rsi/controller.py','start_line':1,'max_lines':20,'expected_sha256':'a'*64}
+            plan={'tool':'read_source','arguments':args,'summary':'inspect detail','question':'q','expected_evidence':'e','refs':['inspect:result']}
+            client.return_value.complete.return_value={'content':json.dumps(plan)}
+            config={'llm':{'model':'fixture'},'remote':{}}
+            research_step(config,folder)
+            execute.assert_called_once_with('read_source',config,'.',args)
+            self.assertEqual(ledger.events()[-1]['kind'],'result')
+            research_step(config,folder)
+            execute.assert_called_once()
+            self.assertEqual(ledger.events()[-1]['payload']['record_type'],'planning_rejected')
+
+    def test_source_read_is_hash_bound_and_rejects_unsafe_arguments(self):
+        import hashlib
+        from vision_rsi.controller import execute,source_arguments
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'vision_rsi').mkdir()
+            path=root/'vision_rsi/example.py';path.write_bytes(b'first\nsecond\nthird\n')
+            subprocess.run(['git','init'],cwd=root,capture_output=True,check=True)
+            subprocess.run(['git','add','.'],cwd=root,capture_output=True,check=True)
+            args={'path':'vision_rsi/example.py','start_line':2,'max_lines':1,'expected_sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+            result=execute('read_source',{},root,args)
+            self.assertEqual(result['source_excerpt'],'second\n');self.assertEqual(result['end_line'],2)
+            self.assertFalse(result['eof'])
+            for key,value in [('path','../secret.py'),('max_lines',101),('start_line',True),('expected_sha256','bad')]:
+                with self.assertRaises(ValueError):source_arguments(dict(args,**{key:value}))
+            path.write_bytes(b'changed\n')
+            with self.assertRaisesRegex(ValueError,'changed since observation'):execute('read_source',{},root,args)
+
     @patch('vision_rsi.controller.execute',return_value={'fixture':True})
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_known_not_dispatched_allows_explicit_new_request_without_resetting_limit(self,client,execute):

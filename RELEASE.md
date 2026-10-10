@@ -430,3 +430,9 @@
 - research_step捕获客户端明确LLMNotDispatched，持久记录planning_not_dispatched及原request_key后重新抛出；本次不自动重试。下一次显式推进忽略该已知未发送请求的不确定阻塞，并使用新ID；其它异常或旧无回执请求保持不确定、禁止自动重发。
 - 15项controller/not_dispatched测试通过（2.929秒）：先未发送再显式推进可完成，连续6次明确未发送仍累计规划尝试，第7次推进不调用客户端，既有不确定请求停止规则仍通过。
 - 仅mock客户端/只读工具，无实际API/SSH/GPU。规划上限是此研究账本既有6次尝试，不是账户费用或全项目Token保证；安装包尚未更新，完整上线目标仍未完成。
+## 通用研究源码细读动作（2026-10-10）
+
+- 通用controller新增模型可选read_source动作，仅仓库检查成功后可选。固定源码白名单/已tracked文件，参数path/start_line/max_lines/expected_sha256严格校验；每次最多100行/16KiB，文件读取≤1MiB，哈希变化拒绝，不静默换读最新内容。结果记录行号/总行数/EOF/完整文件SHA。
+- read_source可选不同区间，成功执行过的完全相同参数拒绝；仍受同账本6次规划请求上限，未开放任意路径、shell或写代码。源码hash在inspect_repository输出中前置，便于有界历史中保留身份。
+- 11项controller测试通过（2.931秒），含mock模型选择动作后的执行参数、真实Git tracked文件指定行读取、错误范围/路径/hash拒绝及文件改动拒绝。补充成功区间重复提议被拒绝、工具不重复执行的断言。
+- 本轮无实际API/SSH/GPU；扩大只读研究能力不等于实现通用模型/harness修改或真实RSI效率提升，安装包未更新，完整上线目标仍未完成。
