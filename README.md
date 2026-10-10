@@ -1,5 +1,24 @@
 # Vision RSI Agent
 
+Windows 本地 CLI，通过 SSH 调度视觉研究任务。核心入口是 `training start`（自然语言定义与澄清）、`training watch`（持续研究控制）和 `test`（按已验收任务版本推理）。COCO 检测是首个真实任务适配器。
+
+当前开发状态：已实现真实 LLM、SSH 作业、固定检测器训练/恢复、官方 COCO 指标计算、结果验收及版本化推理接口；H20 小规模开发验证已执行。完整 COCO 训练和 AP≥60 验收尚未完成，没有真实达标 COCO 能力，也尚无通用 RSI 效率提升的独立证据。当前应用只支持可信本地用户，不是公网多用户服务。
+
+首次使用（在项目根目录 PowerShell 中）：
+
+```powershell
+.\vision-rsi.cmd training start --task-id your-task --interactive
+# 根据上一步显示的会话 ID 查看和补充需求
+.\vision-rsi.cmd training show --session-id SESSION_ID
+.\vision-rsi.cmd training reply --session-id SESSION_ID --message "补充执行预算及仍待明确的要求"
+# 只检查计划和资源，不启动训练
+.\vision-rsi.cmd training prepare --session-id SESSION_ID
+# 配置和预算齐全后，开始有界研究（该命令可产生真实 API/GPU 用量）
+.\vision-rsi.cmd training watch --session-id SESSION_ID --research-rounds 2 --watch-seconds 3600
+```
+
+需求用自然语言描述目标、输入、输出和效果要求即可；Agent 整理接口，不要求手写 schema。GPU 预算不自动推定，8 卡运行 1 小时计为 8 GPU 小时。`watch` 退出保留记录，远端已提交作业继续受原时限约束。完整推理验收通过后才能使用 `test --task-id ...`；首次任务尚未验收时不能靠代号取得达标输出。下方按阶段列出详细操作和限制。
+
 Training的自然语言澄清会保留已定义的要求。模型提出目标、输入输出、验收指标/阈值/协议或预算变更时，只保存为草案，原定义继续保留；新计划、harness和advance会等待处理该草案。交互模式显示差异，使用`/accept`接受当前草案、`/reject`保留原要求，或继续自然语言修正。非交互模式明确指定草案版本，防止误接受旧版本：
 
 ```powershell
@@ -59,11 +78,11 @@ candidate check在远端bubblewrap隔离命名空间中运行纯Python策略：�
 strategy-check额外执行固定协议检查。每个case包含history、actions和budget；动作包含id、estimated_cost、expected_gain和uncertainty。动作成本须有正数预留，不能选择预算外、不可用或history中已尝试的ID；重试需新的明确尝试ID。策略返回action_id和rationale；无可执行动作时action_id为null。协议通过也不等于策略更有效。
 
 Windows 本地研究控制器，通过 SSH 调度独立 8 卡 H20 服务器；LLM 服务独立且可替换。
-项目目标是通用视觉递归自我改进（RSI）研究 Agent，支持逐步扩展到不同视觉任务、数据集和评测协议。COCO 目标检测 box AP 只是第一个验证实验，不定义 Agent 的能力边界。当前版本只有确定性模拟闭环，**没有真实训练、COCO 指标计算；LLM 客户端已支持真实 API 调用**。
+项目目标是通用视觉递归自我改进（RSI）研究 Agent，支持逐步扩展到不同视觉任务、数据集和评测协议。COCO 目标检测 box AP 只是第一个验证实验，不定义 Agent 的能力边界。真实路径与早期模拟演示并存；`run`、`compare` 是模拟演示，真实任务使用下文 Training CLI。完整真实 COCO 训练及达标验收仍未完成。
 
 ## 本地运行
 
-需要 Python 3.10+ 和 Git；没有第三方依赖。从仓库根目录执行：
+本地控制器需要 Python 3.10+ 和 Git。Windows 可直接使用 `vision-rsi.cmd`；媒体校验需要 Pillow，COCO 评测需要固定 pycocotools 2.0.11，远端训练另需固定 torch/torchvision。早期模拟演示从仓库根目录执行：
 
 ```powershell
 python -m unittest discover -s tests -v
@@ -80,12 +99,11 @@ python -m vision_rsi run --run-dir runs/demo
 
 复制 config.example.json 到本地配置文件并填写 SSH 主机别名、远端目录、COCO 路径、准确模型 ID 和 Base URL。示例默认使用官方 `deepseek-flash` 与 `https://api.deepseek.com`。
 API Key 仅从 DEEPSEEK_API_KEY 环境变量读取，doctor 只报告是否存在，绝不打印值。
-不将密钥放入配置、Git 或聊天。OpenAI-compatible HTTP 客户端已接入；远程训练执行待实现；当前真实模式主动报错。
-检测器、预训练权重、数据划分尚未选定，不推断 DeepSeek Flash 的准确模型名或服务地址。
+不将密钥放入配置、Git 或聊天。OpenAI-compatible HTTP 客户端和独立 Training SSH 执行已接入。首个固定基线为 torchvision Faster R-CNN ResNet50 FPN v2 及其 COCO 预训练权重；原模拟 `run` 入口不执行真实训练。具体数据路径、完整哈希、远端运行时及任务预算须由 Training 准备阶段核查。
 
 ## 项目范围
 
-通用核心负责实验规划、候选追踪、预算、调度、恢复、记忆和策略改进。具体视觉任务通过任务适配器提供数据、训练配方、评测指标和错误分析；首个适配器计划用于 COCO 检测，当前模拟指标仍是该实验的占位数据。后续任务无需以 COCO 或 box AP 为前提。
+通用核心负责实验规划、候选追踪、预算、调度、恢复、记忆和策略改进。具体视觉任务通过任务适配器提供数据、训练配方、评测指标和错误分析；首个训练适配器用于 COCO 检测。模拟演示中的指标只是占位数据，实际指标必须来自官方评测报告。后续任务无需以 COCO 或 box AP 为前提。
 
 ## 研究约束
 
@@ -96,11 +114,11 @@ API Key 仅从 DEEPSEEK_API_KEY 环境变量读取，doctor 只报告是否存�
 - 研究反馈使用固定本地验证集；隐藏测试不参与反复搜索。
 - 数据集、模型权重、训练输出、SSH 私钥和 API Key 不进入 Git；不配置远端、不推送。
 
-详见 PLAN.md。当前记录仅包含配置哈希、Git 提交、候选和模拟结果；尚无代码修改执行器。
+详见 PLAN.md。研究候选保存在独立 Git 仓库，并有受限 CPU 执行检查；通用 harness 自动改进和独立效率验收仍未完成。
 
 ## LLM 连通性验证
 
-设置环境变量后执行 `python -m vision_rsi llm-check --config config.local.json`。该命令会发起一次付费真实请求，输出回复和服务端 token 使用量，不输出 Key。当前只验证模型连通性，尚未用于自动规划或代码修改；不自动重试，避免重复计费。`config.local.json` 已被 Git 忽略。
+设置环境变量后执行 `python -m vision_rsi llm-check --config config.local.json`。该命令会发起一次付费真实请求，输出回复和服务端 token 使用量，不输出 Key。该命令只验证模型连通性；自然语言需求整理、方法提案和受限候选代码提案使用各自持久化请求记录，不自动重发结果不确定的请求。`config.local.json` 已被 Git 忽略。
 
 ## 策略对照骨架
 
@@ -192,7 +210,7 @@ python -m vision_rsi test --task-id bright-object --input examples/toy-input.jso
 
 无需 API 或 SSH 即可验证协议。training 根据已实现的任务类型组装独立 harness，按训练分数选择参数，只对所选参数做一次独立验证；满足要求后注册 validated 能力。test 按任务代号选择最近的 validated 版本，也可指定 `--version`。版本保存在 `runs/capabilities`，包含任务协议、模型、可执行 harness、数据哈希和评测记录；推理前验证 manifest 及产物哈希，未达标/阻塞版本不能调用。模型与训练输出不会提交 Git。
 
-示例使用可执行的单亮色目标检测算法，输入是 JSON 灰度矩阵，输出单个 xywh 框；不是合成评分公式，也不是 COCO 模型，极小验证集不构成泛化能力证据。score 固定为 1.0，不是校准置信度。任务需求目前以 JSON 协议输入，尚未自动理解自然语言、生成新 harness 或做 RSI；目前按已实现适配器分派。
+示例使用可执行的单亮色目标检测算法，输入是 JSON 灰度矩阵，输出单个 xywh 框；不是合成评分公式，也不是 COCO 模型，极小验证集不构成泛化能力证据。score 固定为 1.0，不是校准置信度。此旧演示以 JSON 协议输入；自然语言需求使用下文 Training 会话入口。该示例按已实现适配器分派，不代表自动生成新视觉模型或 RSI 效果已验证。
 
 `python -m vision_rsi training --task examples/coco-task.json` 会生成 blocked 记录，不会伪造训练或注册已验收检测能力。COCO 真实适配器已有独立 Training CLI；自动 harness 代码调整和真实 RSI 对照仍待完成。此注册库仅供本地可信产物使用；它不是任意代码沙箱。失败时可查询 capabilities 和 manifest 检查原因。
 
@@ -220,7 +238,7 @@ python -m vision_rsi training export --session-id SESSION --output runs/task-con
 
 会话存于 runs/training-sessions/sessions.sqlite3；define 和每轮模型解析生成新版本，旧版本保留。导出含任务代号、会话、契约版本和内容哈希，供后续 harness 构建使用。validate --result result.json 可验证输出结构。样本校验只验证协议，不读取/解码媒体，不表示模型支持多图或视频。
 
-状态 ready_for_harness 表示当前声明满足协议检查，不等于用户确认语义、真实可实现、已训练或已验收。模型不得自行放宽验收条件，但跨轮语义变更使用已实现的结构差异审核，仍需用户判断语义是否正确。training run --session-id SESSION 会准备任务计划；执行条件完整时部署固定 COCO adapter 并提交 SSH 作业，否则返回 blocked。通用方法研究和 RSI 尚未接入。旧 training --task examples/toy-task.json 接口保留用于早期能力生命周期测试。
+状态 ready_for_harness 表示当前声明满足协议检查，不等于用户确认语义、真实可实现、已训练或已验收。模型不得自行放宽验收条件，但跨轮语义变更使用已实现的结构差异审核，仍需用户判断语义是否正确。training run --session-id SESSION 会准备任务计划；执行条件完整时部署固定 COCO adapter 并提交 SSH 作业，否则返回 blocked。已接入有限训练配方研究及受限候选策略；通用 harness 代码迭代与独立 RSI 效率验收仍未完成。旧 training --task examples/toy-task.json 接口保留用于早期能力生命周期测试。
 
 ## Windows CLI 试用入口
 
@@ -240,7 +258,7 @@ python -m vision_rsi training export --session-id SESSION --output runs/task-con
 .\vision-rsi.cmd training validate --session-id SESSION --manifest examples/multimodal-batch.jsonl
 ```
 
-JSONL 每行一个联合样本，逐行检查输入协议并拒绝重复 sample_id，单行错误不会中断后续行。这里是 Training 任务接口的批量校验，还不是批量媒体推理；不会读取或解码媒体文件。测试推理入口暂仍使用旧矩阵示例适配器。
+JSONL 每行一个联合样本，逐行检查输入协议并拒绝重复 sample_id，单行错误不会中断后续行。这里是 Training 任务接口的批量校验，还不是批量媒体推理；不会读取或解码媒体文件。Test 另有已验收单图检测适配器入口；多图/视频媒体准备与接口检查不等于对应视觉模型已实现。
 
 ## 澄清交互修正
 
@@ -345,7 +363,7 @@ status/logs/cancel 也可使用 `--run-id` 指定历史作业。prepare/run/stat
 
 运行时检查源文件是否仍匹配计划，将源码、契约和配方封装到远端按内容寻址的 releases 目录，复用前及启动前校验哈希。远端必须已有固定 torch/torchvision 和 pycocotools 2.0.11（可安装在专用工作区 runtime-coco-2.0.11）。提交响应不确定时保留预算，重复 run 返回原运行记录，不自动重启；用 status 核对同一 ID。远端 lost 或提交目录不完整需人工诊断，不会自动释放预算后重跑。
 
-远端 completed 仅表示进程正常退出，不能等同达到效果要求。training collect 已接入 result/evaluation 收据同步和验收检查；真实能力注册入口已接入，当前无真实达标模型；后续研究及预算修订流程仍待实现。Training resume 已接入，见后文。部署失败且尚未提交作业时结算为零。测试覆盖本地预算预留/结算、重复调用、丢失提交响应、错误目标主机及非法记账；远端验证内容寻址复用、启动前完整性检查和缺配置拒绝。真实 Training CLI 提交仍待数据与预算配置后验证。
+远端 completed 仅表示进程正常退出，不能等同达到效果要求。training collect 已接入 result/evaluation 收据同步和验收检查；真实能力注册入口已接入，当前无真实达标模型；有限配方研究已接入，预算修订与跨阶段统一预算仍待完成。Training resume 已接入，见后文。部署失败且尚未提交作业时结算为零。测试覆盖本地预算预留/结算、重复调用、丢失提交响应、错误目标主机及非法记账；远端验证内容寻址复用、启动前完整性检查和缺配置拒绝。真实 Training CLI 提交仍待数据与预算配置后验证。
 
 
 ## 训练结果收集和验收

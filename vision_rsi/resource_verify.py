@@ -40,6 +40,8 @@ def verify_images(root, split, expected_images):
     if hashlib.sha256(annotation.read_bytes()).hexdigest()!=checked['annotation_sha256']:
         raise ValueError('Annotations changed during verification')
     return {'split':split,'images':expected_images,'annotations':checked['annotations'],
+            'zero_area_annotation_ids':checked['zero_area_annotation_ids'],
+            'training_box_policy':checked['training_box_policy'],
             'annotation_sha256':checked['annotation_sha256'],'image_manifest_sha256':fingerprint.hexdigest(),
             'image_bytes':total,'pixel_decode_verified':True,'coco_evaluated':False,
             'training_started':False,'gpu_used':False}

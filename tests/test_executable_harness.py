@@ -57,7 +57,9 @@ class ExecutableHarnessTests(unittest.TestCase):
         self.folder=Path(self.artifact['directory'])
 
     def run_harness(self,*args):
-        return subprocess.run([sys.executable,str(self.folder/'harness.py'),*args],capture_output=True,text=True,encoding='utf-8',cwd=self.root,timeout=20)
+        # Match run.cmd's UTF-8 process mode rather than depending on the
+        # developer shell's PYTHONUTF8 setting on Chinese Windows systems.
+        return subprocess.run([sys.executable,'-X','utf8',str(self.folder/'harness.py'),*args],capture_output=True,text=True,encoding='utf-8',cwd=self.root,timeout=20)
 
     def test_standalone_controls_keep_original_session_and_never_export_key(self):
         result=self.run_harness('check');self.assertEqual(result.returncode,0,result.stderr)

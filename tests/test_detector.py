@@ -5,6 +5,27 @@ import unittest
 from vision_rsi.detector import COCO_IDS, detections, dataset_check, split_check
 
 class DetectorTests(unittest.TestCase):
+    def test_zero_area_training_annotations_are_recorded_without_rewriting(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'annotations').mkdir()
+            data={'categories':[{'id':i} for i in COCO_IDS],
+                  'images':[{'id':1,'file_name':'one.jpg','width':10,'height':10}],
+                  'annotations':[{'id':918,'image_id':1,'category_id':58,'bbox':[1,2,3,0]}]}
+            for split in ('train','val'):
+                (root/f'{split}2017').mkdir();(root/f'{split}2017/one.jpg').write_bytes(b'coverage-only')
+                path=root/f'annotations/instances_{split}2017.json'
+                raw=json.dumps(data);path.write_text(raw)
+                result=split_check(root,split,1)
+                self.assertEqual(path.read_text(),raw)
+                if split=='train':
+                    self.assertTrue(result['ready']);self.assertEqual(result['zero_area_annotation_ids'],[918])
+                    self.assertEqual(result['annotations'],1)
+                else:self.assertFalse(result['ready'])
+            for bad in (-1,float('nan'),True):
+                data['annotations'][0]['bbox'][3]=bad
+                (root/'annotations/instances_train2017.json').write_text(json.dumps(data))
+                self.assertFalse(split_check(root,'train',1)['ready'])
+
     def test_sparse_categories_and_box_protocol(self):
         self.assertEqual(len(set(COCO_IDS)),80)
         result=detections([[1,2,5,8],[0,0,2,2]],[90,12],[0.9,0.5])

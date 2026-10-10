@@ -12,7 +12,8 @@ class TrainingResourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             part=Path(tmp)/'train2017.zip.part'
             part.write_bytes(b'partial fixture')
-            with patch('vision_rsi.training_resources.shutil.disk_usage',return_value=namedtuple('Disk','free')(100_000_000_000)), \
+            with patch.dict(TRAIN_RESOURCE,{'bytes':len(b'partial fixture')}), \
+                 patch('vision_rsi.training_resources.shutil.disk_usage',return_value=namedtuple('Disk','free')(100_000_000_000)), \
                  patch('vision_rsi.training_resources.download',side_effect=TimeoutError('verification deadline')):
                 result=step(tmp,240)
             self.assertEqual(result['resource']['status'],'verification_pending')
@@ -20,6 +21,16 @@ class TrainingResourceTests(unittest.TestCase):
             self.assertFalse(result['dataset_ready'])
             self.assertEqual(part.read_bytes(),b'partial fixture')
             self.assertFalse((Path(tmp)/'train2017.zip').exists())
+
+    def test_transfer_timeout_is_partial_not_pending_full_archive_verification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            part=Path(tmp)/'train2017.zip.part';part.write_bytes(b'incomplete')
+            with patch('vision_rsi.training_resources.shutil.disk_usage',return_value=namedtuple('Disk','free')(100_000_000_000)), \
+                 patch('vision_rsi.training_resources.download',side_effect=TimeoutError('network read deadline')):
+                result=step(tmp,240)
+            self.assertEqual(result['resource']['status'],'partial')
+            self.assertFalse(result['dataset_ready'])
+            self.assertEqual(part.read_bytes(),b'incomplete')
 
     def test_disk_admission_blocks_before_network(self):
         with tempfile.TemporaryDirectory() as tmp:

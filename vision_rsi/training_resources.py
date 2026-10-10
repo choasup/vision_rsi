@@ -32,8 +32,9 @@ def step(root, seconds):
         except TimeoutError:
             # A full archive can consume the remaining window before hashing
             # finishes. Retain it and report pending verification, never success.
-            result={'status':'verification_pending','path':str(part),
-                    'downloaded_bytes':part.stat().st_size if part.exists() else 0,
+            written=part.stat().st_size if part.exists() else 0
+            result={'status':'verification_pending' if written==TRAIN_RESOURCE['bytes'] else 'partial','path':str(part),
+                    'downloaded_bytes':written,
                     'asset':TRAIN_RESOURCE,'sha256_verified':False}
         return {'resource':result,'training_started':False,'gpu_used':False,
                 'dataset_ready':False,'remaining_extraction_and_coverage_verification':True}

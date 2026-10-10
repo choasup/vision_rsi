@@ -60,9 +60,18 @@ class CocoImages:
         if not ids or len(set(ids))!=len(ids): raise ValueError('Empty or duplicate image IDs')
         if not fixture and len(ids)!=(118287 if split=='train' else 5000): raise ValueError('Expected full COCO2017 split')
         self.annotations={i:[] for i in ids}
+        self.zero_area_annotation_ids=[]
         for row in self.data['annotations']:
             if row['image_id'] not in self.annotations or row['category_id'] not in COCO_IDS:
                 raise ValueError('Unknown annotation image/category')
+            box=row['bbox']
+            if (not isinstance(box,list) or len(box)!=4
+                    or any(type(v) not in (int,float) or not math.isfinite(v) for v in box)
+                    or box[2]<0 or box[3]<0):
+                raise ValueError('Invalid annotation bbox')
+            if box[2]==0 or box[3]==0:
+                if split!='train':raise ValueError('Invalid annotation bbox')
+                self.zero_area_annotation_ids.append(row['id'])
             self.annotations[row['image_id']].append(row)
         for image in self.images:
             path=(self.root/image['file_name']).resolve()
@@ -211,6 +220,7 @@ def run(recipe,output,resume=False):
     if recipe.get('fixture',False): report['acceptance'].update(passed=False,eligible_for_coco_val2017=False)
     atomic_json(output/'evaluation.json',report)
     result={'status':'evaluated','fixture':recipe.get('fixture',False),'identity':identity,'identity_hash':identity_hash,'step':step,
+            'zero_area_training_annotation_ids':sorted(train.zero_area_annotation_ids),
             'checkpoint_sha256':file_sha(checkpoint_path),'evaluation_sha256':file_sha(output/'evaluation.json'),
             'acceptance':report['acceptance'],'capability_registered':False}
     atomic_json(output/'result.json',result)

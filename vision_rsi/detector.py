@@ -47,7 +47,7 @@ def split_check(root, split, expected_images):
                 raise ValueError('Missing, empty or escaping image file')
             if any(type(image[k]) is not int or image[k]<=0 for k in ('width','height')):
                 raise ValueError('Invalid image dimensions')
-        annotation_ids=set()
+        annotation_ids=set();zero_area_annotations=[]
         for row in annotations:
             if type(row['id']) is not int or row['id'] in annotation_ids:
                 raise ValueError('Duplicate/invalid annotation ID')
@@ -55,12 +55,19 @@ def split_check(root, split, expected_images):
             if row['image_id'] not in image_ids or row['category_id'] not in COCO_IDS:
                 raise ValueError('Unknown annotation image/category')
             box=row['bbox']
-            if not isinstance(box,list) or len(box)!=4 or any(type(v) not in (int,float) or not math.isfinite(v) for v in box) or box[2]<=0 or box[3]<=0:
+            if not isinstance(box,list) or len(box)!=4 or any(type(v) not in (int,float) or not math.isfinite(v) for v in box) or box[2]<0 or box[3]<0:
                 raise ValueError('Invalid annotation box')
+            if box[2]==0 or box[3]==0:
+                # Official train2017 contains two such annotations. Preserve
+                # the original bytes; CocoImages excludes degenerate targets.
+                if split!='train':raise ValueError('Invalid annotation box')
+                zero_area_annotations.append(row['id'])
         import hashlib
         return {'ready':True,'images':len(images),'annotations':len(annotations),
                 'annotation_sha256':hashlib.sha256(annotation.read_bytes()).hexdigest(),
-                'image_ids':ids,'pixel_decode_verified':False}
+                'image_ids':ids,'pixel_decode_verified':False,
+                'zero_area_annotation_ids':sorted(zero_area_annotations),
+                'training_box_policy':'clip to image bounds; exclude crowd and nonpositive clipped area'}
     except (OSError,ValueError,KeyError,TypeError) as error:
         return {'ready':False,'reason':str(error)[:300]}
 

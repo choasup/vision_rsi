@@ -35,6 +35,16 @@ class CocoTrainingValidationTests(unittest.TestCase):
             path=root/'annotations/instances_train2017.json';path.write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError,'full COCO'):CocoImages(root,'train')
             self.assertEqual(len(CocoImages(root,'train',True)),1)
+            data['annotations'][0]['bbox']=[1,2,3,0]
+            path.write_text(json.dumps(data))
+            checked=CocoImages(root,'train',True)
+            self.assertEqual(checked.zero_area_annotation_ids,[1])
+            self.assertEqual(len(checked),1)  # The image remains in the full split.
+            for invalid in (-1,float('nan'),True):
+                data['annotations'][0]['bbox'][3]=invalid
+                path.write_text(json.dumps(data))
+                with self.assertRaisesRegex(ValueError,'Invalid annotation bbox'):CocoImages(root,'train',True)
+            data['annotations'][0]['bbox']=[1,2,3,4]
             data['images'][0]['file_name']='../escape.jpg';(root/'escape.jpg').write_bytes(b'fixture-only')
             path.write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError,'escaping'):CocoImages(root,'train',True)
