@@ -271,3 +271,11 @@
 - 批数按DistributedSampler默认补齐、DataLoader不丢末批计算。25项COCO训练配置/运行时/训练账本测试通过（1.131秒），覆盖17图/8rank/批2的非整除样例、epoch边界、布尔/负数/超界/不一致step和缺rank状态。初次命令包含不存在test_resume模块，去除后相关测试通过，未据失败命令声称全过。
 - 真实SSH CPU PyTorch 2.6复验：17图8rank各2批、118287图8rank各7393批、17图1rank9批，与新校验器一致。证据`runs/resource-bootstrap/checkpoint-progress-cpu-torch.json`，校验函数源SHA2950ec985246623bb93b52110697a46e0e3dadc1232b967747cd8a481f53276f。
 - 远端只执行CPU采样器/loader长度及结构校验，没有模型训练或GPU计算。RNG值使用opaque结构fixture，不能证明张量有效、模型数值一致或8卡实际断点恢复；GPU训练预算仍缺，完整上线门槛未完成。安装包尚未重建。
+
+## 多卡共享图片身份避免重复全量读取（2026-10-10）
+
+- 原训练run在每个rank独立哈希全部train/val图片内容，造成重复读取。单主机共享数据路径现在仅rank 0计算同样编码的全图片摘要，再通过进程组广播；文件读取异常先广播错误状态，所有rank拒绝，摘要格式也验证。
+- 显式拒绝多主机/LOCAL_WORLD_SIZE不同的启动配置；各rank的数据预检保留，没有用缓存计数代替内容哈希。原代码/recipe/runtime身份约束不移除。
+- 26项COCO训练配置/运行时/账本相关测试通过（1.203秒），覆盖单rank/模拟多rank摘要一致、其它rank零重复hash调用和错误传播。
+- 实际远端CPU torchrun两进程Gloo复验：两张合成文件rank0读取2次、rank1读取0次，摘要相同；模拟读取失败时两个rank均收到OSError失败状态并干净退出。证据`runs/resource-bootstrap/shared-image-hash-cpu-broadcast.json`，helper源SHA182241fc22b63ff29550e41e38eb7fcb5a07f42653b483fda7a8323e88c295a3。
+- CUDA_VISIBLE_DEVICES对探针子进程设空，无GPU计算或训练；仅两进程CPU通信证据，不证明8卡NCCL、真实吞吐提升或数值恢复。真实训练GPU预算及上线门槛仍未完成，安装包尚未重建。

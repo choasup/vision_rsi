@@ -112,6 +112,27 @@ def preflight(recipe):
     return train,val
 
 
+def shared_image_identity(datasets,rank,world,dist=None):
+    """Hash the single-host shared dataset once, then broadcast success or failure."""
+    payload=[None]
+    if rank==0:
+        try:
+            value=__import__('hashlib').sha256()
+            for dataset in datasets:
+                for image in dataset.images:
+                    value.update(str(dataset.root.name).encode()+str(image['id']).encode()+file_sha(dataset.root/image['file_name']).encode())
+            payload[0]={'sha256':value.hexdigest()}
+        except Exception as error:
+            payload[0]={'error_type':type(error).__name__}
+    if world>1:dist.broadcast_object_list(payload,src=0)
+    result=payload[0]
+    if not isinstance(result,dict) or set(result)!={'sha256'}:
+        raise RuntimeError('Shared image identity hashing failed: '+str(result.get('error_type','invalid broadcast') if isinstance(result,dict) else 'invalid broadcast'))
+    checksum=result['sha256']
+    if not isinstance(checksum,str) or len(checksum)!=64 or any(c not in '0123456789abcdef' for c in checksum):raise ValueError('Invalid shared image identity')
+    return checksum
+
+
 def validate_checkpoint_progress(checkpoint,train_images,recipe):
     """Match the padded DistributedSampler and non-dropping per-rank batches."""
     if not isinstance(checkpoint,dict):raise ValueError('Invalid checkpoint object')
@@ -149,15 +170,14 @@ def run(recipe,output,resume=False):
     train,val=preflight(recipe)
     world=int(os.environ.get('WORLD_SIZE','1'));rank=int(os.environ.get('RANK','0'));local=int(os.environ.get('LOCAL_RANK','0'))
     if world!=recipe['world_size']: raise ValueError('Launcher GPU world size differs from frozen recipe')
+    if int(os.environ.get('GROUP_WORLD_SIZE','1'))!=1 or int(os.environ.get('LOCAL_WORLD_SIZE',str(world)))!=world:
+        raise ValueError('This baseline requires a single-host shared dataset')
     if not torch.cuda.is_available(): raise RuntimeError('CUDA required for this baseline')
     torch.cuda.set_device(local);device=torch.device('cuda',local)
     if world>1: dist.init_process_group('nccl',timeout=timedelta(minutes=5))
     output=Path(output);output.mkdir(parents=True,exist_ok=True)
-    data_hash=__import__('hashlib').sha256()
-    for dataset in (train,val):
-        for image in dataset.images:
-            data_hash.update(str(dataset.root.name).encode()+str(image['id']).encode()+file_sha(dataset.root/image['file_name']).encode())
-    identity={'image_contents_sha256':data_hash.hexdigest(),'recipe':recipe,'sources':{p.name:file_sha(p) for p in sorted(Path(__file__).parent.glob('*.py'))},'torch':torch.__version__}
+    image_hash=shared_image_identity((train,val),rank,world,dist)
+    identity={'image_contents_sha256':image_hash,'recipe':recipe,'sources':{p.name:file_sha(p) for p in sorted(Path(__file__).parent.glob('*.py'))},'torch':torch.__version__}
     from .training_runtime import fingerprint
     identity['runtime']=fingerprint(torch,device)
     identity_hash=digest(identity)

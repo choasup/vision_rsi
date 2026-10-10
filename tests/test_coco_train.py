@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from vision_rsi.coco_train import CocoImages, validate_recipe,validate_checkpoint_progress
+from types import SimpleNamespace
+from unittest.mock import patch
+from vision_rsi.coco_train import CocoImages, validate_recipe,validate_checkpoint_progress,shared_image_identity
 from vision_rsi.detector import COCO_IDS
 
 
@@ -15,6 +17,26 @@ def fixture_recipe(root):
 
 
 class CocoTrainingValidationTests(unittest.TestCase):
+    @patch('vision_rsi.coco_train.file_sha',return_value='a'*64)
+    def test_shared_image_identity_matches_single_rank_without_duplicate_reads(self,hash_file):
+        datasets=[SimpleNamespace(root=Path('train2017'),images=[{'id':1,'file_name':'one.jpg'}]),
+                  SimpleNamespace(root=Path('val2017'),images=[{'id':2,'file_name':'two.jpg'}])]
+        class Broadcast:
+            saved=None
+            def broadcast_object_list(self,payload,src):
+                if payload[0] is not None:self.saved=payload[0]
+                else:payload[0]=self.saved
+        dist=Broadcast()
+        expected=shared_image_identity(datasets,0,1)
+        hash_file.reset_mock()
+        self.assertEqual(shared_image_identity(datasets,0,8,dist),expected)
+        self.assertEqual(hash_file.call_count,2);hash_file.reset_mock()
+        self.assertEqual(shared_image_identity(datasets,7,8,dist),expected)
+        hash_file.assert_not_called()
+        with patch('vision_rsi.coco_train.file_sha',side_effect=OSError('fixture')):
+            with self.assertRaisesRegex(RuntimeError,'OSError'):shared_image_identity(datasets,0,8,dist)
+        with self.assertRaisesRegex(RuntimeError,'OSError'):shared_image_identity(datasets,7,8,dist)
+
     def test_checkpoint_progress_matches_padded_eight_rank_batches_and_epoch_boundaries(self):
         recipe=dict(fixture_recipe('.'),world_size=8,epochs=3,batch_size_per_gpu=2)
         rng=[{'cpu':'opaque-test-state','cuda':'opaque-test-state'} for _ in range(8)]
