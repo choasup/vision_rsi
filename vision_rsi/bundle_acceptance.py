@@ -11,7 +11,7 @@ from .input_provenance import manifest, audit_manifest
 from .runner import digest, atomic_json
 
 
-def accept(bundle_path, dataset_path, development_paths, remote, output):
+def prepare(bundle_path, dataset_path, development_paths, remote):
     bundle = verify(bundle_path)
     raw, data = read_document(dataset_path, 2*1024*1024)
     if not isinstance(data, dict) or set(data) != {'purpose', 'samples', 'ground_truth'} or data['purpose'] != 'independent_acceptance':
@@ -28,6 +28,13 @@ def accept(bundle_path, dataset_path, development_paths, remote, output):
         raise ValueError('Ground truth coverage differs')
     contract_bytes = base64.b64decode(bundle['contract_base64'])
     contract = json.loads(contract_bytes.decode('utf-8-sig'))
+    # Validate annotations and frozen metric before consuming a task acceptance slot.
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix='vision-rsi-acceptance-') as directory:
+        temporary=Path(directory)
+        (temporary/'contract.json').write_bytes(contract_bytes)
+        atomic_json(temporary/'truth.json',truth)
+        evaluate(temporary/'truth.json',temporary/'truth.json',contract_path=temporary/'contract.json')
     cases = [{'sample': row} for row in samples]
     if bundle['identity'].get('media_transport') == 'vision_sample_transport_v1':
         from .media import package_sample
@@ -42,6 +49,17 @@ def accept(bundle_path, dataset_path, development_paths, remote, output):
                'evaluator_sha256': hashlib.sha256(Path(__file__).with_name('event_eval.py').read_bytes()).hexdigest(),
                'executor_sha256': hashlib.sha256(Path(__file__).with_name('candidate_bundle.py').read_bytes()).hexdigest(),
                'provenance_sha256': hashlib.sha256(Path(__file__).with_name('input_provenance.py').read_bytes()).hexdigest()}
+    return {'bundle':bundle, 'samples':samples, 'truth':truth, 'rows':rows,
+            'binding':binding, 'overlap':overlap, 'contract_bytes':contract_bytes}
+
+
+def accept(bundle_path, dataset_path, development_paths, remote, output, expected_binding_sha256=None):
+    prepared = prepare(bundle_path,dataset_path,development_paths,remote)
+    bundle=prepared['bundle'];samples=prepared['samples'];truth=prepared['truth'];rows=prepared['rows']
+    ids=[sample['sample_id'] for sample in samples]
+    binding=prepared['binding'];overlap=prepared['overlap'];contract_bytes=prepared['contract_bytes']
+    if expected_binding_sha256 is not None and digest(binding)!=expected_binding_sha256:
+        raise ValueError('Task-reserved acceptance content changed before execution')
     root = Path(output).resolve(); root.mkdir(parents=True, exist_ok=True)
     with lease(root/'acceptance.lock', owner='Sealed bundle acceptance'):
         seal_path = root/'seal.json'; result_path = root/'acceptance.json'
@@ -53,7 +71,6 @@ def accept(bundle_path, dataset_path, development_paths, remote, output):
         if contract_path.exists() and contract_path.read_bytes() != contract_bytes:
             raise ValueError('Frozen acceptance contract changed')
         contract_path.write_bytes(contract_bytes); atomic_json(truth_path, truth)
-        evaluate(truth_path, truth_path, contract_path=contract_path)
         if not seal_path.exists():
             atomic_json(seal_path, {'binding': binding, 'seal_sha256': digest(binding)})
         if result_path.exists():

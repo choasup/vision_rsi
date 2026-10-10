@@ -965,3 +965,14 @@ python -m vision_rsi training release-status --session-id SESSION --json
 验收集格式与开发集相同，但 `purpose` 必须为 `independent_acceptance`。执行前检查与所提供全部开发记录的重叠（允许不同候选，要求相同合同），冻结候选、实际输入内容、标注数据文件、开发记录身份及控制端实现。一个 `--output` 目录对应一个验收槽；更换输入或候选会拒绝，重复请求复用结果，不确定的远程执行不会自动重发。换目录并不获得重复搜索隐藏测试的许可；当前尚无跨目录的任务级验收次数锁。
 
 目前只支持合同定义的事件 micro-F1，CPU 夹具可验证链路。输出 `holdout_metric_met` 仅表示这份留出数据的指标达标；开发历史完整性、真实模型泛化及服务验收仍需补齐，因此不会自动注册或开放正式 `test`。留出分数不要反馈给研究规划器继续搜索。
+
+对于已经登记的 Training 候选，使用任务级入口固定唯一验收槽：
+
+```powershell
+.\vision-rsi.cmd training accept-candidate --session-id SESSION_ID --version VERSION --dataset heldout.json --development dev-execution.json --registry runs/capabilities --json
+.\vision-rsi.cmd training candidate-acceptance-status --session-id SESSION_ID --registry runs/capabilities --json
+```
+
+在同一权威注册库中，任务代号只能预留一个候选验收槽；入口不接受输出目录覆盖，更换会话、合同版本、候选或验收内容不会重置槽。实际输入、标注、开发记录与控制实现身份都被绑定，执行前再次核对。无效合同或数据在预留前拒绝；预留后的中断保留原绑定，重复请求只恢复该请求，不确定的远程执行不自动重发。并发请求由数据库唯一约束和文件租约限制。
+
+这项约束以所选注册库为边界，不防止人工删除账本、另建注册库或直接调用底层开发工具；生产验收流程必须使用同一权威注册库。状态查询仅报告本地预留/完成状态，完成不等于质量验收或生产发布。尚未提供重置验收槽的命令。

@@ -157,7 +157,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -170,6 +170,8 @@ def main(argv):
     parser.add_argument('--registry',default='runs/capabilities')
     parser.add_argument('--version')
     parser.add_argument('--bundle',help='Frozen candidate bundle to register as pending independent validation')
+    parser.add_argument('--dataset',help='Explicit independent acceptance dataset')
+    parser.add_argument('--development',action='append',help='Development execution JSON; repeat for each record')
     parser.add_argument('--request-id',help='Exact pending clarification request ID shown by training show')
     parser.add_argument('--wall-seconds-budget',type=float)
     parser.add_argument('--chunk-size',type=int,default=10)
@@ -189,6 +191,24 @@ def main(argv):
     parser.add_argument('--research-watch-turns',type=int,default=6,help='Maximum foreground general-research steps (1..1000)')
     parser.add_argument('--repository',default='.',help='Git source repository for general research; required explicitly outside the checkout')
     args=parser.parse_args(argv)
+    if args.action in ('accept-candidate','candidate-acceptance-status'):
+        if not args.session_id:parser.error('Candidate acceptance requires --session-id')
+        if args.action=='accept-candidate' and (not args.version or not args.dataset or not args.development):
+            parser.error('accept-candidate requires --version, --dataset and --development')
+        import sqlite3
+        from .capability import Capabilities
+        from .task_acceptance import accept as accept_candidate, status as acceptance_status
+        try:
+            session=Sessions(args.sessions,read_only=True).show(args.session_id)
+            registry=Capabilities(args.registry)
+            try:
+                if args.action=='candidate-acceptance-status':result=acceptance_status(registry,session['task_id'])
+                else:
+                    config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
+                    result=accept_candidate(registry,session,args.version,args.dataset,args.development,config['remote'])
+            finally:registry.close()
+        except (ValueError,KeyError,TypeError,OSError,RuntimeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
+        print(json.dumps(result,ensure_ascii=False,indent=2));return
     if args.action=='register-candidate':
         if not args.session_id or not args.bundle:parser.error('register-candidate requires --session-id and --bundle')
         import sqlite3

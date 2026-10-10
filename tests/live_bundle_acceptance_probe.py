@@ -16,6 +16,7 @@ import vision_rsi.remote as transport
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live-remote',action='store_true');parser.add_argument('--bundle',required=True)
+    parser.add_argument('--task-scoped',action='store_true',help='Also verify task registry reservation and cached Training CLI')
     parser.add_argument('--config',default='config.local.json');args=parser.parse_args()
     if not args.live_remote:parser.error('--live-remote required; two CPU calls, no LLM/GPU')
     bundle=verify(args.bundle)
@@ -38,21 +39,43 @@ def main():
     atomic_json(root/'preregistered.json',{'scope':__doc__,'bundle_id':bundle['bundle_id'],'expected_remote_calls':2,
         'expected_fixture_f1':1,'llm_calls':0,'gpu_used':False,'quality_verified':False,
         'probe_source_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
-    calls=[];original=transport.check_candidate;passed=False;failure=None;result=None
+    calls=[];original=transport.check_candidate;passed=False;failure=None;result=None;registry=None;cli_verified=False
     def counted(*values):calls.append(True);return original(*values)
     transport.check_candidate=counted
     try:
         development=run(args.bundle,[samples[0]],remote,root/'development',media_directory=root)
         values=(args.bundle,dataset,[development['execution_path']],remote,root/'acceptance')
-        result=accept(*values)
+        operation=accept
+        if args.task_scoped:
+            from vision_rsi.capability import Capabilities
+            from vision_rsi.contracts import Sessions
+            from vision_rsi.task_acceptance import accept as task_accept
+            sessions=Sessions(root/'sessions')
+            session=sessions.create('acceptance-fixture','Explicit developer fixture only; no model quality claim')
+            session=sessions.define(session['session_id'],contract)
+            registry=Capabilities(root/'registry');delivery=registry.register_candidate(session,args.bundle)
+            operation=task_accept;values=(registry,session,delivery['version'],dataset,[development['execution_path']],remote)
+        result=operation(*values)
         assert result['status']=='holdout_metric_met' and result['metric_report']['event_micro_f1']==1
-        assert accept(*values)==result and len(calls)==2
+        assert operation(*values)==result and len(calls)==2
         assert not result['production_accepted'] and not result['complete_development_history_verified']
+        if args.task_scoped:
+            import subprocess
+            command=[sys.executable,'-X','utf8','-m','vision_rsi','training','accept-candidate',
+                '--session-id',session['session_id'],'--sessions',str(root/'sessions'),'--registry',str(root/'registry'),
+                '--version',delivery['version'],'--dataset',str(dataset),'--development',development['execution_path'],
+                '--config',str(Path(args.config).resolve()),'--json']
+            completed=subprocess.run(command,cwd=Path(__file__).resolve().parents[1],capture_output=True,text=True,encoding='utf-8',timeout=30)
+            assert completed.returncode==0,completed.stderr
+            assert json.loads(completed.stdout)==result
+            cli_verified=True
         passed=True
     except Exception as error:failure=type(error).__name__+': '+str(error)[:500]
-    finally:transport.check_candidate=original
+    finally:
+        transport.check_candidate=original
+        if registry is not None:registry.close()
     evidence={'passed':passed,'failure':failure,'remote_calls':len(calls),'result':result,
-        'gpu_used':False,'llm_calls':0,'quality_verified':False,'scope':__doc__}
+        'gpu_used':False,'llm_calls':0,'quality_verified':False,'scope':__doc__,'task_scoped':args.task_scoped,'cached_cli_verified':cli_verified}
     atomic_json(root/'evidence.json',evidence);print(json.dumps(evidence,ensure_ascii=False,indent=2));return int(not passed)
 
 
