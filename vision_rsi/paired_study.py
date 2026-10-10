@@ -19,6 +19,34 @@ SIGN_RULE={'test':'exact_one_sided_sign_test_above_gain_threshold','alpha':.05,'
            'ties':'exclude exact ties at preregistered gain threshold'}
 
 
+def resource_comparison(baseline,candidate):
+    """Observed deltas, never replace unknown costs with zero or infer fairness."""
+    rows={};missing=[]
+    for metric,complete in (('settled_gpu_hours','gpu_accounting_settled'),
+                            ('observed_action_wall_seconds','action_timing_complete'),
+                            ('known_llm_tokens','llm_usage_complete')):
+        values={}
+        for arm,result in (('baseline',baseline),('candidate',candidate)):
+            value=result.get(metric)
+            valid=(result.get(complete) is True and not isinstance(value,bool)
+                   and isinstance(value,(int,float)) and math.isfinite(value) and value>=0)
+            if metric=='known_llm_tokens':valid=valid and isinstance(value,int)
+            values[arm]=value if valid else None
+            if not valid:missing.append(arm+': '+metric+' missing or incomplete')
+        rows[metric]={**values,'candidate_minus_baseline':
+                     values['candidate']-values['baseline'] if all(x is not None for x in values.values()) else None}
+    for arm,result in (('baseline',baseline),('candidate',candidate)):
+        if not isinstance(result.get('llm_cost_scope'),str) or not result['llm_cost_scope']:
+            missing.append(arm+': LLM cost scope missing')
+    same_scope=(isinstance(baseline.get('llm_cost_scope'),str) and bool(baseline['llm_cost_scope'])
+                and baseline.get('llm_cost_scope')==candidate.get('llm_cost_scope'))
+    if not same_scope:missing.append('LLM cost scopes differ or are unavailable')
+    return {'metrics':rows,'observed_costs_complete':not missing,'missing_evidence':missing,
+            'llm_cost_scopes':{arm:result.get('llm_cost_scope') for arm,result in (('baseline',baseline),('candidate',candidate))},
+            'equal_resource_budgets_verified':False,'rsi_efficiency_verified':False,
+            'scope':'Observed GPU, action wall-time and experiment-proposal tokens only; not total CPU, billing or whole-project costs.'}
+
+
 def paired_sign_evidence(gains,threshold,rule):
     if rule!=SIGN_RULE:raise ValueError('Unsupported preregistered statistical rule')
     if isinstance(threshold,bool) or not isinstance(threshold,(int,float)) or not math.isfinite(threshold):raise ValueError('Invalid statistical gain threshold')
@@ -185,7 +213,8 @@ def compare(study_id,root='runs/paired-studies'):
                     setups.append(setup)
             if not setup_valid or not setups or any(digest(setup)!=digest(setups[0]) for setup in setups):
                 missing.append({'pair':index,'error':'Paired runs used different data, weights, seeds, code or runtime'})
-            else:pairs.append({'pair':index,'seed':pair['seed'],'ap_gain':results['candidate']['best_verified_real_box_AP']-results['baseline']['best_verified_real_box_AP'],'arms':results})
+            else:pairs.append({'pair':index,'seed':pair['seed'],'ap_gain':results['candidate']['best_verified_real_box_AP']-results['baseline']['best_verified_real_box_AP'],
+                               'resource_comparison':resource_comparison(results['baseline'],results['candidate']),'arms':results})
     complete=not missing and len(pairs)==len(identity['pairs']);mean=sum(p['ap_gain'] for p in pairs)/len(pairs) if complete else None
     statistical={'evaluated':False,'preregistered_sign_rule_met':False,
                  'reason':'Incomplete paired evidence' if not complete else 'Legacy study has no preregistered statistical rule'}

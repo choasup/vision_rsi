@@ -335,3 +335,8 @@
 - request_snapshot_sha256=e1c0a1e4de55dd2daa665e45f30c27dd46a19f9d0eaabfd197ee69c577687b33，快照消息确实含synthetic-rejection反馈；独立CLI子进程输出与库查询完全一致，查询前后SQLite字节相同。Windows vision-rsi.cmd摘要入口另实际通过。
 - 证据 runs/method-feedback-live/668aab947b354a02a814081c71570f5b/ 下preregistered.json、evidence.json、observation.json及research请求快照/回复/方案。
 - 仅一次合成开发案例，无SSH/GPU/训练，不证明真实任务效果、跨案例稳定性或同预算RSI效率提升；安装包未包含最新快照/观测实现。完整上线目标仍未完成。
+## 成对RSI实验观测成本（2026-10-10）
+
+- study compare 每个核验实验对加入resource_comparison，展示GPU小时、动作耗时、实验规划Token的两臂值与candidate-minus-baseline差值。完整性标记不真/非有限/负值/bool/非整数Token保持null；Token范围缺失或不一致标记不完整。
+- 17项成本/paired-study/campaign-audit测试通过（.830秒）；补充集成断言确认缺成本的AP比较不会误标成本完整。观测比较与AP完整性分别显示，不自动推断公平预算、效率提升或采用候选。
+- 本轮仅mock及本地逻辑，无真实API/SSH/GPU/训练。成本范围不含全部CPU/项目总费用/需求与候选生成；安装包尚未重建，真实同预算研究提升及完整上线仍未证明。

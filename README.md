@@ -761,3 +761,8 @@ checkpoint CPU预检进一步检查每rank CPU/CUDA RNG字段必须是非空的�
 新的内层实验规划请求会在调用模型前，将完整 system/user 消息、max_tokens 和当时剩余 GPU 小时快照写入 requests.sqlite3，并记录内容哈希。收到回复后，相应请求目录同时导出 request.json，便于对照模型收到的测量、历史、假设和预算。重放读取原快照并校验哈希，不重新调用模型；旧请求没有快照时不伪造补全。
 
 这是规划器消息记录，不包含 API Key，也不是底层 HTTP 请求、提供商计费证明或实验成功证明。预算快照用于解释决策，实际执行仍以调度器当前剩余额度为准；能同时改写整个本地账本与哈希的操作者不在此完整性检查的防护范围内。
+# 新旧 Agent 的成本比较
+
+`study compare` 每个已核验的实验对包含 `resource_comparison`：展示 baseline/candidate 的已结算 GPU 小时、已记录动作耗时及实验规划 Token，并计算 candidate 减 baseline 的差值。任何未结算、未知、非法或不完整值都显示为 null，不按零处理；LLM 成本范围不同也会标记不完整。
+
+AP 比较完整性与成本完整性分别显示：`comparison_complete` 不代表成本可比，请同时查看 `observed_costs_complete` 及缺失证据。这些是观测成本，尚非固定 CPU/总耗时/总 Token/费用预算下的效率证明；需求澄清和候选生成成本不包含在实验规划 Token 中。`equal_resource_budgets_verified` 和 `rsi_efficiency_verified` 仍为 false，不自动采用候选。

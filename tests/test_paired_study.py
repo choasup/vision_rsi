@@ -139,6 +139,8 @@ class PairedStudyTests(unittest.TestCase):
         with patch('vision_rsi.paired_study.audit',side_effect=audited):
             result=compare(record['study_id'],self.studies)
         self.assertTrue(result['comparison_complete']);self.assertEqual(result['mean_paired_ap_gain'],3)
+        self.assertFalse(result['pairs'][0]['resource_comparison']['observed_costs_complete'])
+        self.assertIsNone(result['pairs'][0]['resource_comparison']['metrics']['known_llm_tokens']['candidate_minus_baseline'])
         self.assertTrue(result['preregistered_gain_rule_met']);self.assertFalse(result['rsi_efficiency_verified']);self.assertFalse(result['agent_adopted'])
         self.assertEqual(identity['statistical_rule'],SIGN_RULE)
         self.assertEqual(result['paired_statistical_evidence']['p_value'],.25)
