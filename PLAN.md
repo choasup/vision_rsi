@@ -384,3 +384,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Tests cover last-slot concurrent admission, unknown API outcomes blocking new request IDs, frozen quota increase rejection, child lineage/restart retention and reconstruction after absent local stage tables. Actual previous Flash response reconciled to1 occupied/1 responded/0 unsettled; legacy audit reports new_calls_authorized=false and global_llm_budget_verified=false. No API/SSH call during audit. Evidence runs/adapter-repair-integration/budget-audit.json.
 
 - Local LLM configuration is now preflighted before call reservation: missing environment key, invalid HTTPS endpoint/port or empty model ID cannot consume a repair slot. New missing-key regression confirms no API request or reservation; API transport/config tests pass. Full171-test suite passed before this preflight addition; final targeted21 candidate and3 LLM tests passed afterward.
+
+
+## Official baseline resource bootstrap (2026-10-10)
+
+- Verified actual H20 torchvision0.21.0+cu124 enum COCO_V1 URL and official reference boxAP46.7; reference is not our measurement or target60. HTTPS HEAD succeeded for fixed PyTorch weight175,221,657 bytes, COCO annotation archive252,907,541 bytes and val2017 archive815,585,330 bytes. Free notebook storage1,876,397,391,872 bytes at probe. Evidence runs/resource-bootstrap/probe.json.
+- Added standalone bounded Linux download step, maximum240s, intended for existing durable CPU scheduler (zero GPUs). Pinned URL/ETag/size, conditional HTTP Range, sidecar checkpoints/full SHA, official weight hash prefix, restart integrity/no overwrite and exclusive workspace lock. This stage only downloads; archive extraction/CRC/image coverage and real evaluation remain pending.
+- Four deterministic transport regressions pass: deadline/resume, ignored-range rejection preserving bytes, completed/source tamper rejection, verified-digest rename-crash recovery. No dataset/model artifact tracked by Git.

@@ -489,3 +489,10 @@ Training 需求理解会在内部对已收到的接口格式错误最多修正�
 ```
 
 此命令不调用 API/SSH，可将旧请求记录补记到账本，显示已响应、未结算、账面剩余及预算门槛。历史 `budget.llm_calls` 仅供审计，不能当作新的修复额度；若契约声明了全局 `llm_calls`，在跨阶段消耗未对齐前会拒绝新修复调用。当前阶段账本不覆盖需求澄清、策略研究与 GPU 训练，不能据此声称全 Agent 统一预算已经完成。缺失历史证据会阻止准入，不会当成零消耗。
+
+
+### 首个基线的公共资源准备
+
+服务器端 `python3 -m vision_rsi.resource_bootstrap --root ABSOLUTE_ASSET_DIR --seconds 240` 可执行一轮有界下载；由 Windows 控制端通过现有持久化 CPU 作业协议调度。固定资源为 torchvision COCO_V1 检测权重、COCO2017 标注及验证图片压缩包；下载后记录完整 SHA-256，断点续传必须匹配 ETag/尺寸/Range。模块不启动训练、不用 GPU、不解压，也不把下载成功作为数据覆盖或模型效果已验收。下载收据和原始数据保存在独立资源目录。
+
+来源：[COCO下载页](https://cocodataset.org/#download)、[PyTorch固定模型权重说明](https://docs.pytorch.org/vision/master/models/generated/torchvision.models.detection.fasterrcnn_resnet50_fpn_v2.html)。官方参考 AP46.7 不等于本项目已复测，更不等于目标 AP60 已达标。训练图片尚未包含在此准备步骤中。
