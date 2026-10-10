@@ -452,3 +452,5 @@ Training 需求理解会在内部对已收到的接口格式错误最多修正�
 使用配置的 SSH 服务器执行 CPU FFmpeg，要求 Linux bwrap、FFmpeg/ffprobe 及兼容共享库。解码进程没有网络/GPU/宿主凭据，只读一个输入文件，仅私有输出目录可写。默认计划上限为 640×480、64 帧、30 秒；超出拒绝，不能静默缩放或截断。Training 契约可用 `processing.decoder` 明确覆盖：`protocol=source_first_min_interval_v1`、`fps`、`max_frames`、`max_width`、`max_height`、`max_duration_seconds`、`audio=ignore`；所有字段必填，最大原始 RGB 总量 64 MiB。此处限制是已冻结的执行边界，不是任务效果要求。
 
 输出带帧内容哈希、原始时间戳、计划与视频内容绑定；本地再次验证远端返回字节和采样间隔。当前只完成解码，不执行事件理解、联合多图模型或质量验收。
+
+采样与时间戳实现使用 FFmpeg 官方文档中的 [select 与 showinfo](https://www.ffmpeg.org/ffmpeg-filters.html)；实际验证的服务器版本为 4.4.2。解码器依赖版本仍需纳入正式发布环境固定。
