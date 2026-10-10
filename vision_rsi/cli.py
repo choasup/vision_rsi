@@ -3,7 +3,10 @@ import sys
 
 
 def main():
-    if len(sys.argv)>1 and sys.argv[1]=='baseline-status':
+    if len(sys.argv)>1 and sys.argv[1]=='baseline-watch':
+        from .baseline_watch import main as baseline_watch_main
+        baseline_watch_main(sys.argv[2:])
+    elif len(sys.argv)>1 and sys.argv[1]=='baseline-status':
         from .baseline_observe import main as baseline_status_main
         baseline_status_main(sys.argv[2:])
     elif len(sys.argv)>1 and sys.argv[1]=='baseline-audit':
