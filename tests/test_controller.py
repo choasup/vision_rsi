@@ -82,6 +82,24 @@ class ControllerTests(unittest.TestCase):
                 self.assertEqual(remote.call_count,1)
             from vision_rsi.controller import validate_check_binding
             with self.assertRaises(ValueError):validate_check_binding(dict(check_args,candidate_id='f'*64),ledger.events())
+            contract=json.loads(Path('examples/interface-contract.json').read_text(encoding='utf-8'))
+            contract_path=Path(folder)/'contract.json';contract_path.write_text(json.dumps(contract),encoding='utf-8')
+            import hashlib
+            config['research']['task_contract']={'path':str(contract_path),'sha256':hashlib.sha256(contract_path.read_bytes()).hexdigest()}
+            contract_args={'candidate_id':candidate_id,'module':'vision_rsi.harness_fixture','function':'predict','samples':[contract['example_input']]}
+            for index,output in enumerate((contract['example_output'],{'defects':[{'label':'scratch','start_seconds':-1}]})):
+                sample=json.loads(json.dumps(contract['example_input']));sample['sample_id']='case-'+str(index)
+                contract_args['samples']=[sample]
+                with patch('vision_rsi.remote.check_candidate',side_effect=lambda endpoint,request:{'status':'executed_unverified',
+                        'source_hashes':request['source_hashes'],'observation':{'results':[output]}}):
+                    conformance=execute('check_contract',dict(config,_research_candidate_context=context),repo,contract_args)
+                self.assertEqual(conformance['runtime_status'],'adapter_contract_passed' if index==0 else 'adapter_contract_failed')
+                self.assertFalse(conformance['quality_verified'])
+                self.assertEqual(conformance['frozen_contract_sha256'],config['research']['task_contract']['sha256'])
+            contract_path.write_text('{}',encoding='utf-8')
+            with patch('vision_rsi.remote.check_candidate') as remote,self.assertRaisesRegex(ValueError,'contract changed'):
+                execute('check_contract',dict(config,_research_candidate_context=context),repo,contract_args)
+            remote.assert_not_called()
 
     @patch('vision_rsi.controller.execute',return_value={'observed':True})
     @patch('vision_rsi.controller.OpenAICompatibleClient')

@@ -522,3 +522,10 @@
 - 初始候选7fba5aa08527a186cc4b2d36ced8e0fea7cbdbe7e0b2c79a42e2597b1f04d332实际CPU沙箱dict*int报TypeError；模型看到源码/失败结果后提出独立候选d1bfd68f14307264ca7f1c3de3cc45a736a07b34ebc754b640c73bad7b019417，predict增加dict取value键分支。控制器创建独立Git候选，原定输入1和{"value":3}复测输出value2/6、uid65534，原用例未改。
 - 这是固定公开开发用例的真实反馈修正联调，不是独立保留质量或同预算RSI效率提升证明；设置/复测动作由固定探针安排，不能称全流程自主选择。无GPU/训练，候选未采用，前两次失败证据保留。
 - 移除observatory中早期Demo固定COCO阻塞/GPU成本文字，改为明确需查看所选账本结果与审计；从原始成功账本重新生成观测页。3项ledger测试通过（0.124秒）。安装包未更新，完整上线目标未完成。
+
+## 候选验证连接固定任务合同（2026-10-10）
+
+- 新增check_contract研究动作：配置research.task_contract={path,sha256}且开启候选检查时可用。合同由本地配置固定原始文件SHA、读取≤512KiB；规划前和执行前重核，模型参数只含候选/模块/函数/样本，不接受合同覆盖。
+- 输入样本与输出schema复用Candidates.check_adapter，1..16样本且研究参数≤12000字符，候选仍须属于本研究stage结果。结果区分adapter_contract_passed/failed，保留合同SHA、失败条目、原始adapter报告及有界响应；quality_verified/adopted始终false。
+- 稳定检查身份额外绑定合同SHA；普通check_candidate旧ID算法保持，避免升级后重复发送历史检查。接口检查开发样本不构成独立任务质量或RSI验收。
+- 34项controller/controller_budget/ledger/not_dispatched测试通过（12.193秒）：真实临时Git候选、mock运输下合规输出通过/负时间戳输出失败、合同改动发送前拒绝。未实际调用LLM/SSH/GPU，新的合同控制器链真实执行待验证；安装包未重建，完整上线目标仍未完成。

@@ -794,3 +794,5 @@ AP 比较完整性与成本完整性分别显示：`comparison_complete` 不代�
 模型必须引用已观察的Git基线结果，主仓库必须保持tracked clean且HEAD匹配。动作先写账本，候选ID绑定动作、目标和提案；重复恢复复用已有候选。此步骤只检查语法并保存源码，不导入、执行或采用候选；沙箱运行、真实任务验收及同预算RSI效果评估仍是后续独立门槛。该入口尚未接通完整训练/推理能力发布流程。
 
 设置 `research.allow_candidate_checks=true` 可让同一控制器选择 `check_candidate`，引用本研究已暂存候选，提供模块、函数及1–16个JSON关键字参数用例。它调用既有远端CPU沙箱，不使用GPU；原始报告单独保存，研究账本保留报告摘要、身份与路径。相同目标/候选/用例使用稳定检查ID，已完成结果复用、不确定发送拒绝重发。模型选择的开发用例不构成独立质量验收，更不构成RSI提升证据。
+
+`check_contract` 将候选的输入/输出检查绑定到固定任务接口。在本地配置的 `research.task_contract` 中设置 `path`（建议使用training导出的冻结contract.json绝对路径）和 `sha256`（该文件原始字节SHA256），并开启 `allow_candidate_checks`。控制器在规划前和执行时重核文件身份；模型只能提供候选、模块、函数和开发样本，不能传入或覆盖合同。样本按合同校验，候选输出由既有adapter检查器验证，报告区分 `adapter_contract_passed` / `adapter_contract_failed`。通过仅代表这些开发样本的接口符合性，不代表AP、F1或RSI效率达标。
