@@ -357,3 +357,9 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - Receiver now requires a positive finite container duration within the frozen plan, fixed frame dimensions, integer sequence/byte accounting, and source PTS span consistent with container duration. Span uses exact rational PTS rather than subtraction of rounded float seconds, including large timestamp-offset regressions.
 - Targeted decoder tests reject missing/boolean/nonfinite/oversized duration, a self-consistent hash-valid frame with changed dimensions, timestamp span beyond container duration and float cancellation at large offsets. Previously actual H20 CLI receipt independently rechecked: duration1.5s,3 frames,source span1s; no new remote call/training/API. Evidence runs/video-decode-integration/receiver-duration-review.json.
+
+
+## Adapter candidate development contract gate (2026-10-10)
+
+- candidate adapter-check executes isolated adapter/harness functions on 1..16 validated development samples and independently checks each result against the frozen task output schema. Invalid interfaces/inputs fail before runtime. Contract/result-count/per-sample errors, candidate Git, request/source identities, contract SHA and verifier source hashes retained.
+- Runtime self-claims cannot set quality/adoption; this gate always leaves acceptance_evaluated/quality_verified/adopted false. This is only development contract conformance; no hidden/held-out task feedback, model training or serving promotion. Tests cover a failing second output, missing results, malformed task schema, missing inputs and untrusted runtime adoption claims.

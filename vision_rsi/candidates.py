@@ -184,6 +184,38 @@ class Candidates:
         atomic_json(path,evidence)
         return dict(evidence,report_path=str(path))
 
+    def check_adapter(self,candidate_id,remote,module,function,contract,samples):
+        """Development contract gate only; independent task quality comes later."""
+        from .contracts import issues,validate_sample,validate_schema
+        if not isinstance(module,str) or not re.fullmatch(r'vision_rsi\.(?:adapter|harness)_[a-z][a-z0-9_]*',module):
+            raise ValueError('Adapter contract check requires an adapter/harness candidate module')
+        encoded=json.dumps(contract,allow_nan=False).encode()
+        if len(encoded)>512*1024:raise ValueError('Adapter contract exceeds byte limit')
+        blockers=[error for error in issues(contract) if '预算' not in error and not error.startswith('待澄清:')]
+        if blockers:raise ValueError('Adapter check needs a defined task interface: '+'; '.join(blockers))
+        if not isinstance(samples,list) or not 1<=len(samples)<=16:raise ValueError('Adapter check needs 1..16 development samples')
+        for sample in samples:validate_sample(contract,sample)
+        cases=[{'sample':sample} for sample in samples]
+        evidence=self.check(candidate_id,remote,module,function,cases)
+        failures=[]
+        if evidence['status']=='executed_unverified':
+            results=evidence['response']['observation'].get('results')
+            if not isinstance(results,list) or len(results)!=len(samples):
+                failures.append({'error':'Adapter output count differs from requested samples'});results=[]
+            for index,value in enumerate(results):
+                try:validate_schema(contract['output_schema'],value)
+                except (ValueError,TypeError,KeyError) as error:failures.append({'sample_index':index,'error':str(error)})
+        else:failures.append({'error':'Adapter did not complete isolated execution'})
+        evidence.update(status='adapter_contract_failed' if failures else 'adapter_contract_passed',contract_failures=failures,
+                        contract=contract,contract_sha256=digest(contract),development_samples=samples,
+                        contract_validator_sha256=hashlib.sha256(Path(__file__).with_name('contracts.py').read_bytes()).hexdigest(),
+                        gate_source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                        acceptance_evaluated=False,quality_verified=False,adopted=False,
+                        limitation='Development input/output conformance only; no metric, held-out quality, RSI efficiency or adoption established.')
+        path=Path(evidence['report_path']).with_suffix('.adapter.json')
+        atomic_json(path,evidence)
+        return dict(evidence,adapter_report_path=str(path))
+
     def check_strategy(self,candidate_id,remote,module,cases):
         from .strategy_protocol import validate_context,validate_decision
         for case in cases:validate_context(**case)
@@ -209,11 +241,12 @@ class Candidates:
 def main(argv):
     import argparse
     parser=argparse.ArgumentParser(prog='vision-rsi candidate')
-    parser.add_argument('action',choices=['create','propose','list','show','check','strategy-check'])
+    parser.add_argument('action',choices=['create','propose','list','show','check','strategy-check','adapter-check'])
     parser.add_argument('--store',default='runs/research-candidates');parser.add_argument('--repository',default='.')
     parser.add_argument('--proposal');parser.add_argument('--evidence');parser.add_argument('--request-id');parser.add_argument('--candidate-id')
     parser.add_argument('--session-id');parser.add_argument('--sessions',default='runs/training-sessions')
     parser.add_argument('--module');parser.add_argument('--function');parser.add_argument('--cases')
+    parser.add_argument('--contract')
     parser.add_argument('--json',action='store_true')
     parser.add_argument('--config',default='config.local.json')
     args=parser.parse_args(argv);store=Candidates(args.store,args.repository)
@@ -228,20 +261,22 @@ def main(argv):
             if not session['versions']:raise ValueError('Define the task contract first')
             config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
             result=store.propose(args.request_id,session['versions'][-1]['contract'],json.loads(Path(args.evidence).read_text(encoding='utf-8-sig')),config['llm'])
-        elif args.action in ('check','strategy-check'):
-            if not all((args.candidate_id,args.module,args.cases)) or args.action=='check' and not args.function:
+        elif args.action in ('check','strategy-check','adapter-check'):
+            if not all((args.candidate_id,args.module,args.cases)) or args.action in ('check','adapter-check') and not args.function:
                 parser.error('check requires --candidate-id, --module, --cases; generic check also requires --function')
+            if args.action=='adapter-check' and not args.contract:parser.error('adapter-check also requires --contract')
             config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
             cases=json.loads(Path(args.cases).read_text(encoding='utf-8-sig'))
             if args.action=='strategy-check':result=store.check_strategy(args.candidate_id,config['remote'],args.module,cases)
+            elif args.action=='adapter-check':result=store.check_adapter(args.candidate_id,config['remote'],args.module,args.function,json.loads(Path(args.contract).read_text(encoding='utf-8-sig')),cases)
             else:result=store.check(args.candidate_id,config['remote'],args.module,args.function,cases)
         elif args.action=='show':
             if not args.candidate_id or not re.fullmatch('[0-9a-f]{64}',args.candidate_id):parser.error('show requires a valid --candidate-id')
             result=store.verify(json.loads((store.root/args.candidate_id/'candidate.json').read_text(encoding='utf-8')))
         else:result=[json.loads(path.read_text(encoding='utf-8')) for path in sorted(store.root.glob('*/candidate.json'))]
         if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
-        elif args.action in ('check','strategy-check'):
-            print('候选: '+result['candidate_id']+'\n运行检查: '+result['status']+'\n报告: '+result.get('protocol_report_path',result['report_path'])+'\n已采用: 否；尚未进行独立效果验收')
+        elif args.action in ('check','strategy-check','adapter-check'):
+            print('候选: '+result['candidate_id']+'\n运行检查: '+result['status']+'\n报告: '+result.get('adapter_report_path',result.get('protocol_report_path',result['report_path']))+'\n已采用: 否；尚未进行独立效果验收')
         else:
             records=result if isinstance(result,list) else [result]
             for record in records:

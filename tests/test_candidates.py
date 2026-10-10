@@ -16,6 +16,38 @@ def proposal():
 
 class CandidateTests(unittest.TestCase):
     @patch('vision_rsi.remote.check_candidate')
+    def test_adapter_gate_checks_each_output_without_accepting_quality_claims(self,remote):
+        contract=json.loads(Path('examples/interface-contract.json').read_text())
+        changed=proposal();changed['edits'][0].update(path='vision_rsi/adapter_fixture.py',content='def predict(sample):\n    return {"defects": []}\n')
+        record=self.store.create(changed,{'fixture':True})
+        def response(values):
+            remote.side_effect=lambda endpoint,request: {'status':'executed_unverified','source_hashes':request['source_hashes'],
+                    'observation':{'results':values},'adopted':True,'quality_verified':True}
+        samples=[contract['example_input'],dict(contract['example_input'],sample_id='another')]
+        response([{'defects':[]},{'defects':[]}])
+        result=self.store.check_adapter(record['candidate_id'],{},'vision_rsi.adapter_fixture','predict',contract,samples)
+        self.assertEqual(result['status'],'adapter_contract_passed')
+        self.assertFalse(result['adopted']);self.assertFalse(result['quality_verified']);self.assertFalse(result['acceptance_evaluated'])
+        self.assertTrue(Path(result['adapter_report_path']).is_file())
+        response([{'defects':[]},{'defects':[{'label':'defect','start_seconds':-1}]}])
+        result=self.store.check_adapter(record['candidate_id'],{},'vision_rsi.adapter_fixture','predict',contract,samples)
+        self.assertEqual(result['status'],'adapter_contract_failed');self.assertEqual(result['contract_failures'][0]['sample_index'],1)
+        response([])
+        result=self.store.check_adapter(record['candidate_id'],{},'vision_rsi.adapter_fixture','predict',contract,samples)
+        self.assertIn('count',result['contract_failures'][0]['error'])
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_adapter_invalid_inputs_and_contract_fail_before_execution(self,remote):
+        contract=json.loads(Path('examples/interface-contract.json').read_text())
+        with self.assertRaisesRegex(ValueError,'required'):
+            self.store.check_adapter('a'*64,{},'vision_rsi.adapter_fixture','predict',contract,[{'sample_id':'missing','inputs':{}}])
+        bad=json.loads(json.dumps(contract));bad['output_schema']['properties']['defects']['items']['type']='unsupported'
+        with self.assertRaisesRegex(ValueError,'defined task interface'):
+            self.store.check_adapter('a'*64,{},'vision_rsi.adapter_fixture','predict',bad,[contract['example_input']])
+        remote.assert_not_called()
+        self.assertFalse((self.store.root/('a'*64)).exists())
+
+    @patch('vision_rsi.remote.check_candidate')
     def test_aggregate_case_limit_rejected_before_remote_or_evidence(self,remote):
         from vision_rsi.candidate_runtime import encode_cases
         case={'history':[{'id':'observed','note':'x'*300000}],'actions':[],'budget':1}

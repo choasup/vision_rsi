@@ -454,3 +454,14 @@ Training 需求理解会在内部对已收到的接口格式错误最多修正�
 输出带帧内容哈希、原始时间戳、计划与视频内容绑定；本地再次验证远端返回字节和采样间隔。当前只完成解码，不执行事件理解、联合多图模型或质量验收。
 
 采样与时间戳实现使用 FFmpeg 官方文档中的 [select 与 showinfo](https://www.ffmpeg.org/ffmpeg-filters.html)；实际验证的服务器版本为 4.4.2。解码器依赖版本仍需纳入正式发布环境固定。
+
+
+### 通用适配器候选的接口检查
+
+```powershell
+.\vision-rsi.cmd candidate adapter-check --candidate-id CANDIDATE_SHA256 --module vision_rsi.adapter_candidate --function predict --contract contract.json --cases development-samples.json
+```
+
+`development-samples.json` 为 1..16 个符合任务契约的 sample 对象组成的 JSON 数组；隔离候选函数签名为 `predict(sample)`，每个返回值必须符合该契约的 `output_schema`。允许 `adapter_*.py` 或 `harness_*.py` 候选模块，仍执行于已有 CPU/无网络/无 GPU 沙箱。发送前验证输入，返回后由控制端独立校验每个输出；报告绑定候选 Git、契约、验证器源码及原始运行报告。
+
+这是开发样本的接口门槛，不能替代真实模型评测、保留集验收或 RSI 效率证明。通过不注册能力、不采用候选、不改变 Test；候选自行返回的达标声明不被采用。当前沙箱依赖仍为 Python 标准库，未接通训练型通用模型适配器。
