@@ -168,7 +168,7 @@ def load(study_id,root):
 
 def step(study_id,pair_index,arm,root='runs/paired-studies',steps=3):
     record=load(study_id,root);identity=record['identity']
-    if sources()!=identity['control_sources'] or revision()!=identity['git_revision']:raise ValueError('Run study from its frozen control source revision')
+    verify_control(identity)
     verify_study_candidate(identity)
     if arm not in ('baseline','candidate') or isinstance(pair_index,bool) or not isinstance(pair_index,int) or not 0<=pair_index<len(identity['pairs']):raise ValueError('Invalid study arm or pair index')
     pair=identity['pairs'][pair_index];bound=pair[arm]
@@ -191,8 +191,15 @@ def verify_study_candidate(identity):
         raise ValueError('Candidate differs from preregistered Git/source identity')
 
 
+def verify_control(identity):
+    """Execution and final comparison use the same frozen control programs."""
+    if sources()!=identity['control_sources'] or revision()!=identity['git_revision']:
+        raise ValueError('Run study from its frozen control source revision')
+
+
 def compare(study_id,root='runs/paired-studies'):
     record=load(study_id,root);identity=record['identity'];pairs=[];missing=[]
+    verify_control(identity)
     verify_study_candidate(identity)
     for index,pair in enumerate(identity['pairs']):
         results={}
@@ -251,6 +258,9 @@ def compare(study_id,root='runs/paired-studies'):
     if complete and 'statistical_rule' in identity:
         statistical=paired_sign_evidence([p['ap_gain'] for p in pairs],identity['minimum_mean_ap_gain'],identity['statistical_rule'])
     return {'study_id':study_id,'pairs':pairs,'missing_evidence':missing,'comparison_complete':complete,'mean_paired_ap_gain':mean,
+            'comparison_control_identity':{'git_revision':identity['git_revision'],
+                                           'source_manifest_sha256':digest(identity['control_sources']),
+                                           'frozen_control_verified':True},
             'llm_budget_design':{'mode':'independent_per_arm' if 'llm_call_limit_per_arm' in identity else 'shared_or_unbounded',
                                  'call_limit_per_arm':identity.get('llm_call_limit_per_arm'),'billing_budget_enforced':False,
                                  'independent_arm_call_caps_verified':bool(complete and 'llm_call_limit_per_arm' in identity and

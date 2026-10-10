@@ -12,6 +12,30 @@ from vision_rsi.paired_study import create,load,step,compare,paired_sign_evidenc
 
 
 class PairedStudyTests(unittest.TestCase):
+    def test_comparison_source_drift_refused_before_campaign_audit(self):
+        record=self.create()
+        with patch('vision_rsi.paired_study.sources',return_value={}),patch('vision_rsi.paired_study.audit') as reviewer:
+            with self.assertRaisesRegex(ValueError,'frozen control source'):
+                compare(record['study_id'],self.studies)
+            reviewer.assert_not_called()
+
+    def test_comparison_revision_drift_refused_before_campaign_audit(self):
+        record=self.create()
+        with patch('vision_rsi.paired_study.revision',return_value='e'*40),patch('vision_rsi.paired_study.audit') as reviewer:
+            with self.assertRaisesRegex(ValueError,'frozen control source'):
+                compare(record['study_id'],self.studies)
+            reviewer.assert_not_called()
+
+    def test_comparison_records_frozen_control_identity_without_adoption(self):
+        from vision_rsi.runner import digest
+        record=self.create();result=compare(record['study_id'],self.studies)
+        self.assertEqual(result['comparison_control_identity'],{
+            'git_revision':record['identity']['git_revision'],
+            'source_manifest_sha256':digest(record['identity']['control_sources']),
+            'frozen_control_verified':True})
+        self.assertFalse(result['comparison_complete'])
+        self.assertFalse(result['agent_adopted'])
+
     def test_explicit_per_arm_api_caps_are_isolated_and_used_by_execution(self):
         self.spec.update(research_rounds=1,llm_call_limit_per_arm=1)
         record=self.create();pair=record['identity']['pairs'][0]
