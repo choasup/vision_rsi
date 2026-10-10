@@ -340,3 +340,8 @@
 - study compare 每个核验实验对加入resource_comparison，展示GPU小时、动作耗时、实验规划Token的两臂值与candidate-minus-baseline差值。完整性标记不真/非有限/负值/bool/非整数Token保持null；Token范围缺失或不一致标记不完整。
 - 17项成本/paired-study/campaign-audit测试通过（.830秒）；补充集成断言确认缺成本的AP比较不会误标成本完整。观测比较与AP完整性分别显示，不自动推断公平预算、效率提升或采用候选。
 - 本轮仅mock及本地逻辑，无真实API/SSH/GPU/训练。成本范围不含全部CPU/项目总费用/需求与候选生成；安装包尚未重建，真实同预算研究提升及完整上线仍未证明。
+## 自然语言需求与事件验收协议衔接（2026-10-10）
+
+- clarification prompt加入独立video_events评测说明，明确事件micro-F1/0..1、时间IoU最大数量匹配、events输出与额外iou_threshold字段；要求只在语义匹配/接受该协议时选用，保留用户已有指标，不发明F1目标，不声称视频训练可用。
+- issues对精确event_micro_f1/v1协议提前校验metric/direction、有限0..1目标、显式0<IoU<=1及events输出属性，错误properties类型返回问题而非崩溃。其它协议不自动转换。
+- 29项contracts/event_eval/training_shell/task_adapters测试通过（.576秒），含mock澄清消息、非法验收字段和无效schema。无真实API/SSH/GPU调用，视频训练适配器和质量证据仍缺失，安装包尚未重建，完整上线目标未完成。

@@ -6,6 +6,36 @@ from pathlib import Path
 from vision_rsi.contracts import Sessions,issues,validate_sample,validate_schema,validate_manifest
 
 class ContractTests(unittest.TestCase):
+    def test_event_protocol_requires_executable_acceptance_fields(self):
+        from vision_rsi.event_eval import PROTOCOL
+        contract=json.loads(json.dumps(self.contract))
+        contract['acceptance']={'metric':'event_micro_f1','direction':'maximize',
+                                'evaluation_protocol':PROTOCOL,'threshold':.9,'iou_threshold':.5}
+        contract['output_schema']={'type':'object','properties':{'events':{'type':'array','items':{'type':'object','properties':{}}}}}
+        contract['example_output']={'events':[]}
+        self.assertEqual(issues(contract),[])
+        for key,value,fragment in [('iou_threshold',None,'iou_threshold'),('iou_threshold',True,'iou_threshold'),
+                                   ('threshold',90,'0..1'),('metric','AP','event_micro_f1'),
+                                   ('direction','minimize','event_micro_f1')]:
+            changed=json.loads(json.dumps(contract));changed['acceptance'][key]=value
+            self.assertTrue(any(fragment in error for error in issues(changed)))
+        contract['output_schema']={'type':'object','properties':{'other':{'type':'string'}}}
+        self.assertTrue(any('events' in error for error in issues(contract)))
+        contract['output_schema']={'type':'object','properties':42}
+        self.assertTrue(any('events' in error for error in issues(contract)))
+
+    @patch('vision_rsi.contracts.OpenAICompatibleClient')
+    def test_clarification_describes_event_evaluator_without_claiming_video_training(self,client):
+        with tempfile.TemporaryDirectory() as root:
+            store=Sessions(root);session=store.create('video-task','Find events in a video')['session_id']
+            client.return_value.complete.return_value={'content':json.dumps(self.contract)}
+            store.clarify(session,{'model':'fixture'},'F1 at least 0.9')
+            prompt=json.loads(client.return_value.complete.call_args.args[0][1]['content'])
+            defaults=prompt['available_evaluation_defaults']['video_events']
+            self.assertEqual(defaults['metric_scale'],'0..1')
+            self.assertIn('no video model training',defaults['implementation_scope'])
+            self.assertIn('Never replace an explicit metric',defaults['selection_policy'])
+
     def setUp(self): self.contract=json.loads(Path('examples/interface-contract.json').read_text())
     def test_missing_key_does_not_leave_pending_clarification(self):
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ',{'VISION_RSI_UNSET':''}), patch('vision_rsi.llm.urlopen') as http:
