@@ -352,6 +352,8 @@ JSONL 每行一个联合样本，逐行检查输入协议并拒绝重复 sample_
 
 返回 `runs/harnesses/executable-BUNDLE_SHA256`，包含冻结的 Python 运行源码、契约、配置、manifest 和 Windows `run.cmd`，可在仓库外调用。配置仅导出支持的字段，API Key 仍从本地环境读取。任务包绑定原会话和共享账本的绝对路径；复制包不会创建新会话或重置 GPU 预算，原存储和远端资源仍需可用。
 
+当前源码新构建的可执行包支持已晋升通用候选的 `test --version VERSION --input sample.json`，核对冻结合同和会话身份。训练入口也提供 `training --action select-candidate`、`deliver-candidate`、`delivery-status`、`release-status`。自动选型交付使用 `training --action deliver-candidate --select-development --dataset HOLDOUT --max-latency-seconds SECONDS`；状态查询使用 `--version VERSION`（delivery-status 指原候选版本）。选型和交付绑定构建时的 research-root；旧包未记录该路径时需重新构建，不能猜测研究目录。这些新增导出功能尚未包含在 dev9 离线包中。通用候选当前验收范围仍为事件 F1 和有界 CPU 执行，不代表 COCO AP 或上线验收通过。
+
 ```powershell
 PATH_TO_HARNESS\run.cmd check
 PATH_TO_HARNESS\run.cmd training --action prepare

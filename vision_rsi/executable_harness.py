@@ -8,7 +8,7 @@ import uuid
 from .runner import digest
 
 
-ENTRY=r'''import argparse,hashlib,json,re,sys
+ENTRY=r'''import argparse,base64,hashlib,json,re,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 
@@ -17,7 +17,9 @@ def main():
     p.add_argument('mode',choices=['check','validate-input','validate-output','prepare-input','verify-input','decode-input','evaluate-events','training','test'])
     p.add_argument('--ground-truth');p.add_argument('--predictions')
     p.add_argument('--field')
-    p.add_argument('--action',choices=['prepare','advance','watch','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate'],default='prepare')
+    p.add_argument('--action',choices=['prepare','advance','watch','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','select-candidate','deliver-candidate','delivery-status','release-status'],default='prepare')
+    p.add_argument('--dataset');p.add_argument('--max-latency-seconds',type=float)
+    p.add_argument('--select-development',action='store_true')
     p.add_argument('--input');p.add_argument('--input-dir');p.add_argument('--samples-manifest');p.add_argument('--output');p.add_argument('--output-dir')
     p.add_argument('--version');p.add_argument('--run-id');p.add_argument('--campaign-id');p.add_argument('--steps',type=int,default=3)
     p.add_argument('--watch-seconds',type=float,default=3600);p.add_argument('--poll-seconds',type=float,default=15)
@@ -127,6 +129,12 @@ def main():
             args=[a.action,'--session-id',identity['session_id'],'--sessions',storage['sessions'],'--run-store',storage['runs'],
                   '--campaign-store',storage['campaigns'],'--registry',storage['registry'],'--config',str(ROOT/'config.json'),'--json']
             if a.action=='prepare':args+=['--output',storage['plans']]
+            if a.action in ('select-candidate','deliver-candidate'):
+                if not storage.get('research'):raise ValueError('Harness requires explicit research storage; rebuild with the research directory')
+                args+=['--research-root',storage['research']]
+            if a.dataset:args+=['--dataset',a.dataset]
+            if a.max_latency_seconds is not None:args+=['--max-latency-seconds',str(a.max_latency_seconds)]
+            if a.select_development:args+=['--select-development']
             args+=['--steps',str(a.steps),'--watch-seconds',str(a.watch_seconds),'--poll-seconds',str(a.poll_seconds),'--chunk-size',str(a.chunk_size)]
             for flag,value in [('--run-id',a.run_id),('--campaign-id',a.campaign_id),('--research-rounds',a.research_rounds),('--version',a.version),('--wall-seconds-budget',a.wall_seconds_budget)]:
                 if value is not None:args+=[flag,str(value)]
@@ -140,7 +148,13 @@ def main():
             version=registry.resolve_version(identity['task_id'],a.version)
             manifest_path=Path(storage['registry'])/identity['task_id']/version/'manifest.json'
             capability=json.loads(manifest_path.read_text(encoding='utf-8'))
-            if capability.get('endpoint',{}).get('contract')!=contract:raise ValueError('Capability contract differs from frozen harness')
+            if capability.get('spec',{}).get('kind')=='candidate_bundle':
+                from vision_rsi.candidate_bundle import verify
+                candidate=verify(manifest_path.parent/'bundle.json')
+                capability_contract=json.loads(base64.b64decode(candidate['contract_base64']))
+                if capability.get('session_id')!=identity['session_id']:raise ValueError('Candidate belongs to a different frozen harness session')
+            else:capability_contract=capability.get('endpoint',{}).get('contract')
+            if capability_contract!=contract:raise ValueError('Capability contract differs from frozen harness')
         finally:registry.close()
         args=['test','--task-id',identity['task_id'],'--version',a.version,'--registry',storage['registry']]
         for flag,value in [('--input',a.input),('--input-dir',a.input_dir),('--manifest',a.samples_manifest),('--output',a.output),('--output-dir',a.output_dir)]:
@@ -154,7 +168,8 @@ if __name__=='__main__':raise SystemExit(main())
 
 
 def build_executable(session,interface,config,storage,root):
-    if set(storage)!={'sessions','runs','campaigns','registry','plans'}:raise ValueError('Harness needs original shared storage locations')
+    required={'sessions','runs','campaigns','registry','plans'}
+    if not required<=set(storage) or set(storage)-required-{'research'}:raise ValueError('Harness needs original shared storage locations')
     storage={key:str(Path(value).resolve()) for key,value in storage.items()}
     safe={'llm':{key:config.get('llm',{})[key] for key in ('model','base_url','api_key_env','thinking','usage_ledger','usage_call_limit') if key in config.get('llm',{})},
           'remote':{key:config.get('remote',{})[key] for key in ('ssh_host','ssh_port','workspace','python','coco_root') if key in config.get('remote',{})},

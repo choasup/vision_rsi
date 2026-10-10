@@ -545,7 +545,7 @@ def main(argv):
                 if not args.offline:
                     from .executable_harness import build_executable
                     config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
-                    storage={'sessions':args.sessions,'runs':args.run_store,'campaigns':args.campaign_store,'registry':args.registry,'plans':'runs/training-plans'}
+                    storage={'sessions':args.sessions,'runs':args.run_store,'campaigns':args.campaign_store,'registry':args.registry,'plans':'runs/training-plans','research':args.research_root}
                     result=build_executable(store.show(session),result,config,storage,args.output or 'runs/harnesses')
             elif args.action=='reply':
                 if not args.message: raise ValueError('--message required')
