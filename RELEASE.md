@@ -366,3 +366,8 @@
 - 重用时核对完整身份/metadata/artifact，独立包入口也核对manifest与identity一致。代码变化生成新包，旧包不覆盖；同合同不同session分包。已存在旧格式包不自动更改。
 - 22项harness/executable_harness/contracts测试通过（5.254秒），含模拟运行时代码变化后新包/复用、旧包字节不变、不同session隔离、篡改session元数据构建与独立入口拒绝。首次模拟把注释放在抽取片段外未改变运行时代码，测试修正为片段内变更后通过。
 - 无API/SSH/GPU/模型训练，身份哈希不防同机整体重写，安装包尚未重建，完整上线目标仍未完成。
+## 实际任务v5独立接口包验证（2026-10-10）
+
+- 新增tests/task_bundle_probe.py，显式session-id，用公开training build --offline --json命令导出实际任务，在独立临时cwd及Python -I进程运行check、输入/输出示例校验、非法输出拒绝和infer无模型阻塞五项预登记检查；重复build验证同bundle复用，会话数据库字节不变。
+- 实际任务df8e8f8991ee496d859e35fab2085d8f v5全部通过。bundle ae789add6007c328e25300a9b9918c2d187af59a52b225cb0992f52a17537429；证据runs/task-bundle-probes/6a52bbc68cd34278a785d9e1ad844710/{preregistered.json,results.json,evidence.json}，包位于其bundles/my-vision-task-v5-ae789add6007。
+- 示例仅合同数据，无模型输出或质量证明。本轮无API/SSH/GPU/训练，保持实际预算未设置，未注册能力，完整上线门槛仍未完成。
