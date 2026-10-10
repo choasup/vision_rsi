@@ -492,3 +492,9 @@
 - 通过Candidates.check调用现有远端CPU沙箱；原始检查报告保留，研究账本记录runtime_status、报告路径/digest及有界response投影。质量验证/采用始终false，模型开发用例不能替代独立验收。
 - 稳定check ID绑定目标SHA与完整候选/模块/函数/用例参数，跨新动作也复用已完成收据，已有reserved不确定检查拒绝重发；每轮新的开发用例可继续观察。未接入GPU训练或自动采用。
 - 33项controller/controller_budget/ledger/not_dispatched测试通过（10.614秒），包含真实临时Git候选通过mock远端运输写回账本、同动作/新动作相同检查只调用一次运输、其它候选ID拒绝。此轮未实际调用SSH/LLM/GPU，不能声称新的控制器链真实沙箱已通过。配置/文档/应用能力说明同步，安装包未重建；完整上线目标未完成。
+
+## 研究候选真实远端CPU链路（2026-10-10）
+
+- 新增tests/live_research_candidate_probe.py --live-remote：固定非LLM开发候选，由research_step恢复预写stage/check动作；禁止任何规划API调用。候选绑定实际仓库检查基线，独立Git提交；实际SSH调用现有CPU沙箱。
+- 真实探针通过，证据 runs/research-candidate-live/fcafdb462f674c2facb18d3815d8345a/{preregistered.json,evidence.json,controller-result.json,research/research.sqlite3}；候选原始检查报告在该研究目录/candidates下。输入1/3返回2/6，实际候选进程uid65534；返回运行限制gpu=false、network=false。未重新攻击验证全部隔离边界。
+- 相同检查改用另一action绑定，禁止远端运输调用后仍成功复用报告且digest相同。真实远端失败反馈、模型自主提案选择、真实训练与RSI效果不在本探针范围；未调用LLM/GPU，未采用候选。安装包未更新，完整上线目标未完成。
