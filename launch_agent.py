@@ -11,9 +11,13 @@ from urllib.error import URLError
 
 def task_cli_paths(arguments,caller):
     """Explicit local task paths belong to the caller; defaults belong to the app."""
-    if not arguments or arguments[0] not in ('training','test'):return list(arguments)
-    paths={'--config','--sessions','--run-store','--campaign-store','--registry','--candidate-store',
+    if not arguments:return []
+    task_paths={'--config','--sessions','--run-store','--campaign-store','--registry','--candidate-store',
            '--contract','--sample','--result','--output','--manifest','--input','--input-dir','--output-dir','--task'}
+    paths={'training':task_paths,'test':task_paths,
+           'evaluate-events':{'--ground-truth','--predictions','--contract','--output'},
+           'experiment-request':{'--store'}}.get(arguments[0])
+    if paths is None:return list(arguments)
     result=[];index=0
     while index<len(arguments):
         argument=arguments[index];flag,separator,value=argument.partition('=')

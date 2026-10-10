@@ -407,3 +407,8 @@
 - 新增有界JSON读取：标注/预测各16MiB、合同4MiB，拒绝重复字段/非有限常量、超过64层嵌套。最多1000标签、每文档100000事件、每次1000000个逐样本标注×预测比较对，超限在匹配前拒绝；保留既有每样本1000事件/10000样本边界，不截断数据。
 - 输出新增comparison_pairs工作量计数。协议与合格输入计分语义不变，冻结可执行包自动包含新评分模块，但旧包不自动更新。
 - 30项event_eval/executable_harness/contracts测试通过（7.157秒），覆盖JSON重复/常量/深度/大小，超工作量不调用匹配函数，既有合同和冻结入口回归。无API/SSH/GPU或训练，安装dev2尚未包含此次更新，完整上线目标仍未完成。
+## 新评测/观测命令的源码启动路径（2026-10-10）
+
+- launch_agent.task_cli_paths扩展按命令限定的本地路径：evaluate-events ground-truth/predictions/contract/output，以及experiment-request store，按调用者cwd转绝对路径，保留training/test既有行为和其它命令行为，不改默认存储路径或文本参数。
+- 21项launcher_paths/cli_help/experiment_observe/event_eval测试通过（2.206秒），包含实际独立子进程从外部cwd读取合成事件并写回调用者目录，以及读取带空格账本目录、前后数据库字节相同。
+- 本轮只源码启动器/测试/文档变更，无API/SSH/GPU，安装模块cwd语义不变；不证明任务质量，完整上线目标仍未完成。
