@@ -1,5 +1,13 @@
 # Vision RSI Agent
 
+最新本地可安装开发包为 `0.1.0.dev5`，位于 `runs/release-dev5/wheelhouse/vision_rsi_agent-0.1.0.dev5-py3-none-any.whl`。源码全量 410 项测试与独立安装环境 216 项回归通过；这些验证覆盖软件交付，不代表 COCO AP≥60 或 RSI 效率已验收。本机已验证的独立安装入口：
+
+```powershell
+& .\runs\release-dev5\venv\Scripts\python.exe -m vision_rsi --help
+```
+
+安装环境从仓库外运行时，请显式传入配置、会话、研究目录和仓库的绝对路径。安装验证证据保存在 `runs/release-dev5/installed-evidence.json`，不包含密钥。
+
 Windows 本地 CLI，通过 SSH 调度视觉研究任务。核心入口是 `training start`（自然语言定义与澄清）、`training watch`（持续研究控制）和 `test`（按已验收任务版本推理）。COCO 检测是首个真实任务适配器。
 
 当前开发状态：已实现真实 LLM、SSH 作业、固定检测器训练/恢复、官方 COCO 指标计算、结果验收及版本化推理接口；H20 小规模开发验证已执行。官方预训练权重在完整 COCO val2017 的 CPU 基线已测得 box AP46.7097，隔离本地环境复算一致；完整 COCO 训练和 AP≥60 验收尚未完成，没有真实达标 COCO 能力，也尚无通用 RSI 效率提升的独立证据。当前应用只支持可信本地用户，不是公网多用户服务。
