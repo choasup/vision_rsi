@@ -403,3 +403,8 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Extraction has a standalone CLI with explicit SHA/byte/file bounds; malformed CRC cleans staging, special files and reserved receipt paths are rejected, including platform-normalized entry names. Actual Linux CPU fixture extraction passed without GPU; evidence runs/resource-bootstrap/extraction-linux-fixture.json. Targeted11 detector/download/extraction tests passed.
 
 - Full182-test suite passed in65.928s after readiness/extraction changes. Attempt a1 terminal completed with archive still partial6,455,415 bytes; bounded CPU attempt a2 resumes it. Actual COCO extraction/evaluation remains pending; no real training or quality/adoption claim.
+
+## Durable resource CLI (2026-10-10)
+
+- Added resources command that journals the exact CPU job/source/remote identity before submitting, observes the same handle after uncertain transport and starts another bounded step only after authoritative completed/partial confirmation. Lost/failed jobs hold their handle; remote spec/source changes reject. Verified download summaries retain dataset_ready=false. Five recovery/source/summary tests plus four transport regressions pass.
+- Migrated the existing a2 handle from its saved exact job manifest into runs/resource-bootstrap/cli-records; actual Windows vision-rsi.cmd invocation reported the same running a2 job, new_attempt_started=false. Endpoint throughput probe timed out; it is not evidence of stopped downloader or usable alternate mirror. Real evaluation/training remains pending.

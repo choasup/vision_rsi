@@ -500,3 +500,9 @@ Training 需求理解会在内部对已收到的接口格式错误最多修正�
 ### Resource extraction and readiness
 
 After download receipts report a completed archive, use `python -m vision_rsi.resource_extract --archive ARCHIVE --destination NEW_DIRECTORY --sha256 FULL_SHA256 --max-bytes LIMIT --max-files LIMIT`. Destination must be new; CRC and SHA are checked before publication. Extraction does not certify dataset coverage. The detector dataset check reports `evaluation_ready` separately from `training_ready`; a validation-only dataset cannot authorize training. Pixel decoding and measured COCO AP remain separate verification steps.
+
+### Durable resource preparation CLI
+
+Run `vision-rsi resources --config config.local.json --root /absolute/remote/assets/coco2017 --records runs/resources`. On Windows use `./vision-rsi.cmd` instead of `vision-rsi`. Each invocation submits at most one CPU-only download step (240s download window,270s worker limit). Repeating while queued/running observes the same job. A confirmed completed partial step permits the next attempt; lost/failed/uncertain submission never silently creates another job. Retain the records directory. Download completion does not imply extraction, dataset readiness or model quality.
+
+The current development download is already tracked under `runs/resource-bootstrap/cli-records`; use that directory to observe/continue it rather than creating another record set for the same resources.
