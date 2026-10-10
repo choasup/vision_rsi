@@ -157,7 +157,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','candidate-infer','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -193,6 +193,28 @@ def main(argv):
     parser.add_argument('--research-watch-turns',type=int,default=6,help='Maximum foreground general-research steps (1..1000)')
     parser.add_argument('--repository',default='.',help='Git source repository for general research; required explicitly outside the checkout')
     args=parser.parse_args(argv)
+    if args.action=='candidate-infer':
+        if not args.task_id or not args.session_id or not args.version or not args.request_id or bool(args.sample)==bool(args.manifest):
+            parser.error('candidate-infer requires --task-id, --session-id, --version, --request-id and exactly one of --sample/--manifest')
+        import sqlite3
+        from .capability import Capabilities
+        from .candidate_inference import infer
+        from .event_eval import read_document
+        try:
+            session=Sessions(args.sessions,read_only=True).show(args.session_id)
+            if session['task_id']!=args.task_id:raise ValueError('Task ID differs from session')
+            source=Path(args.sample or args.manifest).resolve()
+            if args.sample:
+                _,sample=read_document(source,512*1024);samples=[sample]
+            else:
+                if source.stat().st_size>1024*1024:raise ValueError('Manifest exceeds 1 MiB')
+                samples=[json.loads(line) for line in source.read_text(encoding='utf-8-sig').splitlines() if line.strip()]
+            config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
+            registry=Capabilities(args.registry)
+            try:result=infer(registry,session,args.version,args.request_id,samples,source.parent,config['remote'])
+            finally:registry.close()
+        except (ValueError,KeyError,TypeError,OSError,RuntimeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
+        print(json.dumps(result,ensure_ascii=False,indent=2));return
     if args.action=='candidate-serving-check':
         if not args.session_id or not args.version or not args.dataset or args.max_latency_seconds is None:
             parser.error('candidate-serving-check requires --session-id, --version, --dataset and --max-latency-seconds')

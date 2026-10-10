@@ -25,3 +25,9 @@ class CLIHelpTests(unittest.TestCase):
         self.assertIn('readiness',output)
         self.assertIn('--session-id',output)
         self.assertIn('start',output)
+
+    def test_candidate_infer_dispatches_to_training_parser(self):
+        output=self.invoke('training','candidate-infer','--help')
+        self.assertIn('--request-id',output)
+        self.assertIn('--sample',output)
+        self.assertIn('--manifest',output)

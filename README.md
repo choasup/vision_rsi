@@ -1001,3 +1001,15 @@ python -m vision_rsi training release-status --session-id SESSION --json
 CPU 运行器会在候选执行前后记录并核对指定环境组件：沙箱 Python 与 bwrap 二进制 SHA256、bwrap 路径、内核、架构和控制进程 Python 版本。服务检查将验收时的环境指纹发送给运行器；不匹配时，运行器在启动候选进程前拒绝。记录指纹及内容校验会随执行证据保存，`selected_runtime_consistent` 表示这些指定组件的观测一致；完整标准库、动态依赖、硬件和视频解码环境尚未全部覆盖，`environment_fully_verified` 仍为 false。
 
 开发指标身份和研究记忆也包含已记录的环境指纹。不同指纹、或未记录环境的旧记录会分组处理，不直接混排为同一组研究效果。未记录环境不等于环境相同，也不会因此获得发布资格。
+## 按任务代号试运行已验收候选（源码版本）
+
+通用候选完成 `register-candidate`、`accept-candidate` 和 `candidate-serving-check` 后，可执行新输入。当前入口是候选试运行，不会自动晋升为正式 `test` 能力。需要记录了冻结用户态环境的服务检查；旧的无环境记录不自动满足条件。此入口尚未包含在 dev7 安装包。
+
+```powershell
+.\vision-rsi.cmd training candidate-infer --task-id TASK --session-id SESSION --version VERSION --request-id trial-001 --sample sample.json
+.\vision-rsi.cmd training candidate-infer --task-id TASK --session-id SESSION --version VERSION --request-id trial-002 --manifest samples.jsonl
+```
+
+单条输入为契约 sample 对象；JSONL 每行一个 sample，最多16条，sample_id 不重复。一个 sample 内可包含契约定义的多图联合输入或视频，遵循该 bundle 的媒体/解码协议；这不表示已具备通用学习型视觉模型。相对媒体路径以输入文件所在目录为基准，保留既有媒体大小与执行隔离限制。
+
+请求 ID 固定任务版本、实际输入指纹、运行环境和服务证据。相同请求复用记录，输入/证据变化拒绝复用；不确定执行不自动重发。新任务请求使用新的 ID。结果及执行记录位于注册表的 `TASK/candidate-inference/REQUEST_ID`，逐条输出按 sample_ids 对应。调用只复核已有验收/服务证据，不补跑验收；需保留原验收数据及媒体以供核对。`quality_verified=false` 表示没有新输入真值验证，不能据此宣称新输入达标。

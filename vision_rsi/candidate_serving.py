@@ -19,7 +19,7 @@ def _checked(path):
     return value
 
 
-def check(registry,session,version,dataset_path,remote,max_latency_seconds):
+def check(registry,session,version,dataset_path,remote,max_latency_seconds,*,cached_only=False):
     if type(max_latency_seconds) not in (int,float) or not math.isfinite(max_latency_seconds) or not 0<max_latency_seconds<=120:
         raise ValueError('Specify an explicit finite end-to-end latency target in (0,120] seconds')
     max_latency_seconds=float(max_latency_seconds)
@@ -54,13 +54,17 @@ def check(registry,session,version,dataset_path,remote,max_latency_seconds):
     binding={'task_binding':task_binding,'version':version,'acceptance_report_sha256':report['report_sha256'],
              'bundle_id':bundle['bundle_id'],'max_latency_seconds':max_latency_seconds,
              'input_manifest':rows,'selected_runtime_sha256':runtime_hash,'gate_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
-    root=registry.root/name/'candidate-serving';root.mkdir(parents=True,exist_ok=True)
+    root=registry.root/name/'candidate-serving'
+    if cached_only and not root.is_dir():raise ValueError('Completed serving checks required; inference cannot start serving trials')
+    root.mkdir(parents=True,exist_ok=True)
     with lease(root/'serving.lock',owner='Candidate serving checks'):
         seal_path=root/'binding.json'
         if seal_path.exists():
             _,saved=read_document(seal_path,4*1024*1024)
             if saved!=binding:raise ValueError('Serving slot frozen; target, candidate or evidence cannot change')
-        else:atomic_json(seal_path,binding)
+        else:
+            if cached_only:raise ValueError('Serving binding missing')
+            atomic_json(seal_path,binding)
         trials=[]
         for index in range(2):
             trial_path=root/('trial-'+str(index)+'.json')
@@ -73,6 +77,7 @@ def check(registry,session,version,dataset_path,remote,max_latency_seconds):
                 if not Path(trial['execution_path']).resolve().is_relative_to(root/('execution-'+str(index))):
                     raise ValueError('Serving trial execution directory differs')
             else:
+                if cached_only:raise ValueError('Completed serving trial missing; inference cannot execute a new trial')
                 if (root/('execution-'+str(index))).exists():raise RuntimeError('Untracked serving execution retained; refusing fresh measurement claim')
                 trial={'binding_sha256':digest(binding),'status':'reserved','index':index}
                 trial['record_sha256']=digest(trial);atomic_json(trial_path,trial)
@@ -95,11 +100,14 @@ def check(registry,session,version,dataset_path,remote,max_latency_seconds):
         result={'task_id':name,'version':version,'binding_sha256':digest(binding),
                 'status':'serving_contract_checks_met' if passed else 'serving_contract_checks_not_met',
                 'trials':trials,'fresh_execution_count':2,'latency_scope':'Entire supplied batch, including transport and decode',
+                'acceptance_dataset_path':str(Path(dataset_path).resolve()),
                 'selected_runtime_consistent':runtime_hash is not None,'environment_fully_verified':False,'quality_verified':False,'production_accepted':False,'capability_registered':False,
                 'userspace_snapshot_verified':runtime_hash is not None and baseline['runtime_identity']['protocol']=='vision-rsi/frozen-cpu-runtime/v2',
                 'limitations':'Two observed CPU runs on accepted samples, not workload-wide latency, complete environment or model-quality certification.'}
         result['record_sha256']=digest(result)
         result_path=root/'serving.json'
         if result_path.exists() and _checked(result_path)!=result:raise ValueError('Saved serving report differs')
-        if not result_path.exists():atomic_json(result_path,result)
+        if not result_path.exists():
+            if cached_only:raise ValueError('Completed serving report missing')
+            atomic_json(result_path,result)
         return result
