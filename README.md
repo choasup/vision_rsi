@@ -702,3 +702,7 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 新study固定保存单侧精确符号检验规则：比较每对AP提升是否严格超过预登记的minimum_mean_ap_gain，精确平局排除，至少5个非平局配对，alpha=0.05。p值为Binomial(n,0.5)右尾，具体方法参考[NIST符号检验](https://www.itl.nist.gov/div898/software/dataplot/refman1/auxillar/signtest.htm)。该检验针对超过阈值的方向性概率，不是均值提升的置信区间；平均提升规则单独报告。
 
 仅在所有预登记配对证据完整时计算。旧study未预登记该规则时不事后追加；输出evaluated=false。任务独立性仍未验证，重复候选研究的多重比较尚未控制，Token/费用公平性也未证明；统计标记通过不自动采用候选或宣称RSI效率已验证。
+
+### 从其它目录使用源码启动器
+
+`F:\vision-rsi-agent\vision-rsi.cmd training ...` 和 `test ...` 中显式指定的本地路径（例如`--input`、`--manifest`、`--config`、`--sessions`、`--output`）现在相对于调用目录解析，也支持`--flag=value`。省略这些参数时，源码启动器的默认配置/记录仍位于项目目录。安装版`python -m vision_rsi`保持其原有当前目录语义。其它源码CLI子命令的路径语义本轮未改；JSON文件内URI的解析规则也未改。

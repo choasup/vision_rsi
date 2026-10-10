@@ -9,7 +9,27 @@ from urllib.request import urlopen
 from urllib.error import URLError
 
 
+def task_cli_paths(arguments,caller):
+    """Explicit local task paths belong to the caller; defaults belong to the app."""
+    if not arguments or arguments[0] not in ('training','test'):return list(arguments)
+    paths={'--config','--sessions','--run-store','--campaign-store','--registry','--candidate-store',
+           '--contract','--sample','--result','--output','--manifest','--input','--input-dir','--output-dir','--task'}
+    result=[];index=0
+    while index<len(arguments):
+        argument=arguments[index];flag,separator,value=argument.partition('=')
+        if flag in paths:
+            if separator:
+                result.append(flag+'='+str((caller/value).resolve()) if value else argument)
+            elif index+1<len(arguments) and arguments[index+1] and not arguments[index+1].startswith('-'):
+                result.extend([flag,str((caller/arguments[index+1]).resolve())]);index+=1
+            else:result.append(argument)  # Let argparse report missing values.
+        else:result.append(argument)
+        index+=1
+    return result
+
+
 def main():
+    caller=Path.cwd()
     os.chdir(Path(__file__).resolve().parent)
     if len(sys.argv) > 1 and sys.argv[1] == '--cli':
         if os.name == 'nt' and not os.environ.get('DEEPSEEK_API_KEY'):
@@ -20,7 +40,7 @@ def main():
                     if isinstance(value, str): os.environ['DEEPSEEK_API_KEY'] = value
             except OSError:
                 pass
-        sys.argv = ['vision-rsi'] + sys.argv[2:]
+        sys.argv = ['vision-rsi'] + task_cli_paths(sys.argv[2:],caller)
         runpy.run_module('vision_rsi', run_name='__main__')
         return
     parser = argparse.ArgumentParser()

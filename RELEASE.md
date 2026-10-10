@@ -212,3 +212,10 @@
 - compare仅在全体预登记配对证据完整后输出统计信息，与已有平均增益规则分开。缺失证据不评估；旧study无统计规则时明确未预登记，不事后改记录。
 - 19项paired study/campaign audit/policy audit测试通过（.943秒）。覆盖5胜p=1/32、4胜1负p=6/32、2胜p=.25仍不足、平局/非法数值、规则变更拒绝、缺失及旧记录不评估。
 - 单位测试为合成计算/审计fixture，没有实际训练、API或SSH。任务独立性、跨候选多重比较与完整资源公平性未证明，rsi_efficiency_verified/agent_adopted仍false；不把统计单项当成上线或候选采用通过。安装包尚未重建。
+
+## 源码CLI调用目录修正（2026-10-10）
+
+- 修复vision-rsi.cmd/launch_agent.py先切换项目目录，导致training/test显式相对输入、输出、配置或存储参数被解释到错误位置的问题。cmd用绝对路径调用Python启动器；启动器先捕获调用目录，对支持的显式本地任务路径做绝对化，再沿用项目目录中的默认状态。
+- 同时支持分离参数和--flag=value，保留自然语言goal/task ID、缺省参数及缺值错误处理；不改其它子命令、安装模块CLI或JSON内部URI的规则。
+- 9项launcher/training shell测试通过（.388秒），含真实子进程从外部临时目录读取其相对sessions；另从既有fixture目录实际执行Windows vision-rsi.cmd，返回正确原session 6fe2a8baf0764d798a07537b1df69ad2，未意外切到默认库。
+- 无API/SSH/GPU调用；本轮只涉及源码启动器及相关文档，不声明真实训练质量或完整上线已完成。
