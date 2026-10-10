@@ -1,6 +1,7 @@
 """Run with the freshly installed interpreter; never import the source package."""
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', required=True)
     parser.add_argument('--wheel', required=True)
+    parser.add_argument('--expected-version')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     output = Path(args.output).resolve()
@@ -25,6 +27,9 @@ def main():
         from vision_rsi.runner import revision
         package = Path(vision_rsi.__file__).resolve().parent
         assert 'site-packages' in package.parts, package
+        installed_version=importlib.metadata.version('vision-rsi-agent')
+        if args.expected_version is not None:
+            assert installed_version==args.expected_version, 'Installed package version differs from requested release'
         checked = {}
         source_files = {p.relative_to(repo/'vision_rsi') for p in (repo/'vision_rsi').rglob('*') if p.suffix in ('.py', '.html')}
         installed_files = {p.relative_to(package) for p in package.rglob('*') if p.suffix in ('.py', '.html')}
@@ -55,7 +60,8 @@ def main():
         # A test must not have replaced the package with the source checkout.
         assert Path(sys.modules['vision_rsi'].__file__).resolve().parent == package
         evidence = dict(source_revision=subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip(),
-                        installed_package=str(package), controller_identity=revision(), cwd=directory,
+                        installed_package=str(package), installed_version=installed_version,
+                        expected_version=args.expected_version, controller_identity=revision(), cwd=directory,
                         tested_modules=names, tests_run=result.testsRun, passed=result.wasSuccessful(),
                         source_hashes=checked, module_cli_commands=commands,
                         wheel_sha256=hashlib.sha256(wheel.read_bytes()).hexdigest(),

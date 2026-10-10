@@ -371,3 +371,11 @@
 - 新增tests/task_bundle_probe.py，显式session-id，用公开training build --offline --json命令导出实际任务，在独立临时cwd及Python -I进程运行check、输入/输出示例校验、非法输出拒绝和infer无模型阻塞五项预登记检查；重复build验证同bundle复用，会话数据库字节不变。
 - 实际任务df8e8f8991ee496d859e35fab2085d8f v5全部通过。bundle ae789add6007c328e25300a9b9918c2d187af59a52b225cb0992f52a17537429；证据runs/task-bundle-probes/6a52bbc68cd34278a785d9e1ad844710/{preregistered.json,results.json,evidence.json}，包位于其bundles/my-vision-task-v5-ae789add6007。
 - 示例仅合同数据，无模型输出或质量证明。本轮无API/SSH/GPU/训练，保持实际预算未设置，未注册能力，完整上线门槛仍未完成。
+## 0.1.0.dev2 当前交付包验证（2026-10-10）
+
+- 当前产品源码91bf8cb3179d52a09bccfd395e4d36402de144a6，版本0.1.0.dev2。包含事件合同、规划快照/观测、成本比较、就绪建议、CLI入口和接口包代码身份修复；与旧dev1包明确区分。
+- 源码全量370项测试通过（125.635秒），日志runs/release-dev2-full-tests.log。
+- wheel为runs/release-dev2/wheelhouse/vision_rsi_agent-0.1.0.dev2-py3-none-any.whl，SHA256=9adbca68974a90f6fdcfe1d82bd64650e925790f7e651b33233b197821e57743。新venv使用离线wheelhouse和依赖哈希锁安装、pip check通过。
+- 仓库外site-packages导入验证全部Python/HTML文件集合及SHA一致、发行版本精确匹配dev2。176项安装回归及6个模块CLI入口通过（18.197秒），证据runs/release-dev2/{installed-evidence.json,installed-tests.log}。安装身份source-sha256:160debbc2c5d9135ee09aafbf17d6c97845a7a867aafc1cc6fd77328d0ee4f3e。
+- 探针新增可选--expected-version并记录实际发行版本，修正README当前版本说明。测试和文档变更不改变上述wheel产品代码。
+- 本轮无真实API/SSH/GPU调用，仅本机Windows/Python环境交付验证。真实GPU预算仍未给出，真实训练、AP60、视频训练/推理及可验证RSI效率提升未完成；dev2不是正式上线认证。
