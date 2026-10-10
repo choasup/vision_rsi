@@ -194,7 +194,7 @@ python -m vision_rsi test --task-id bright-object --input examples/toy-input.jso
 
 示例使用可执行的单亮色目标检测算法，输入是 JSON 灰度矩阵，输出单个 xywh 框；不是合成评分公式，也不是 COCO 模型，极小验证集不构成泛化能力证据。score 固定为 1.0，不是校准置信度。任务需求目前以 JSON 协议输入，尚未自动理解自然语言、生成新 harness 或做 RSI；目前按已实现适配器分派。
 
-`python -m vision_rsi training --task examples/coco-task.json` 会生成 blocked 记录，不会伪造训练或注册已验收检测能力。COCO 真实适配器、自动 harness 调整和 RSI 对照仍待实现。此注册库仅供本地可信产物使用；它不是任意代码沙箱。失败时可查询 capabilities 和 manifest 检查原因。
+`python -m vision_rsi training --task examples/coco-task.json` 会生成 blocked 记录，不会伪造训练或注册已验收检测能力。COCO 真实适配器已有独立 Training CLI；自动 harness 代码调整和真实 RSI 对照仍待完成。此注册库仅供本地可信产物使用；它不是任意代码沙箱。失败时可查询 capabilities 和 manifest 检查原因。
 
 ## Training 任务阶段：接口定义与需求澄清
 
@@ -220,7 +220,7 @@ python -m vision_rsi training export --session-id SESSION --output runs/task-con
 
 会话存于 runs/training-sessions/sessions.sqlite3；define 和每轮模型解析生成新版本，旧版本保留。导出含任务代号、会话、契约版本和内容哈希，供后续 harness 构建使用。validate --result result.json 可验证输出结构。样本校验只验证协议，不读取/解码媒体，不表示模型支持多图或视频。
 
-状态 ready_for_harness 表示当前声明满足协议检查，不等于用户确认语义、真实可实现、已训练或已验收。模型不得自行放宽验收条件，但跨轮语义变更尚需用户检查版本，尚无自动语义差异审核。training run --session-id SESSION 会准备任务计划；执行条件完整时部署固定 COCO adapter 并提交 SSH 作业，否则返回 blocked。通用方法研究和 RSI 尚未接入。旧 training --task examples/toy-task.json 接口保留用于早期能力生命周期测试。
+状态 ready_for_harness 表示当前声明满足协议检查，不等于用户确认语义、真实可实现、已训练或已验收。模型不得自行放宽验收条件，但跨轮语义变更使用已实现的结构差异审核，仍需用户判断语义是否正确。training run --session-id SESSION 会准备任务计划；执行条件完整时部署固定 COCO adapter 并提交 SSH 作业，否则返回 blocked。通用方法研究和 RSI 尚未接入。旧 training --task examples/toy-task.json 接口保留用于早期能力生命周期测试。
 
 ## Windows CLI 试用入口
 
@@ -248,21 +248,26 @@ JSONL 每行一个联合样本，逐行检查输入协议并拒绝重复 sample_
 
 修复模型返回 {contract: {...}} 时丢失目标的问题：新响应自动解包；旧会话显示时兼容嵌套结构，保留原始数据库记录。解析失败时保留上一版需求，不清空任务。恢复已有终端会话需退出当前旧进程，再用 training show --session-id SESSION --interactive 进入。
 
-## 从 Training 契约生成接口 Harness
+## 从 Training 契约生成可执行任务包
 
 ```powershell
-.\vision-rsi.cmd training build --session-id SESSION
+.\vision-rsi.cmd training build --session-id SESSION --config config.local.json
 ```
 
-生成位置为 runs/harnesses/TASK-vVERSION-HASH，内含 contract.json、manifest.json、独立 interface_runtime.py 和 harness.py。不依赖项目包导入即可校验接口示例：
+返回 `runs/harnesses/executable-BUNDLE_SHA256`，包含冻结的 Python 运行源码、契约、配置、manifest 和 Windows `run.cmd`，可在仓库外调用。配置仅导出支持的字段，API Key 仍从本地环境读取。任务包绑定原会话和共享账本的绝对路径；复制包不会创建新会话或重置 GPU 预算，原存储和远端资源仍需可用。
 
 ```powershell
-python PATH_TO_HARNESS/harness.py check
-python PATH_TO_HARNESS/harness.py validate-input --input sample.json
-python PATH_TO_HARNESS/harness.py validate-output --input result.json
+PATH_TO_HARNESS\run.cmd check
+PATH_TO_HARNESS\run.cmd training --action prepare
+PATH_TO_HARNESS\run.cmd training --action advance --steps 3
+PATH_TO_HARNESS\run.cmd training --action watch --watch-seconds 600
+PATH_TO_HARNESS\run.cmd test --version VALIDATED_VERSION --input image.jpg
+PATH_TO_HARNESS\run.cmd test --version VALIDATED_VERSION --input-dir images --output-dir predictions --resume
 ```
 
-重复构建相同任务/契约版本会验证后复用，不覆盖产物。接口构建允许资源预算尚未确定，但清单保留执行缺口；不代表已允许或已完成训练。infer --input sample.json 在校验协议后返回 blocked（退出码 2），直到真实模型适配器接入。当前没有训练入口或预测能力注册。文件哈希用于本地完整性检查，不提供对恶意修改 manifest 的防篡改保护。
+跨平台可用 `python harness.py` 代替 run.cmd。Test 必须明确指定已通过实际 serving 验收的版本，并与冻结契约一致；没有达标版本就拒绝预测，不使用占位结果。训练前核查原会话版本及需求，预算或数据缺失返回 blocked。单图和批量使用既有真实 COCO 适配器，联合多图/视频尚无实际模型适配器。任务包不是任意代码执行环境，也不代表 Agent 已能自动修改通用训练源码。
+
+`training build --offline` 保留纯接口包（TASK-vVERSION-HASH）：支持 check、validate-input、validate-output，infer 返回 blocked。构建哈希用于本地完整性检查，不防御能改写整个 manifest 的本机攻击者。可执行包拒绝源文件篡改、额外运行文件和未经验证的字节码缓存。修改原任务需求后需重新构建；共享账本和能力注册不能因重新打包而删除重置。
 
 ## 自主联调：真实检测 GPU 路径
 

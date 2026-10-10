@@ -292,3 +292,11 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - This enables strategy influence over the existing first-task method planner; general harness/code modifications, actual equal-budget efficiency and automatic adoption remain pending.
 
 - Actual integration at source 598a99f: independently re-reviewed historical H20 fixture receipt (AP=0, unchanged target60), assembled an explicitly diagnostic observation context, executed task-neutral candidate ecedb92baaf3a4069ea517d663b0000a1c31fac602fcb1a5fa8c6ee16e9a987a in remote CPU isolation, then made one real DeepSeek planning call with the returned research_brief. New plan bound its digest, preserved original contract/source and fixture=true. No GPU job submitted, no adoption. Ignored evidence: runs/evidence-strategy-integration/{context,runtime-check,plan-result,summary}.json. Diagnostic imported history is not a live campaign or paired research-efficiency proof.
+
+
+## Executable task harness export (2026-10-10)
+
+- Configured training build now exports a frozen Python runtime, contract and sanitized configuration with Windows run.cmd. Commands expose the existing Training controller and pinned validated-version Test including batches; offline build retains interface-only behavior.
+- Export retains original session and shared absolute ledger/registry paths, preventing automatic budget/session reset on copying. Training checks current original requirements; explicit run IDs must belong to the bound session. Test checks validated version and exact frozen contract.
+- Standalone subprocess tests outside Git cover check/blocked real preparation, original session/budget preservation, no credential export, changed requirements, unvalidated Test rejection, source tampering and unverified bytecode. No real model quality inferred from these checks.
+- Generic harness code research/adoption and real COCO quality remain incomplete. Exported controls still require shared stores, configured remote resources and original Python-compatible dependencies.

@@ -1,0 +1,139 @@
+"""Export frozen CLI controls while retaining the original durable task ledgers."""
+import hashlib
+import json
+from pathlib import Path
+import re
+import uuid
+
+from .runner import digest
+
+
+ENTRY=r'''import argparse,hashlib,json,re,sys
+from pathlib import Path
+ROOT=Path(__file__).resolve().parent
+
+def main():
+    p=argparse.ArgumentParser(description='Frozen task controls; quality requires validated capability evidence')
+    p.add_argument('mode',choices=['check','validate-input','validate-output','training','test'])
+    p.add_argument('--action',choices=['prepare','advance','watch','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate'],default='prepare')
+    p.add_argument('--input');p.add_argument('--input-dir');p.add_argument('--samples-manifest');p.add_argument('--output');p.add_argument('--output-dir')
+    p.add_argument('--version');p.add_argument('--run-id');p.add_argument('--campaign-id');p.add_argument('--steps',type=int,default=3)
+    p.add_argument('--watch-seconds',type=float,default=3600);p.add_argument('--poll-seconds',type=float,default=15)
+    p.add_argument('--research-rounds',type=int);p.add_argument('--resume',action='store_true')
+    p.add_argument('--wall-seconds-budget',type=float);p.add_argument('--chunk-size',type=int,default=10)
+    a=p.parse_args()
+    manifest=json.loads((ROOT/'manifest.json').read_text(encoding='utf-8'))
+    identity=manifest['identity']
+    encoded=json.dumps(identity,sort_keys=True).encode()
+    if hashlib.sha256(encoded).hexdigest()!=manifest['bundle_id']:p.exit(1,'Harness identity changed\n')
+    expected=identity['artifacts']
+    required={'harness.py','contract.json','interface_runtime.py','config.json','run.cmd'}
+    if not required<=set(expected):p.exit(1,'Harness artifacts incomplete\n')
+    for name,checksum in expected.items():
+        if name not in required and not re.fullmatch(r'vision_rsi/[A-Za-z_][A-Za-z0-9_]*\.py',name):p.exit(1,'Invalid artifact name\n')
+        path=ROOT/name
+        if not path.resolve().is_relative_to(ROOT) or hashlib.sha256(path.read_bytes()).hexdigest()!=checksum:p.exit(1,'Harness artifact changed: '+name+'\n')
+    actual={str(path.relative_to(ROOT)).replace('\\','/') for path in (ROOT/'vision_rsi').rglob('*') if path.is_file()}
+    if actual!={name for name in expected if name.startswith('vision_rsi/')}:p.exit(1,'Unexpected runtime source\n')
+    if (ROOT/'__pycache__').exists():p.exit(1,'Unexpected interface bytecode cache\n')
+    sys.dont_write_bytecode=True;sys.path.insert(0,str(ROOT))
+    contract=json.loads((ROOT/'contract.json').read_text(encoding='utf-8'))
+    from interface_runtime import validate_sample,validate_schema
+    try:
+        if a.mode in ('check','validate-input','validate-output'):
+            if a.mode=='check':
+                validate_sample(contract,contract['example_input']);validate_schema(contract['output_schema'],contract['example_output'])
+                result={'status':'executable_controls_checked','task_id':identity['task_id'],'contract_version':identity['contract_version'],
+                        'training_performed':False,'model_quality_verified':False,'shared_storage':identity['storage']}
+            else:
+                if not a.input:raise ValueError('--input required')
+                value=json.loads(Path(a.input).read_text(encoding='utf-8-sig'))
+                if a.mode=='validate-input':validate_sample(contract,value)
+                else:validate_schema(contract['output_schema'],value)
+                result={'valid':True,'model_quality_verified':False}
+            print(json.dumps(result,ensure_ascii=False,indent=2));return 0
+        import vision_rsi.runner as runtime
+        runtime.revision=lambda:identity['git_revision']
+        storage=identity['storage']
+        if a.mode=='training':
+            import os
+            key_env=json.loads((ROOT/'config.json').read_text(encoding='utf-8')).get('llm',{}).get('api_key_env')
+            if os.name=='nt' and key_env and not os.environ.get(key_env):
+                import winreg
+                try:
+                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER,'Environment') as env:
+                        value,_=winreg.QueryValueEx(env,key_env)
+                        if isinstance(value,str):os.environ[key_env]=value
+                except OSError:pass
+            from vision_rsi.contracts import Sessions
+            session=Sessions(storage['sessions']).show(identity['session_id'])
+            latest=session['versions'][-1] if session['versions'] else {}
+            if latest.get('version')!=identity['contract_version'] or latest.get('contract')!=contract or latest.get('review_required') or session['pending_request']:
+                raise ValueError('Original task requirements changed or are pending; rebuild the harness')
+            if a.run_id:
+                from vision_rsi.training_runs import TrainingRuns
+                runs=TrainingRuns(storage['runs'],read_only=True)
+                try:
+                    if runs.get(a.run_id)['session_id']!=identity['session_id']:raise ValueError('Run belongs to another task session')
+                finally:runs.close()
+            from vision_rsi.training_cli import main as training
+            args=[a.action,'--session-id',identity['session_id'],'--sessions',storage['sessions'],'--run-store',storage['runs'],
+                  '--campaign-store',storage['campaigns'],'--registry',storage['registry'],'--config',str(ROOT/'config.json'),'--json']
+            if a.action=='prepare':args+=['--output',storage['plans']]
+            args+=['--steps',str(a.steps),'--watch-seconds',str(a.watch_seconds),'--poll-seconds',str(a.poll_seconds),'--chunk-size',str(a.chunk_size)]
+            for flag,value in [('--run-id',a.run_id),('--campaign-id',a.campaign_id),('--research-rounds',a.research_rounds),('--version',a.version),('--wall-seconds-budget',a.wall_seconds_budget)]:
+                if value is not None:args+=[flag,str(value)]
+            if a.input:args+=['--sample',a.input]
+            if a.action=='serving-evaluate':args+=['--task-id',identity['task_id']]
+            training(args);return 0
+        if not a.version:raise ValueError('Test requires an explicit validated --version')
+        from vision_rsi.capability import Capabilities
+        registry=Capabilities(storage['registry'])
+        try:
+            version=registry.resolve_version(identity['task_id'],a.version)
+            manifest_path=Path(storage['registry'])/identity['task_id']/version/'manifest.json'
+            capability=json.loads(manifest_path.read_text(encoding='utf-8'))
+            if capability.get('endpoint',{}).get('contract')!=contract:raise ValueError('Capability contract differs from frozen harness')
+        finally:registry.close()
+        args=['test','--task-id',identity['task_id'],'--version',a.version,'--registry',storage['registry']]
+        for flag,value in [('--input',a.input),('--input-dir',a.input_dir),('--manifest',a.samples_manifest),('--output',a.output),('--output-dir',a.output_dir)]:
+            if value is not None:args+=[flag,value]
+        if a.resume:args+=['--resume']
+        sys.argv=['harness.py']+args;runtime.main();return 0
+    except (ValueError,KeyError,TypeError,OSError) as error:p.exit(1,str(error)+'\n')
+
+if __name__=='__main__':raise SystemExit(main())
+'''
+
+
+def build_executable(session,interface,config,storage,root):
+    if set(storage)!={'sessions','runs','campaigns','registry','plans'}:raise ValueError('Harness needs original shared storage locations')
+    storage={key:str(Path(value).resolve()) for key,value in storage.items()}
+    safe={'llm':{key:config.get('llm',{})[key] for key in ('model','base_url','api_key_env','thinking') if key in config.get('llm',{})},
+          'remote':{key:config.get('remote',{})[key] for key in ('ssh_host','ssh_port','workspace','python','coco_root') if key in config.get('remote',{})},
+          'training':config.get('training',{})}
+    allowed={'detector','epochs','batch_size_per_gpu','seed','checkpoint_steps','world_size','min_size','max_size','learning_rate','weight_decay','fixture','coco_root','weights','weights_sha256','train_annotations_sha256','val_annotations_sha256','acceptance_threshold','timeout_seconds'}
+    if not isinstance(safe['training'],dict) or set(safe['training'])-allowed:raise ValueError('Unsupported training settings in harness')
+    latest=session['versions'][-1];base=Path(interface['directory'])
+    files={name:(base/name).read_bytes() for name in ('contract.json','interface_runtime.py')}
+    files.update({'config.json':(json.dumps(safe,indent=2)+'\n').encode(),'harness.py':ENTRY.encode()})
+    launcher='@echo off\r\nsetlocal\r\nset "HARNESS_PYTHON=%USERPROFILE%\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe"\r\nif exist "%HARNESS_PYTHON%" (\r\n    "%HARNESS_PYTHON%" -B -X utf8 "%~dp0harness.py" %*\r\n) else (\r\n    python -B -X utf8 "%~dp0harness.py" %*\r\n)\r\nexit /b %errorlevel%\r\n'
+    files['run.cmd']=launcher.encode()
+    files.update({'vision_rsi/'+path.name:path.read_bytes() for path in sorted(Path(__file__).parent.glob('*.py'))})
+    original=json.loads((base/'manifest.json').read_text(encoding='utf-8'))
+    identity={'task_id':session['task_id'],'session_id':session['session_id'],'contract_version':latest['version'],
+              'git_revision':original['git_revision'],'storage':storage,'artifacts':{name:hashlib.sha256(raw).hexdigest() for name,raw in files.items()}}
+    bundle_id=digest(identity);target=Path(root).resolve()/('executable-'+bundle_id)
+    manifest={'bundle_id':bundle_id,'identity':identity,'status':'executable_controls_only','model_quality_verified':False}
+    if target.exists():
+        if json.loads((target/'manifest.json').read_text(encoding='utf-8'))!=manifest:raise ValueError('Existing executable harness identity changed')
+        for name,raw in files.items():
+            if (target/name).read_bytes()!=raw:raise ValueError('Existing executable harness artifact changed')
+    else:
+        staging=target.parent/('.building-'+uuid.uuid4().hex);staging.mkdir()
+        for name,raw in files.items():
+            path=staging/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(raw)
+        (staging/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
+        staging.rename(target)
+    return {'status':'executable_harness_ready','directory':str(target),'bundle_id':bundle_id,
+            'training_performed':False,'model_quality_verified':False,'shared_storage':storage}
