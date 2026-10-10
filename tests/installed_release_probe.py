@@ -55,7 +55,7 @@ def main():
                  'test_task_adapters', 'test_task_readiness', 'test_event_eval',
                  'test_coco_train', 'test_training_preflight', 'test_batch', 'test_experiment_observe',
                  'test_study_resources', 'test_cli_help', 'test_harness', 'test_controller','test_task_research','test_release_status','test_planning_budget','test_research_watch','test_research_training','test_research_process_recovery','test_workspace_init','test_credentials','test_adapter_evaluation']
-        names += ['test_candidate_runtime', 'test_runtime_userspace', 'test_candidate_serving', 'test_candidate_inference',
+        names += ['test_paired_budget', 'test_candidate_runtime', 'test_runtime_userspace', 'test_candidate_serving', 'test_candidate_inference',
                   'test_bundle_acceptance',
                   'test_input_provenance', 'test_research_history', 'test_task_acceptance']
         suite = unittest.defaultTestLoader.loadTestsFromNames(names)

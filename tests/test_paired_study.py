@@ -166,6 +166,8 @@ class PairedStudyTests(unittest.TestCase):
             arm='candidate' if candidate else 'baseline';bound=pair[arm]
             raw=(self.campaigns/sid/bound['campaign_id']/'state.json').read_bytes()
             return {'evidence_complete_for_review':True,'best_verified_real_box_AP':45 if candidate else 42,'missing_evidence':[],
+                    'authorized_gpu_hours':bound['binding']['contract']['budget']['gpu_hours'],
+                    'settled_gpu_hours':0.,'held_gpu_hours':0.,'gpu_accounting_settled':True,
                     'campaign_state_sha256':hashlib.sha256(raw).hexdigest(),
                     'measurements':[{'training_identity':{'recipe':recipe,'image_contents_sha256':'e'*64,'sources':identity['control_sources']}}]}
         with patch('vision_rsi.paired_study.audit',side_effect=audited):
@@ -182,6 +184,14 @@ class PairedStudyTests(unittest.TestCase):
             old_result=compare(record['study_id'],self.studies)
         self.assertFalse(old_result['paired_statistical_evidence']['evaluated'])
         self.assertIn('Legacy',old_result['paired_statistical_evidence']['reason'])
+        def mismatched_budget(sid,*args):
+            result=audited(sid,*args)
+            if sid==identity['pairs'][0]['candidate']['session_id']:result['authorized_gpu_hours']=2
+            return result
+        with patch('vision_rsi.paired_study.audit',side_effect=mismatched_budget):budget_result=compare(record['study_id'],self.studies)
+        self.assertFalse(budget_result['comparison_complete'])
+        self.assertIsNone(budget_result['mean_paired_ap_gain'])
+        self.assertTrue(any('budget' in row['error'] for row in budget_result['missing_evidence']))
         bound=identity['pairs'][0]['candidate'];path=self.campaigns/bound['session_id']/bound['campaign_id']/'state.json'
         original=path.read_text();state=json.loads(original);state['paused']=True;path.write_text(json.dumps(state))
         with patch('vision_rsi.paired_study.audit',side_effect=audited):paused=compare(record['study_id'],self.studies)

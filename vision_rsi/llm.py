@@ -17,6 +17,14 @@ MAX_REQUEST_BYTES = 8 * 1024 * 1024
 MAX_OUTPUT_TOKENS = 32768
 
 
+def request_payload(config,messages,max_tokens):
+    """Exact non-secret payload shared by dispatch and receipt auditing."""
+    payload={'model':config['model'],'messages':messages,'max_tokens':max_tokens,'stream':False}
+    if 'thinking' in config:payload['thinking']={'type':config['thinking']}
+    if 'response_format' in config:payload['response_format']={'type':config['response_format']}
+    return payload
+
+
 class LLMNotDispatched(ValueError):
     """A local admission failure proven to occur before HTTP dispatch."""
 
@@ -98,11 +106,7 @@ class OpenAICompatibleClient:
         key,_ = read_key(self.config['api_key_env'])
         if not key:raise LLMNotDispatched('API key became unavailable before dispatch')
         base = self.config['base_url'].rstrip('/')
-        payload = {'model': self.config['model'], 'messages': messages,
-                   'max_tokens': max_tokens, 'stream': False}
-        if 'thinking' in self.config:
-            payload['thinking'] = {'type': self.config['thinking']}
-        if 'response_format' in self.config:payload['response_format']={'type':self.config['response_format']}
+        payload = request_payload(self.config,messages,max_tokens)
         encoded = json.dumps(payload).encode()
         if len(encoded) > MAX_REQUEST_BYTES:
             raise ValueError('LLM request exceeds byte limit')

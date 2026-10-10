@@ -177,6 +177,9 @@ def step(study_id,pair_index,arm,root='runs/paired-studies',steps=3):
     execution_config=bound.get('execution_config',pair['config'])
     binding=campaign_binding(session,execution_config,identity['runs'],bound['binding']['policy'],bound['binding']['research_rounds'])
     if binding!=bound['binding']:raise ValueError('Study campaign requirements changed')
+    if 'llm_call_limit_per_arm' in identity:
+        from .llm_usage import UsageLedger
+        UsageLedger(execution_config['llm']['usage_ledger'],call_limit=identity['llm_call_limit_per_arm'])
     path=Path(identity['campaigns'])/bound['session_id']/bound['campaign_id']/'state.json'
     return advance(session,execution_config,identity['campaigns'],identity['runs'],steps,binding['policy'],research_rounds=binding['research_rounds'],selected_campaign=bound['campaign_id'] if path.exists() else None)
 
@@ -228,8 +231,20 @@ def compare(study_id,root='runs/paired-studies'):
                     setups.append(setup)
             if not setup_valid or not setups or any(digest(setup)!=digest(setups[0]) for setup in setups):
                 missing.append({'pair':index,'error':'Paired runs used different data, weights, seeds, code or runtime'})
-            else:pairs.append({'pair':index,'seed':pair['seed'],'ap_gain':results['candidate']['best_verified_real_box_AP']-results['baseline']['best_verified_real_box_AP'],
-                               'resource_comparison':resource_comparison(results['baseline'],results['candidate']),'arms':results})
+            else:
+                from .paired_budget import compare_budgets
+                budgets=compare_budgets(pair,results,identity['campaigns'],identity['registered_at_unix'],identity.get('llm_call_limit_per_arm'))
+                if not budgets['registered_dimensions_verified']:
+                    missing.append({'pair':index,'error':'Registered budget evidence incomplete','budget_review':budgets})
+                else:pairs.append({'pair':index,'seed':pair['seed'],'ap_gain':results['candidate']['best_verified_real_box_AP']-results['baseline']['best_verified_real_box_AP'],
+                                   'resource_comparison':resource_comparison(results['baseline'],results['candidate']),
+                                   'registered_budget_review':budgets,'arms':results})
+    quota_files=[]
+    for pair in pairs:
+        for receipt in pair['registered_budget_review']['api'].values():
+            path=Path(receipt['ledger'])
+            if any(path.samefile(previous) for previous in quota_files):missing.append({'error':'Different study arms share an API quota file'})
+            quota_files.append(path)
     complete=not missing and len(pairs)==len(identity['pairs']);mean=sum(p['ap_gain'] for p in pairs)/len(pairs) if complete else None
     statistical={'evaluated':False,'preregistered_sign_rule_met':False,
                  'reason':'Incomplete paired evidence' if not complete else 'Legacy study has no preregistered statistical rule'}
@@ -237,11 +252,13 @@ def compare(study_id,root='runs/paired-studies'):
         statistical=paired_sign_evidence([p['ap_gain'] for p in pairs],identity['minimum_mean_ap_gain'],identity['statistical_rule'])
     return {'study_id':study_id,'pairs':pairs,'missing_evidence':missing,'comparison_complete':complete,'mean_paired_ap_gain':mean,
             'llm_budget_design':{'mode':'independent_per_arm' if 'llm_call_limit_per_arm' in identity else 'shared_or_unbounded',
-                                 'call_limit_per_arm':identity.get('llm_call_limit_per_arm'),'billing_budget_enforced':False},
+                                 'call_limit_per_arm':identity.get('llm_call_limit_per_arm'),'billing_budget_enforced':False,
+                                 'independent_arm_call_caps_verified':bool(complete and 'llm_call_limit_per_arm' in identity and
+                                     all(pair['registered_budget_review']['independent_equal_api_call_caps_verified'] for pair in pairs))},
             'preregistered_gain_rule_met':complete and mean>=identity['minimum_mean_ap_gain'],
             'paired_statistical_evidence':statistical,
             'rsi_efficiency_verified':False,'agent_adopted':False,
-            'limitation':'Observed preregistered GPU-budget comparison only. Held-out independence is a declaration, not verified provenance; statistical replication and full multi-resource budget review remain required before adoption.'}
+            'limitation':'Observed preregistered GPU-cap comparison, plus linked independent campaign API call caps when explicitly configured. Held-out independence is a declaration, not verified provenance; CPU/wall/token/money budgets and full resource fairness remain unverified before adoption.'}
 
 
 def main(argv):
