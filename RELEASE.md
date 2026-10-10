@@ -397,3 +397,8 @@
 - 两张64x64合成图/类别1/batch2，SGD lr.0001/momentum.9/weight_decay.0001；连续2step与1step后真实序列化、重建模型/优化器、恢复CPU RNG再1step完全一致。核对4项loss、全模型parameters/buffers、momentum和CPU RNG，合计4次fixture训练step。
 - 实际Torch2.6.0+cu124 CPU探针成功并正常结束。checkpoint SHA e89aab067722229248d4614fde9acce4455da96c30a579cddbc1034d6f1f3051；证据runs/resource-bootstrap/detector-cpu-resume-3fca0fdb2dd14f959d0f1e67fb366e0c/{preregistered.json,stdout.txt,stderr.txt,evidence.json}。
 - 无LLM/GPU调用、未读取用户COCO数据、未改变任务预算或权重文件。此处是极小CPU检测器fixture训练，不是生产coco_train完整入口、进程死亡、CUDA/DDP/NCCL恢复或AP质量证明；完整上线目标仍未完成。
+## 冻结可执行任务包事件评分入口（2026-10-10）
+
+- executable_harness新增evaluate-events模式及ground-truth/predictions/output参数，强制包内contract绑定、任务版本及bundle身份输出，无外部阈值覆盖。输出必须新建且在冻结包外，check显示evaluation_modes。纯离线接口包不新增模型或评分实现。
+- 18项executable_harness/event_eval/harness测试通过（6.764秒）；覆盖冻结IoU实际影响匹配、合同绑定、包身份、重复输出/包内输出拒绝、包字节不变、不兼容任务拒绝。补充check入口断言确认评测可用且视频训练仍不支持。
+- 全部本地合成数据/独立子进程，无API/SSH/GPU/模型训练或能力注册。dev2安装包早于本次产品变更，旧冻结包需重新build，真实视频模型及完整上线门槛未完成。

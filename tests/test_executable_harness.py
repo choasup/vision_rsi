@@ -13,6 +13,47 @@ from vision_rsi.executable_harness import build_executable
 
 
 class ExecutableHarnessTests(unittest.TestCase):
+    def test_frozen_event_evaluator_uses_task_threshold_and_preserves_bundle(self):
+        from vision_rsi.contracts import EVENT_PROTOCOL
+        contract=json.loads(json.dumps(self.session['versions'][-1]['contract']))
+        contract['acceptance']={'metric':'event_micro_f1','direction':'maximize','threshold':.9,
+                                'iou_threshold':.75,'evaluation_protocol':EVENT_PROTOCOL}
+        contract['output_schema']={'type':'object','properties':{'events':{'type':'array','items':{'type':'object','properties':{}}}}}
+        contract['example_output']={'events':[]}
+        separate=self.store.create('event-fixture','Synthetic event evaluator')['session_id']
+        session=self.store.define(separate,contract)
+        interface=build(session,self.root/'event-artifacts')
+        artifact=build_executable(session,interface,self.config,self.storage,self.root/'event-artifacts')
+        self.folder=Path(artifact['directory'])
+        checked=json.loads(self.run_harness('check').stdout)
+        self.assertEqual(checked['evaluation_modes'],['evaluate-events'])
+        self.assertFalse(checked['training_adapter']['implementation_supported'])
+        original={str(p.relative_to(self.folder)):p.read_bytes() for p in self.folder.rglob('*') if p.is_file()}
+        gt={'labels':['action'],'samples':[{'sample_id':'clip','events':[{'label':'action','start_seconds':0,'end_seconds':2}]}]}
+        pred=json.loads(json.dumps(gt));pred['samples'][0]['events'][0]['end_seconds']=1
+        ground=self.root/'gt.json';prediction=self.root/'prediction.json';output=self.root/'evaluation.json'
+        ground.write_text(json.dumps(gt));prediction.write_text(json.dumps(pred))
+        args=['evaluate-events','--ground-truth',str(ground),'--predictions',str(prediction),'--output',str(output)]
+        result=self.run_harness(*args)
+        self.assertEqual(result.returncode,0,result.stderr)
+        report=json.loads(output.read_text())
+        self.assertEqual(report['tp'],0);self.assertEqual(report['iou_threshold'],.75)
+        self.assertTrue(report['contract_bound']);self.assertFalse(report['metric_threshold_met'])
+        self.assertEqual(report['harness_bundle_id'],artifact['bundle_id'])
+        before=output.read_bytes()
+        self.assertNotEqual(self.run_harness(*args).returncode,0)
+        self.assertEqual(before,output.read_bytes())
+        args[-1]=str(self.folder/'new-evaluation.json')
+        self.assertNotEqual(self.run_harness(*args).returncode,0)
+        self.assertEqual(original,{str(p.relative_to(self.folder)):p.read_bytes() for p in self.folder.rglob('*') if p.is_file()})
+
+    def test_frozen_evaluator_rejects_incompatible_task(self):
+        result=self.run_harness('evaluate-events','--ground-truth','unused.json','--predictions','unused.json',
+                                '--output',str(self.root/'evaluation.json'))
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Contract must specify',result.stderr)
+        self.assertFalse((self.root/'evaluation.json').exists())
+
     def test_standalone_joint_media_packet_preserves_sample_and_rejects_overwrite(self):
         sample=json.loads(json.dumps(self.session['versions'][-1]['contract']['example_input']))
         for value in sample['inputs'].values():

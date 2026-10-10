@@ -14,7 +14,8 @@ ROOT=Path(__file__).resolve().parent
 
 def main():
     p=argparse.ArgumentParser(description='Frozen task controls; quality requires validated capability evidence')
-    p.add_argument('mode',choices=['check','validate-input','validate-output','prepare-input','verify-input','decode-input','training','test'])
+    p.add_argument('mode',choices=['check','validate-input','validate-output','prepare-input','verify-input','decode-input','evaluate-events','training','test'])
+    p.add_argument('--ground-truth');p.add_argument('--predictions')
     p.add_argument('--field')
     p.add_argument('--action',choices=['prepare','advance','watch','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate'],default='prepare')
     p.add_argument('--input');p.add_argument('--input-dir');p.add_argument('--samples-manifest');p.add_argument('--output');p.add_argument('--output-dir')
@@ -41,6 +42,19 @@ def main():
     contract=json.loads((ROOT/'contract.json').read_text(encoding='utf-8'))
     from interface_runtime import validate_sample,validate_schema
     try:
+        if a.mode=='evaluate-events':
+            if not a.ground_truth or not a.predictions or not a.output:
+                raise ValueError('evaluate-events requires --ground-truth, --predictions and --output')
+            from vision_rsi.event_eval import evaluate
+            from vision_rsi.runner import atomic_json
+            destination=Path(a.output).resolve()
+            if destination.exists() or destination.is_relative_to(ROOT):
+                raise ValueError('Evaluation output must be new and outside frozen harness')
+            result=evaluate(a.ground_truth,a.predictions,contract_path=ROOT/'contract.json')
+            result.update(task_id=identity['task_id'],contract_version=identity['contract_version'],
+                          harness_bundle_id=manifest['bundle_id'])
+            atomic_json(destination,result)
+            print(json.dumps(result,ensure_ascii=False,indent=2));return 0
         if a.mode=='decode-input':
             if not a.input or not a.output or not a.field:raise ValueError('decode-input requires --input packet.json --field video_field --output frames.json')
             from vision_rsi.media import decode_packet
@@ -73,8 +87,10 @@ def main():
             if a.mode=='check':
                 validate_sample(contract,contract['example_input']);validate_schema(contract['output_schema'],contract['example_output'])
                 from vision_rsi.task_adapters import training_adapter
+                from vision_rsi.contracts import EVENT_PROTOCOL
                 result={'status':'executable_controls_checked','task_id':identity['task_id'],'contract_version':identity['contract_version'],
                         'training_performed':False,'model_quality_verified':False,'training_adapter':training_adapter(contract),
+                        'evaluation_modes':['evaluate-events'] if contract.get('acceptance',{}).get('evaluation_protocol')==EVENT_PROTOCOL else [],
                         'shared_storage':identity['storage'],'video_decoders':identity.get('video_decoders',{})}
             else:
                 if not a.input:raise ValueError('--input required')

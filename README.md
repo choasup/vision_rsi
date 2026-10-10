@@ -734,6 +734,14 @@ COCO checkpoint恢复现在核对epoch/cursor/step与冻结数据集、Distribut
 checkpoint CPU预检进一步检查每rank CPU/CUDA RNG字段必须是非空的一维CPU uint8张量，并实际尝试恢复CPU RNG，随后在finally中还原检查进程原状态。CUDA RNG仅检查张量结构，不在预检里初始化GPU或声称它一定能被CUDA恢复。真实GPU恢复时仍执行CUDA自身状态校验。
 # 视频事件评测（独立工具）
 
+使用 `training build` 导出的新可执行任务包也提供冻结验收入口（纯 `--offline` 接口包不包含此模式）：
+
+```powershell
+python TASK_PACKAGE/harness.py evaluate-events --ground-truth gt.json --predictions predictions.json --output evaluation.json
+```
+
+`check` 的 `evaluation_modes` 会列出任务支持的评测入口。该命令强制读取包内合同，不接受外部合同或阈值覆盖，输出记录 task/version/bundle 身份；输出必须是冻结包目录外的新文件。支持评测仍不表示支持视频模型训练或推理。
+
 自然语言 training 澄清已包含此评测器的协议说明。只在任务语义匹配且用户接受该计分方式时采用，保留明确指定的其它指标；F1效果目标必须来自用户，IoU选择需明确记录。采用精确协议ID后，任务定义阶段即校验 metric/direction、F1范围、IoU阈值及events输出字段。协议可定义不代表视频训练已实现：当前视频训练适配器仍不支持，执行会继续显示阻塞。
 
 在项目目录运行：
