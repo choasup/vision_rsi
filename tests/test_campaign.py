@@ -219,3 +219,22 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(result['run_id'],'train-two');self.assertEqual(result['proposals_attempted'],1)
         self.assertEqual(result['plan']['plan_id'],'p2');self.assertFalse(result['policy_adopted'])
         propose.assert_called_once()
+
+    @patch('vision_rsi.campaign.prepare')
+    @patch('vision_rsi.campaign.submit')
+    def test_unknown_intent_or_history_versions_block_before_tool_or_state_change(self,submit,prepare):
+        import copy
+        prepare.return_value=self.plan;submit.side_effect=RuntimeError('uncertain fixture submission')
+        with self.assertRaises(RuntimeError):self.advance()
+        path=next((self.root/'campaigns').glob('*/*/state.json'));original=json.loads(path.read_text())
+        for location,field,value in [('intent','controller_action_version',3),('intent','strategy_context_version',True),('history','controller_action_version',2.0),('history','strategy_context_version',5)]:
+            state=copy.deepcopy(original)
+            target=state['intent'] if location=='intent' else state['history'][0]
+            target[field]=value;path.write_text(json.dumps(state));before=path.read_bytes()
+            for args in ({},{'control':'resume'}):
+                with self.assertRaisesRegex(ValueError,'Unsupported'):self.advance(**args)
+                self.assertEqual(path.read_bytes(),before)
+            self.assertEqual(self.advance(control='show')['intent'],state['intent'])
+            self.assertEqual(path.read_bytes(),before)
+            self.assertTrue(self.advance(control='pause')['paused'])
+        submit.assert_called_once()

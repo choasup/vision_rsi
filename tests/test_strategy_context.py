@@ -75,3 +75,7 @@ class StrategyContextTests(unittest.TestCase):
     def test_nonfinite_and_excessive_observations_rejected(self):
         for value in (float('nan'),'x'*(512*1024)):
             with self.assertRaises(ValueError):validate_context([{'id':'old','observation':value}],[],1)
+
+    def test_context_versions_are_exact_supported_integers(self):
+        for value in (True,False,1.0,4.0,'4',None,0,5):
+            with self.assertRaisesRegex(ValueError,'Unsupported'):history_context([],value)

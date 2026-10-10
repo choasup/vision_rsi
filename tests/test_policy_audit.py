@@ -86,3 +86,29 @@ class PolicyAuditTests(unittest.TestCase):
                 self.assertEqual(verify_trace(state)['decisions_verified'],5)
                 state['history'][-1]['result']['text']='invented diagnosis'
                 with self.assertRaisesRegex(ValueError,'Retrieved memory page'):verify_trace(state)
+
+    def test_unknown_or_noninteger_versions_never_verify_as_current_or_legacy(self):
+        import copy
+        action=available({'history':[]})[0]
+        row={'action':action,'status':'completed','decision':{'action_id':action['id'],'rationale':'Deterministic baseline control order'},'result':{'status':'blocked'}}
+        original={'binding':{'policy':None},'history':[row]};project(original,action,row['result'])
+        for context in (1,2,3,4):
+            state=copy.deepcopy(original);state['history'][0]['strategy_context_version']=context
+            self.assertTrue(verify_trace(state)['verified'])
+        state=copy.deepcopy(original);state['history'][0].update(strategy_context_version=4,controller_action_version=2)
+        self.assertTrue(verify_trace(state)['verified'])
+        for field,values in [('strategy_context_version',[True,False,1.0,'4',None,0,5]),('controller_action_version',[True,False,2.0,'2',None,0,3])]:
+            for value in values:
+                state=copy.deepcopy(original);state['history'][0][field]=value
+                with self.assertRaisesRegex(ValueError,'Unsupported'):verify_trace(state)
+        state=copy.deepcopy(original);state['history'][0]['controller_action_version']=2
+        with self.assertRaisesRegex(ValueError,'requires'):verify_trace(state)
+
+    def test_unknown_stop_version_rejected_before_candidate_file_access(self):
+        state={'binding':{'policy':{'store':'must-not-read','candidate_id':'unknown'}},'history':[],
+               'policy_stop':{'controller_action_version':99}}
+        for key in ('policy_stop','intent'):
+            trial=dict(state);trial.pop('policy_stop');trial[key]={'controller_action_version':99}
+            with patch('vision_rsi.policy_audit.verify_candidate') as candidate:
+                with self.assertRaisesRegex(ValueError,'Unsupported'):verify_trace(trial)
+                candidate.assert_not_called()

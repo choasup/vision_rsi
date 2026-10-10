@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .runner import atomic_json,digest,revision
 from .strategy_protocol import validate_decision
-from .strategy_context import history_context
+from .strategy_context import history_context,control_versions
 from .training_plan import prepare
 from .training_runs import TrainingRuns,submit,observe,collect,TERMINAL,remote_identity
 
@@ -202,6 +202,10 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
         else:
             state={'campaign_id':campaign_id,'binding':binding,'session_id':session['session_id'],'task_id':session['task_id'],
                    'status':'new','history':[],'intent':None,'git_revision':revision(),'policy_adopted':False,'research_rounds':research_rounds}
+        if control not in ('show','pause'):
+            for row in state['history']:control_versions(row)
+            if state.get('intent'):control_versions(state['intent'])
+            if state.get('policy_stop'):control_versions(state['policy_stop'])
         if control:
             if control not in ('pause','resume','show'):raise ValueError('Unknown controller command')
             if control=='resume' and (state.get('intent') or {}).get('status')=='not_dispatched':
@@ -236,6 +240,7 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
                 # submit reconciles the existing durable Training run ID.
                 if intent.get('control_sources')!=control_sources:
                     raise ValueError('Pending action uses different control source; restore its frozen source before resuming')
+                control_versions(intent)
                 attempt={'started_at_unix':time.time(),'status':'started'}
                 intent.setdefault('tool_attempts',[]).append(attempt);atomic_json(path,state)
                 tool_started=time.monotonic()

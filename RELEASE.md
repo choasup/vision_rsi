@@ -105,3 +105,11 @@
 - 仓库外临时目录使用真正site-packages包完成68项相关回归，全部通过；所有包内Python/HTML文件与源码逐项SHA256一致。wheel SHA256：`ffa3c51a720b8310003991f6e9759490c3987b6d389fb293309e2d14e6fef374`。证据：`runs/release-current-doctor/installed-evidence.json`及`installed-tests.log`。
 - Windows启动器实际重新prepare原任务my-vision-task；计划ea7cdefa9b22e9e0e38aa3d33340f55cbc3d931ef10a81f87921c6726bbffa59仍因真实GPU预算未设置而blocked，未开始训练，GPU预算及超时保持null。记录：`runs/resource-bootstrap/current-task-prepare.json`。
 - 此项只补齐当前源码的本机安装与入口验证；不是新Windows机器、其它平台、真实模型达标、完整多资源预算或RSI研究效率通过。
+
+
+## 控制版本语义边界（2026-10-10）
+
+- 修复审计将所有>=2行动版本当作版本2，以及bool/浮点可通过整数版本比较的问题。统一校验支持上下文整数1..4、行动整数1/2；行动2必须对应上下文4。缺失字段明确回放旧版1，不猜测未知版本。
+- advance/resume在工具执行和状态改写前校验完整历史、意图及停止记录；非法版本拒绝执行且原状态字节不变。show/pause保留调查入口。审计在读取候选证据前拒绝未知版本，并保持各旧上下文版本及新行动版本的合法回放。
+- 56项相关回归通过（6.806秒），覆盖非法类型/未知版本/不兼容组合、未知意图和历史恢复拒绝。真实进程退出恢复探针复验通过：`runs/resource-bootstrap/memory-fault-8e2f7e7c9f334035a0b2319a8ec10542/evidence.json`。
+- 未重建安装包；最近2a822a7安装包不包含本轮版本校验。此项不构成模型效果、RSI效率或整体上线通过。

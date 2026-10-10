@@ -10,7 +10,7 @@ def finite(value):
 
 
 def history_context(rows,version=4):
-    if version not in (1,2,3,4):raise ValueError('Unsupported strategy context version')
+    if type(version) is not int or version not in (1,2,3,4):raise ValueError('Unsupported strategy context version')
     result=[]
     for row in rows:
         item={'id':row['action']['id'],'kind':row['action']['kind'],'status':row['status']}
@@ -106,3 +106,15 @@ def bounded_memory(items):
     result=[summary]+[selected[i] for i in indices]
     if len(encoded(result))>MEMORY_BYTES:raise ValueError('Research memory summary exceeds byte limit')
     return result
+
+
+
+def control_versions(record):
+    """Reject unknown trace semantics; missing fields mean explicit legacy v1."""
+    if not isinstance(record,dict):raise ValueError('Control trace record must be an object')
+    context=record.get('strategy_context_version',1)
+    action=record.get('controller_action_version',1)
+    if type(context) is not int or context not in (1,2,3,4):raise ValueError('Unsupported strategy context version')
+    if type(action) is not int or action not in (1,2):raise ValueError('Unsupported controller action version')
+    if action==2 and context!=4:raise ValueError('Controller action version 2 requires strategy context version 4')
+    return context,action

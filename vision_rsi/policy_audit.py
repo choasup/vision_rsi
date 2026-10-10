@@ -8,10 +8,13 @@ from .campaign import available, project
 from .candidates import verify_candidate
 from .runner import digest
 from .strategy_protocol import validate_decision
-from .strategy_context import history_context
+from .strategy_context import history_context,control_versions
 
 
 def verify_trace(state):
+    for row in state['history']:control_versions(row)
+    if state.get('policy_stop'):control_versions(state['policy_stop'])
+    if state.get('intent'):control_versions(state['intent'])
     policy=state['binding'].get('policy')
     record=None
     if policy:
@@ -51,12 +54,13 @@ def verify_trace(state):
 
     replay={'history':[],'research_rounds':state['binding'].get('research_rounds',0)}
     for row in state['history']:
-        actions=available(replay,memory=row.get('controller_action_version',1)>=2)
+        context_version,action_version=control_versions(row)
+        actions=available(replay,memory=action_version==2)
         if row.get('status')!='completed' or row['action'] not in actions:
             raise ValueError('Action does not match replayed controller state')
         decision=row['decision']
         if decision['action_id']!=row['action']['id']:raise ValueError('Executed action differs from policy decision')
-        history=history_context(replay['history'],row.get('strategy_context_version',1))
+        history=history_context(replay['history'],context_version)
         verify_decision_evidence(row,actions,history)
         brief=decision.get('research_brief')
         if brief is not None and row['result'].get('status')!='budget_exhausted':
@@ -71,8 +75,9 @@ def verify_trace(state):
     if stop:
         if state.get('intent') or state.get('status')!='policy_stopped' or stop['decision'].get('action_id') is not None:
             raise ValueError('Invalid terminal policy stop')
-        history=history_context(replay['history'],stop.get('strategy_context_version',1))
-        actions=available(replay,memory=stop.get('controller_action_version',1)>=2)
+        context_version,action_version=control_versions(stop)
+        history=history_context(replay['history'],context_version)
+        actions=available(replay,memory=action_version==2)
         if not actions:raise ValueError('Policy stop has no decision context')
         verify_decision_evidence(stop,actions,history)
     elif state.get('status')=='policy_stopped':raise ValueError('Terminal policy stop evidence missing')
