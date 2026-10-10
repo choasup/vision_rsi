@@ -351,3 +351,9 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - Actual Windows run.cmd from an external temporary cwd passed frozen harness check → joint two-image/video prepare-input → verify-input → SSH decode-input → independent RGB/timestamp verification. Two decoded runs had identical frame hashes; one-frame cap rejected. Fixture session 2a4f92a664da4720a100c0fd62828b3a, bundle 955a25253913b090f9347837ed05a9e52f7f5e7d64a672d6b40b8722cf3650c1 at source3671894; no original user task changes, GPU training or LLM calls. Evidence: runs/video-cli-integration/latest.json and referenced summary/frames.
 - Initial direct-driver test receipt was invalidated because its in-process test later mutated the shared request plan; validate_plan/compile now return copied scalar plans, with regression coverage. Initial receipt retained as initial-aliasing-receipt-invalidated.json; current video-decode-integration/evidence.json references the fresh CLI receipt, which passed independent response verification.
+
+
+## Independent video response bounds (2026-10-10)
+
+- Receiver now requires a positive finite container duration within the frozen plan, fixed frame dimensions, integer sequence/byte accounting, and source PTS span consistent with container duration. Span uses exact rational PTS rather than subtraction of rounded float seconds, including large timestamp-offset regressions.
+- Targeted decoder tests reject missing/boolean/nonfinite/oversized duration, a self-consistent hash-valid frame with changed dimensions, timestamp span beyond container duration and float cancellation at large offsets. Previously actual H20 CLI receipt independently rechecked: duration1.5s,3 frames,source span1s; no new remote call/training/API. Evidence runs/video-decode-integration/receiver-duration-review.json.

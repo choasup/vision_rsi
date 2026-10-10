@@ -41,7 +41,7 @@ class VideoRuntimeTests(unittest.TestCase):
                'format':'ppm_rgb24','sha256':hashlib.sha256(raw).hexdigest(),'content_base64':base64.b64encode(raw).decode()}
         request={'plan':self.plan,'sha256':'1'*64}
         result={'status':'video_decoded','input_sha256':'1'*64,'plan':self.plan,'frames':[frame],
-                'decoded_bytes':len(raw),'inference_performed':False,'audio_processed':False}
+                'decoded_bytes':len(raw),'duration_seconds':1,'inference_performed':False,'audio_processed':False}
         self.assertTrue(validate_result(request,result))
         for mutate in (lambda r:r.update(input_sha256='0'*64),lambda r:r.update(inference_performed=True),
                        lambda r:r['frames'][0].update(sha256='0'*64),lambda r:r['frames'][0].update(seconds=1),
@@ -51,3 +51,18 @@ class VideoRuntimeTests(unittest.TestCase):
         changed=copy.deepcopy(result);changed['frames'].append(dict(frame,index=1,pts=1,seconds=.25))
         changed['decoded_bytes']*=2
         with self.assertRaisesRegex(ValueError,'interval'):validate_result(request,changed)
+        for duration in (None,True,0,-1,float('nan'),float('inf'),3):
+            with self.subTest(duration=duration),self.assertRaisesRegex(ValueError,'duration'):
+                validate_result(request,dict(result,duration_seconds=duration))
+        changed=copy.deepcopy(result);changed['frames'].append(dict(frame,index=1,pts=2,seconds=.5));changed['decoded_bytes']*=2
+        self.assertTrue(validate_result(request,changed))
+        with self.assertRaisesRegex(ValueError,'span'):validate_result(request,dict(changed,duration_seconds=.1))
+        offset=copy.deepcopy(changed)
+        for row in offset['frames']:
+            row['pts']+=10**30;row['seconds']=float(row['pts']/4)
+        # Rounded float seconds collapse at this offset; exact PTS still span .5s.
+        with self.assertRaisesRegex(ValueError,'span'):validate_result(request,dict(offset,duration_seconds=.1))
+        other=b'P6\n2 1\n255\n'+b'\x01\x02\x03'*2
+        changed['frames'][1].update(width=2,sha256=hashlib.sha256(other).hexdigest(),content_base64=base64.b64encode(other).decode())
+        changed['decoded_bytes']=len(raw)+len(other)
+        with self.assertRaisesRegex(ValueError,'dimensions changed'):validate_result(request,changed)

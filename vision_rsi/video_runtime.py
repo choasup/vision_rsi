@@ -53,16 +53,22 @@ def validate_result(request,result):
     if result.get('status')!='video_decoded' or result.get('input_sha256')!=request['sha256'] or result.get('plan')!=plan:
         raise ValueError('Video response input/plan identity differs')
     if result.get('inference_performed') is not False or result.get('audio_processed') is not False:raise ValueError('Unexpected video execution claim')
+    duration=result.get('duration_seconds')
+    if isinstance(duration,bool) or not isinstance(duration,(int,float)) or not math.isfinite(duration) or not 0<duration<=plan['max_duration_seconds']:
+        raise ValueError('Returned video duration is missing or exceeds frozen plan')
     frames=result.get('frames')
     if not isinstance(frames,list) or not 1<=len(frames)<=plan['max_frames']:raise ValueError('Invalid returned video frame count')
-    total=0;previous=None;time_base=None
+    total=0;previous=None;first_stamp=None;time_base=None;dimensions=None
     for index,frame in enumerate(frames):
         if not isinstance(frame,dict) or not isinstance(frame.get('time_base'),dict):raise ValueError('Returned video frame must have a time base object')
-        if frame.get('index')!=index or isinstance(frame.get('index'),bool) or frame.get('format')!='ppm_rgb24':raise ValueError('Invalid returned video frame sequence')
+        if frame.get('index')!=index or isinstance(frame.get('index'),bool) or not isinstance(frame.get('index'),int) or frame.get('format')!='ppm_rgb24':raise ValueError('Invalid returned video frame sequence')
         width=frame.get('width');height=frame.get('height');pts=frame.get('pts');base=frame.get('time_base',{})
         if any(isinstance(v,bool) or not isinstance(v,int) for v in (width,height,pts,base.get('numerator'),base.get('denominator'))):raise ValueError('Invalid returned video dimensions/timestamps')
         if not 0<width<=plan['max_width'] or not 0<height<=plan['max_height'] or base['numerator']<=0 or base['denominator']<=0:raise ValueError('Returned video dimensions/time base exceed bounds')
+        if dimensions is not None and dimensions!=(width,height):raise ValueError('Returned video frame dimensions changed')
+        dimensions=(width,height)
         stamp=Fraction(pts*base['numerator'],base['denominator'])
+        if first_stamp is None:first_stamp=stamp
         if frame.get('seconds')!=float(stamp) or isinstance(frame.get('seconds'),bool):raise ValueError('Returned source timestamp differs')
         if previous is not None and (base!=time_base or float(stamp-previous)+1e-12<1/plan['fps']):raise ValueError('Returned video sampling interval differs')
         previous=stamp;time_base=base
@@ -72,8 +78,10 @@ def validate_result(request,result):
         if len(raw)!=size or not raw.startswith(header) or hashlib.sha256(raw).hexdigest()!=frame.get('sha256'):raise ValueError('Returned video RGB content hash differs')
         total+=len(raw)
         if total>64*1024*1024:raise ValueError('Returned decoded video exceeds 64 MiB')
-    if result.get('decoded_bytes')!=total or isinstance(result.get('decoded_bytes'),bool):raise ValueError('Returned decoded video total differs')
-    if frames[-1]['seconds']-frames[0]['seconds']>plan['max_duration_seconds']:raise ValueError('Returned video duration exceeds plan')
+    if result.get('decoded_bytes')!=total or isinstance(result.get('decoded_bytes'),bool) or not isinstance(result.get('decoded_bytes'),int):raise ValueError('Returned decoded video total differs')
+    span=previous-first_stamp
+    if span>Fraction(str(plan['max_duration_seconds'])):raise ValueError('Returned video duration exceeds plan')
+    if span>Fraction(str(duration))+Fraction(1,1000000):raise ValueError('Returned source timestamp span exceeds video duration')
     return True
 
 
