@@ -2,11 +2,15 @@ import io
 import json
 import unittest
 import threading
+import subprocess
+import time
+from pathlib import Path
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request
 from urllib.error import HTTPError
 from unittest.mock import patch
-from vision_rsi.llm import OpenAICompatibleClient, NoRedirect, urlopen
+from vision_rsi.llm import OpenAICompatibleClient, NoRedirect, urlopen, _direct_open
 
 
 class LLMTests(unittest.TestCase):
@@ -99,9 +103,77 @@ class LLMTests(unittest.TestCase):
     @patch('vision_rsi.llm.build_opener')
     def test_transport_installs_nonredirecting_handler(self,build):
         request=Request('https://example.invalid')
-        urlopen(request,timeout=60)
+        _direct_open(request,timeout=60)
         self.assertIsInstance(build.call_args.args[0],NoRedirect)
         build.return_value.open.assert_called_once_with(request,timeout=60)
+
+    @patch.dict('os.environ', {'NO_PROXY':'127.0.0.1'})
+    def test_total_deadline_kills_real_slow_body_worker_without_retry(self):
+        seen=[];sent=[];children=[]
+        class Slow(BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append('request')
+                self.send_response(200)
+                self.send_header('Content-Length','1000');self.end_headers()
+                try:
+                    for _ in range(1000):
+                        self.wfile.write(b'x');self.wfile.flush();sent.append(1)
+                        time.sleep(.05)
+                except (OSError,ConnectionError):pass
+            def log_message(self,*args):pass
+        server=ThreadingHTTPServer(('127.0.0.1',0),Slow)
+        thread=threading.Thread(target=server.serve_forever,kwargs={'poll_interval':.05},daemon=True)
+        thread.start();original=subprocess.Popen
+        def spawn(*args,**kwargs):
+            child=original(*args,**kwargs);children.append(child);return child
+        try:
+            request=Request(f'http://127.0.0.1:{server.server_port}/chat',data=b'{}')
+            started=time.monotonic()
+            with patch('vision_rsi.llm.subprocess.Popen',side_effect=spawn):
+                with self.assertRaisesRegex(TimeoutError,'total transport deadline'):
+                    urlopen(request,timeout=1)
+            self.assertLess(time.monotonic()-started,3)
+            self.assertEqual(seen,['request']);self.assertGreater(len(sent),1)
+            self.assertEqual(len(children),1);self.assertIsNotNone(children[0].poll())
+        finally:
+            server.shutdown();server.server_close();thread.join(timeout=2)
+
+    @patch.dict('os.environ', {'NO_PROXY':'127.0.0.1'})
+    def test_real_worker_returns_body_and_closes(self):
+        class Success(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.send_response(200);self.end_headers();self.wfile.write(b'{"ok":true}')
+            def log_message(self,*args):pass
+        server=ThreadingHTTPServer(('127.0.0.1',0),Success)
+        thread=threading.Thread(target=server.serve_forever,kwargs={'poll_interval':.05},daemon=True)
+        thread.start()
+        try:
+            request=Request(f'http://127.0.0.1:{server.server_port}/chat',data=b'{}')
+            with urlopen(request,timeout=3) as response:
+                self.assertEqual(json.load(response),{'ok':True})
+            self.assertTrue(response.closed)
+        finally:
+            server.shutdown();server.server_close();thread.join(timeout=2)
+
+    @patch.dict('os.environ', {'NO_PROXY':'127.0.0.1'})
+    def test_worker_own_deadline_does_not_depend_on_parent_cancellation(self):
+        received=threading.Event();release=threading.Event()
+        class Hang(BaseHTTPRequestHandler):
+            def do_POST(self):received.set();release.wait(3)
+            def log_message(self,*args):pass
+        server=ThreadingHTTPServer(('127.0.0.1',0),Hang)
+        thread=threading.Thread(target=server.serve_forever,kwargs={'poll_interval':.05},daemon=True)
+        thread.start()
+        try:
+            import vision_rsi.llm as llm
+            request={'url':f'http://127.0.0.1:{server.server_port}/chat','data':'e30=',
+                     'headers':{},'timeout':.5}
+            result=subprocess.run([sys.executable,str(Path(llm.__file__).with_name('_llm_worker.py'))],
+                                  input=json.dumps(request).encode(),capture_output=True,timeout=3)
+            self.assertTrue(received.is_set());self.assertEqual(result.returncode,124)
+            self.assertEqual(result.stdout,b'');self.assertEqual(result.stderr,b'')
+        finally:
+            release.set();server.shutdown();server.server_close();thread.join(timeout=2)
 
     @patch.dict('os.environ', {'NO_PROXY':'127.0.0.1'})
     def test_actual_loopback_redirect_does_not_reach_other_origin(self):

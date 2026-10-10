@@ -1,6 +1,12 @@
 """Replaceable OpenAI-compatible client; credentials are never persisted."""
 import json
 import os
+import base64
+import io
+import math
+from pathlib import Path
+import subprocess
+import sys
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -17,8 +23,39 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def urlopen(request, timeout):
+def _direct_open(request, timeout):
     return build_opener(NoRedirect()).open(request, timeout=timeout)
+
+
+def urlopen(request, timeout):
+    """Bound connection, headers and body together; never retry an uncertain call."""
+    if type(timeout) not in (int,float) or not math.isfinite(timeout) or not 0 < timeout <= 60:
+        raise ValueError('LLM transport timeout must be in (0,60]')
+    payload=json.dumps({'url':request.full_url,'headers':dict(request.header_items()),
+                        'data':None if request.data is None else base64.b64encode(request.data).decode(),
+                        'timeout':timeout}).encode()
+    flags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0
+    process=subprocess.Popen([sys.executable,str(Path(__file__).with_name('_llm_worker.py'))],
+                             stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+                             creationflags=flags)
+    try:
+        output,_=process.communicate(payload,timeout=timeout)
+    except BaseException as error:
+        process.kill()
+        process.communicate()
+        if isinstance(error,subprocess.TimeoutExpired):
+            raise TimeoutError('LLM total transport deadline exceeded') from None
+        raise
+    if process.returncode==124:
+        raise TimeoutError('LLM total transport deadline exceeded')
+    if process.returncode or len(output)>MAX_RESPONSE_BYTES+100:
+        raise RuntimeError('LLM transport worker failed; body suppressed')
+    header,separator,body=output.partition(b'\n')
+    if separator and header==b'OK':return io.BytesIO(body)
+    if separator and header.startswith(b'HTTP ') and header[5:].isdigit():
+        raise HTTPError(request.full_url,int(header[5:]),'LLM HTTP error',{},io.BytesIO())
+    if header==b'OVERSIZED':raise RuntimeError('LLM response exceeds byte limit; body suppressed')
+    raise URLError('LLM transport worker failed')
 
 
 class OpenAICompatibleClient:

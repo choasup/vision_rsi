@@ -79,7 +79,7 @@ def _repair(store,request_id,report_path,module,function,config):
     report,parent,source,report_sha=failure_context(store,report_path,module,function)
     if report['remote']!=config['remote']:raise ValueError('Repair remote differs from original check')
     controls={name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in
-              ('adapter_repair.py','repair_budget.py','candidates.py','contracts.py','candidate_runtime.py','remote.py','llm.py','runner.py')}
+              ('adapter_repair.py','repair_budget.py','candidates.py','contracts.py','candidate_runtime.py','remote.py','llm.py','_llm_worker.py','runner.py')}
     row=store.db.execute('SELECT identity,state,response FROM requests WHERE id=?',(request_id,)).fetchone()
     current_base=store.base()
     base=json.loads(row[0]).get('base_revision') if row else current_base
