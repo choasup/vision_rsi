@@ -186,6 +186,12 @@ from vision_rsi.research_memory import metric_memory
 
 
 class MetricMemoryTests(unittest.TestCase):
+    def test_actual_input_content_separates_comparison_groups(self):
+        first=self.records(1,.9);second=self.records(2,.1)
+        first[1]['payload']['observation']['evaluation_identity']['input_set_sha256']='a'*64
+        second[1]['payload']['observation']['evaluation_identity']['input_set_sha256']='b'*64
+        self.assertEqual(metric_memory(first+second)['comparison_group_count'],2)
+
     def records(self,index,score,dataset='d'):
         return [{'key':str(index),'kind':'action','payload':{'tool':'evaluate_contract'}},
                 {'key':str(index)+':result','kind':'result','payload':{'action':str(index),'status':'completed',

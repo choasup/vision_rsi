@@ -201,11 +201,22 @@ def supports_metric_evaluation(config):
             and acceptance.get('metric')=='event_micro_f1' and acceptance.get('direction')=='maximize')
 
 
+def bundle_execution(config):
+    value=config.get('research',{}).get('candidate_bundle_execution')
+    if value is None:return None
+    if not isinstance(value,dict) or set(value)!={'media_input','decode_video'} or any(type(item) is not bool for item in value.values()):
+        raise ValueError('candidate_bundle_execution requires boolean media_input/decode_video')
+    if value['decode_video'] and not value['media_input']:raise ValueError('Video decoder requires media input')
+    return value
+
+
 def bind_validation(ledger,config):
     """Freeze development data before any planner sees an evaluation option."""
     records=[e for e in ledger.events() if e['payload'].get('record_type')=='validation_binding']
     supplied=config.get('research',{}).get('validation_dataset')
+    execution=bundle_execution(config)
     if not supplied:
+        if execution is not None:raise ValueError('Bundle research requires frozen validation data')
         if records:raise ValueError('Frozen validation dataset binding cannot be removed')
         return
     binding=frozen_validation(config)
@@ -215,6 +226,7 @@ def bind_validation(ledger,config):
         raise ValueError('Frozen validation dataset changed before planning')
     _,contract_hash=frozen_contract(config)
     identity={'path':str(path),'sha256':binding['sha256'],'contract_sha256':contract_hash}
+    if execution is not None:identity['candidate_bundle_execution']=execution
     if records:
         if records[0]['payload']['binding']!=identity:
             raise ValueError('Validation binding is frozen; use a new research root')
@@ -289,8 +301,18 @@ def execute(tool, config, repository,arguments=None):
             raise ValueError('Candidate metric evaluation is not enabled')
         args=evaluation_arguments(arguments);_,contract_hash=frozen_contract(config);dataset=frozen_validation(config)
         store=Candidates(context['store'],repository)
-        try:report=evaluate(store,args['candidate_id'],config['remote'],args['module'],args['function'],
-                            config['research']['task_contract']['path'],dataset['path'],contract_hash,dataset['sha256'])
+        try:
+            mode=bundle_execution(config)
+            if mode is None:
+                report=evaluate(store,args['candidate_id'],config['remote'],args['module'],args['function'],
+                                config['research']['task_contract']['path'],dataset['path'],contract_hash,dataset['sha256'])
+            else:
+                from .candidate_bundle import build,verify
+                from .bundle_evaluation import evaluate_bundle
+                bundle=build(store,args['candidate_id'],args['module'],args['function'],config['research']['task_contract']['path'],
+                             store.root.parent/'bundles',**mode)
+                if verify(bundle['path'])['identity']['contract_sha256']!=contract_hash:raise ValueError('Frozen contract changed before bundling')
+                report=evaluate_bundle(bundle['path'],dataset['path'],config['remote'],store.root.parent/'bundle-evaluations',dataset['sha256'])
         finally:store.close()
         return {'candidate_id':args['candidate_id'],'runtime_status':report['status'],'metric_report':report['metric_report'],
                 'acceptance_evaluated':report['acceptance_evaluated'],'report_path':report['report_path'],
@@ -517,6 +539,9 @@ def research_step(config, directory, steps=1, repository='.'):
                         prompt['schema']['tool_argument_shapes']['read_training_run']={'run_id':'exact recent_run_snapshots run_id from task_readiness','expected_record_sha256':'matching record_sha256 from that same snapshot'}
                         prompt['schema']['arguments_rule']+=' read_training_run requires arguments exactly run_id,expected_record_sha256; never supply a path or session ID. An updated record has a new hash and may be inspected again; do not repeat the same run/hash.'
                         prompt['instruction']+=' A successful read_training_run result is also eligible synthesis evidence. Locally re-reviewed receipts are not independent authenticity, serving availability or RSI evidence.'
+                    if bundle_execution(config) is not None:
+                        prompt['candidate_bundle_execution']=bundle_execution(config)
+                        prompt['instruction']+=' Candidate entry signature must accept sample, also media when media_input=true, and video_frames when decode_video=true; these execution modes are frozen outside model arguments.'
                     if 'read_candidate_source' in available:
                         prompt['tools']['read_candidate_source']='Read a hash-bound source excerpt from a candidate staged in this ledger; cite the staged result. No execution.'
                         prompt['schema']['tool_argument_shapes']['read_candidate_source']={'candidate_id':'staged candidate identity','path':'path in candidate source_hashes','expected_sha256':'optional known hash; otherwise derive from verified candidate','start_line':'positive integer','max_lines':'1..100'}
@@ -548,6 +573,9 @@ def research_step(config, directory, steps=1, repository='.'):
                         dataset=frozen_validation(config)
                         prompt['tools']['evaluate_contract']='Run staged adapter against configured frozen development inputs and deterministic event F1 metric; no hidden-test feedback, production acceptance or adoption.'
                         prompt['validation_dataset']={'sha256':dataset['sha256'],'purpose':'development_validation','labels_disclosed_to_candidate':False}
+                        if bundle_execution(config) is not None:
+                            prompt['candidate_bundle_execution']=bundle_execution(config)
+                            prompt['tools']['evaluate_contract']+=' Use the frozen portable bundle path. Entry signature: sample plus media if media_input=true, plus video_frames if decode_video=true. Modes are external and immutable.'
                         prompt['schema']['tool_argument_shapes']['evaluate_contract']={'candidate_id':'staged candidate identity','module':'vision_rsi.adapter_name or harness_name','function':'function name'}
                         prompt['schema']['arguments_rule']+=' evaluate_contract arguments are EXACTLY candidate_id,module,function; cite its staged result. The dataset/ground truth/threshold are configured outside your arguments and must not be overridden.'
                     original_history_count=len(history)

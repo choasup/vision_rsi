@@ -109,6 +109,8 @@ def metric_memory(events):
         score=metric.get('event_micro_f1')
         if type(score) not in (int,float) or not math.isfinite(score) or not 0<=score<=1:continue
         binding={key:identity[key] for key in fields};key=digest(binding)
+        if 'input_set_sha256' in identity:
+            binding['input_set_sha256']=identity['input_set_sha256'];key=digest(binding)
         group=groups.setdefault(key,{'comparison_binding':binding,'best':None,'latest':None,'latest_failure':None,'last_index':index})
         row={'ref':event['key'],'candidate_id':value.get('candidate_id'),'report_sha256':value.get('report_sha256'),
              'staged_ref':staged.get(value.get('candidate_id')),'module':identity.get('module'),'function':identity.get('function'),

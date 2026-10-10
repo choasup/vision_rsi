@@ -937,3 +937,5 @@ python -m vision_rsi training release-status --session-id SESSION --json
 ```
 
 开发集格式与候选评测一致：`purpose: "development_validation"`、1 至 16 个 `samples` 及 ID 完全匹配的 `ground_truth`。当前指标仅支持冻结合同中的事件 micro-F1 协议。入口复用包的媒体/视频处理路径，标注只用于控制端计算指标。实际媒体变化会改变执行记录身份并产生独立评测记录，不能只因 JSON 文件未变而复用旧分数。结果仍不授予生产资格。
+
+通用研究可显式配置 `research.candidate_bundle_execution` 为 `{"media_input":true,"decode_video":false}`，让 `evaluate_contract` 自动导出并评测候选包；需要视频帧时将 `decode_video` 设为 true，合同须满足前述显式解码上限。两字段都必须是布尔值，必须同时配置冻结开发集。该模式会随开发集身份写入账本；后续更改或删除模式需新建研究目录。规划器提前获得入口签名要求，不能在工具参数中改变模式。当前仍仅支持事件 F1 开发指标，不用于 COCO AP 评测或生产注册。

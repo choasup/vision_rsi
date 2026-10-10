@@ -120,7 +120,7 @@ def run(bundle_path,samples,remote,output,expected_bundle_id=None,media_director
     encode_cases(identity['module'],identity['function'],cases)
     request={'files':bundle['files'],'source_hashes':identity['source_hashes'],
              'module':identity['module'],'function':identity['function'],'cases':cases}
-    binding={'bundle_id':bundle['bundle_id'],'request_sha256':digest(request),'remote':remote,
+    binding={'bundle_id':bundle['bundle_id'],'request_sha256':digest(request),'input_sha256':digest(cases),'remote':remote,
              'executor_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
              'validator_sha256':hashlib.sha256(Path(__file__).with_name('contracts.py').read_bytes()).hexdigest()}
     folder=Path(output).resolve()/digest(binding);folder.mkdir(parents=True,exist_ok=True);path=folder/'execution.json'

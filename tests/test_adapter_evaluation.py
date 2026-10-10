@@ -11,6 +11,40 @@ from test_event_eval import event
 
 
 class AdapterEvaluationTests(unittest.TestCase):
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    @patch('vision_rsi.remote.check_candidate')
+    def test_controller_evaluates_frozen_media_bundle_mode(self,remote,client):
+        from vision_rsi.controller import research_step
+        from vision_rsi.ledger import Ledger
+        sample=self.data['samples'][0]
+        for field,value in sample['inputs'].items():
+            for index,item in enumerate(value['items'] if value['type']=='image_list' else [value]):
+                name=field+str(index)+'.bin';item['uri']=name;(self.root/name).write_bytes(name.encode())
+        self.dataset.write_text(json.dumps(self.data),encoding='utf-8')
+        ledger=Ledger(self.root);ledger.append('objective','objective',{'summary':'media research'})
+        ledger.append('stage','action',{'summary':'stage','tool':'stage_candidate','executor':'research-v1'})
+        ledger.append('stage:result','result',{'summary':'candidate','action':'stage','status':'completed','observation':{'candidate_id':self.candidate}})
+        config={'llm':{'model':'fixture'},'remote':{},'research':{'allow_candidate_checks':True,
+            'candidate_bundle_execution':{'media_input':True,'decode_video':False},
+            'task_contract':{'path':str(self.contract),'sha256':hashlib.sha256(self.contract.read_bytes()).hexdigest()},
+            'validation_dataset':{'path':str(self.dataset),'sha256':hashlib.sha256(self.dataset.read_bytes()).hexdigest()}}}
+        client.return_value.complete.return_value={'content':json.dumps({'tool':'evaluate_contract','summary':'measure',
+            'question':'q','expected_evidence':'media metric','refs':['stage:result'],
+            'arguments':{'candidate_id':self.candidate,'module':'vision_rsi.adapter_fixture','function':'predict'}})}
+        remote.side_effect=lambda endpoint,request:{'status':'executed_unverified','source_hashes':request['source_hashes'],
+            'limits':{'gpu':False,'network':False},'observation':{'results':[{'events':[]}]}}
+        research_step(config,self.root,repository=self.store.repository)
+        result=ledger.events()[-1]['payload'];self.assertEqual(result['status'],'completed')
+        self.assertEqual(result['observation']['metric_report']['event_micro_f1'],0)
+        self.assertTrue(result['observation']['acceptance_evaluated'])
+        self.assertEqual(result['observation']['evaluation_identity']['module'],'vision_rsi.adapter_fixture')
+        self.assertIn('media',remote.call_args.args[1]['cases'][0])
+        prompt=json.loads(client.return_value.complete.call_args.args[0][0]['content'])
+        self.assertEqual(prompt['candidate_bundle_execution'],config['research']['candidate_bundle_execution'])
+        config['research']['candidate_bundle_execution']['media_input']=False
+        with self.assertRaisesRegex(ValueError,'binding is frozen'):research_step(config,self.root,repository=self.store.repository)
+        self.assertEqual(client.return_value.complete.call_count,1)
+
     @patch('vision_rsi.remote.check_candidate')
     def test_bundle_metrics_bind_actual_media_and_keep_ground_truth_local(self,remote):
         from vision_rsi.candidate_bundle import build
