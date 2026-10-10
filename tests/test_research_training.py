@@ -11,6 +11,31 @@ from vision_rsi.runner import digest
 
 
 class ResearchTrainingTests(unittest.TestCase):
+    def test_long_diagnostics_cannot_hide_metric_threshold_cost_or_rejection(self):
+        from vision_rsi.controller import observation_context
+        value={'run_id':'train-'+'a'*32,'record_sha256':'b'*64,'plan_id':'c'*64,
+               'recorded_status':'completed','reserved_gpu_hours':8,'actual_gpu_hours':3.5,
+               'receipt_available':True,'quality_verified':False,'remote_called':False,
+               'receipt_review':{'status':'not_met','passed':False,'box_AP':42,'threshold':60,
+                                 'reasons':['below target']+['x'*1000]*10,
+                                 'error_summary':{'categories':['long diagnostic'*1000]*20}}}
+        # Reproduce the sorted JSON representation loaded from the durable ledger.
+        projected=observation_context(json.loads(json.dumps(value,sort_keys=True)))
+        self.assertEqual(projected['receipt_review']['box_AP'],42)
+        self.assertEqual(projected['receipt_review']['threshold'],60)
+        self.assertFalse(projected['receipt_review']['passed'])
+        self.assertEqual(projected['actual_gpu_hours'],3.5)
+        self.assertEqual(projected['record_sha256'],value['record_sha256'])
+        self.assertTrue(projected['projection_truncated'])
+        self.assertTrue(projected['receipt_review']['error_summary_truncated'])
+        self.assertEqual(projected['observation_sha256'],digest(value))
+        self.assertLessEqual(len(json.dumps(projected,ensure_ascii=False)),8800)
+        value['receipt_review']['reasons']=['\x00'*1000]*10
+        value['receipt_review']['error_summary']={'text':'\x00'*10000}
+        projected=observation_context(value)
+        self.assertLessEqual(len(json.dumps(projected,ensure_ascii=False)),8800)
+        self.assertEqual(projected['receipt_review']['box_AP'],42)
+
     @patch('vision_rsi.controller.OpenAICompatibleClient')
     def test_controller_reads_bound_receipt_via_model_run_id_only(self,client):
         import hashlib
@@ -50,6 +75,11 @@ class ResearchTrainingTests(unittest.TestCase):
             client.return_value.complete.return_value={'content':json.dumps(action)}
             research_step(config,ledger.directory)
             latest=ledger.events()[-1]['payload']
+            next_prompt=json.loads(client.return_value.complete.call_args.args[0][0]['content'])
+            prior_observations=[row['observation'] for row in next_prompt['history']
+                                if row['observation'].get('kind')=='collected_training_evidence']
+            self.assertEqual(prior_observations[-1]['receipt_review']['box_AP'],42)
+            self.assertEqual(prior_observations[-1]['receipt_review']['threshold'],60)
             self.assertEqual(latest['status'],'completed')
             self.assertEqual(latest['observation']['recorded_status'],'failed')
             self.assertNotEqual(latest['observation']['record_sha256'],checksum)

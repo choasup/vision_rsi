@@ -17,6 +17,33 @@ TOOLS = {'inspect_repository', 'read_source', 'remote_environment', 'synthesize'
 
 def observation_context(value):
     """Preserve source identities across sorted ledger JSON and bounded prompts."""
+    if isinstance(value,dict) and isinstance(value.get('record_sha256'),str) and 'receipt_review' in value:
+        result={key:value.get(key) for key in ('run_id','record_sha256','plan_id','recorded_status',
+                'reserved_gpu_hours','actual_gpu_hours','receipt_available','receipt_sha256',
+                'quality_verified','read_only','remote_called','training_performed')}
+        result.update(kind='collected_training_evidence',observation_sha256=digest(value),
+                      live_process_verified=False,external_authenticity_verified=False,
+                      receipt_review=None,projection_truncated=False)
+        verdict=value['receipt_review']
+        if isinstance(verdict,dict):
+            review={key:verdict[key] for key in ('status','passed','box_AP','threshold','error_type') if key in verdict}
+            reasons=verdict.get('reasons',[])
+            review['reasons']=[text[:500] for text in reasons[:6]]
+            review['reason_count']=len(reasons)
+            diagnostics=json.dumps(verdict.get('error_summary'),ensure_ascii=False,sort_keys=True)
+            review['error_summary_excerpt']=diagnostics[:3000]
+            review['error_summary_truncated']=len(diagnostics)>3000
+            result['receipt_review']=review
+            result['projection_truncated']=len(reasons)>6 or any(len(text)>500 for text in reasons) or len(diagnostics)>3000
+        while len(json.dumps(result,ensure_ascii=False))>8800:
+            if isinstance(result['receipt_review'],dict) and result['receipt_review']['error_summary_excerpt']:
+                result['receipt_review']['error_summary_excerpt']=result['receipt_review']['error_summary_excerpt'][:-500]
+                result['receipt_review']['error_summary_truncated']=True
+            elif isinstance(result['receipt_review'],dict) and result['receipt_review']['reasons']:
+                result['receipt_review']['reasons'].pop()
+            else:raise ValueError('Training observation context metadata too large')
+            result['projection_truncated']=True
+        return result
     if isinstance(value,dict) and isinstance(value.get('candidate_id'),str) and isinstance(value.get('source_edits'),list):
         edits=value['source_edits']
         result={key:value.get(key) for key in ('candidate_id','git_revision','base_revision','source_hashes','status','adopted','code_executed')}
