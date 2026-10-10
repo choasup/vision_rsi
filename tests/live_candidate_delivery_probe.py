@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--live-remote',action='store_true')
     parser.add_argument('--bundle',required=True)
     parser.add_argument('--config',default='config.local.json')
+    parser.add_argument('--workflow',action='store_true',help='Use the integrated delivery workflow for fresh execution')
     args=parser.parse_args()
     if not args.live_remote:parser.error('Require --live-remote; at most six CPU calls, no LLM/GPU')
     repo=Path(__file__).resolve().parents[1]
@@ -40,7 +41,7 @@ def main():
     root=repo/'runs/candidate-delivery-live'/uuid.uuid4().hex
     root.mkdir(parents=True);print(str(root),flush=True)
     atomic_json(root/'preregistered.json',{'scope':__doc__,'max_remote_calls':6,'gpu_used':False,'llm_calls':0,
-                'bundle_id':bundle['bundle_id'],'probe_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                'bundle_id':bundle['bundle_id'],'integrated_workflow':args.workflow,'probe_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 'criteria':['real isolated CPU execution','sealed ledger acceptance','immutable promotion',
                             'formal single and joint batch inference','cached external-directory CLI reuse']})
     original=transport.check_candidate;calls=[];registry=None;passed=False;failure=None
@@ -92,11 +93,19 @@ def main():
                            'evaluation_identity':report['identity']}})
         ledger.append('pause','paused',{'summary':'Developer fixture research ended'})
         registry=Capabilities(root/'registry');candidate=registry.register_candidate(session,bundle_path)
-        acceptance=accept(registry,session,candidate['version'],holdout,remote,research_root)
-        assert acceptance['status']=='holdout_metric_met'
-        serving=check(registry,session,candidate['version'],holdout,remote,30)
-        assert serving['status']=='serving_contract_checks_met' and len(calls)==4
-        delivery=promote(registry,session,candidate['version'],research_root,remote)
+        workflow=None
+        if args.workflow:
+            from vision_rsi.candidate_workflow import deliver
+            workflow=deliver(registry,session,candidate['version'],holdout,research_root,remote,30)
+            assert workflow['status']=='scoped_delivery_ready_for_test' and len(calls)==4
+            assert deliver(registry,session,candidate['version'],holdout,research_root,remote,30)==workflow
+            delivery=json.loads((registry.root/session['task_id']/workflow['version']/'manifest.json').read_text(encoding='utf-8'))
+        else:
+            acceptance=accept(registry,session,candidate['version'],holdout,remote,research_root)
+            assert acceptance['status']=='holdout_metric_met'
+            serving=check(registry,session,candidate['version'],holdout,remote,30)
+            assert serving['status']=='serving_contract_checks_met' and len(calls)==4
+            delivery=promote(registry,session,candidate['version'],research_root,remote)
         assert promote(registry,session,candidate['version'],research_root,remote)==delivery
         single=folder/'single.json';atomic_json(single,samples[2])
         output=registry.infer(session['task_id'],single)
@@ -126,8 +135,16 @@ def main():
                                  cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)
         assert completed.returncode==0,completed.stderr
         assert json.loads(completed.stdout)==status
+        if args.workflow:
+            command=['training','deliver-candidate','--session-id',session['session_id'],'--version',candidate['version'],
+                     '--sessions',str(sessions.root),'--research-root',str(research_root),'--registry',str(registry.root),
+                     '--dataset',str(holdout),'--max-latency-seconds','30','--config',str(Path(args.config).resolve())]
+            completed=subprocess.run([sys.executable,'-X','utf8',str(repo/'launch_agent.py'),'--cli']+command,
+                                     cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)
+            assert completed.returncode==0,completed.stderr
+            assert json.loads(completed.stdout)==workflow
         assert len(calls)==6
-        atomic_json(root/'delivery-result.json',{'delivery':delivery,'single':output,'batch':summary,'release_status':status})
+        atomic_json(root/'delivery-result.json',{'delivery':delivery,'single':output,'batch':summary,'release_status':status,'workflow':workflow})
         passed=True
     except Exception as error:
         failure=type(error).__name__+': '+str(error)
@@ -135,7 +152,7 @@ def main():
     finally:
         transport.check_candidate=original
         if registry is not None:registry.close()
-        atomic_json(root/'evidence.json',{'passed':passed,'failure':failure,'remote_calls':len(calls),
+        atomic_json(root/'evidence.json',{'passed':passed,'failure':failure,'remote_calls':len(calls),'integrated_workflow':args.workflow,
             'llm_calls':0,'gpu_used':False,'quality_verified':False,'production_accepted':False,
             'scope':__doc__})
 

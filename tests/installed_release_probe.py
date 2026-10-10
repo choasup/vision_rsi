@@ -58,6 +58,7 @@ def main():
         names += ['test_batch_samples', 'test_research_baseline', 'test_paired_budget', 'test_candidate_runtime', 'test_runtime_userspace', 'test_candidate_serving', 'test_candidate_inference',
                   'test_bundle_acceptance',
                   'test_input_provenance', 'test_research_history', 'test_task_acceptance']
+        names += ['test_candidate_delivery', 'test_candidate_release_status', 'test_candidate_workflow']
         suite = unittest.defaultTestLoader.loadTestsFromNames(names)
         with (output/'installed-tests.log').open('w', encoding='utf-8') as log:
             result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)
