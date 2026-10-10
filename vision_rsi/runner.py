@@ -13,7 +13,19 @@ def digest(value):
 
 
 def revision():
-    return subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+    """Identify this controller, independently of the caller's working directory.
+
+    Installed wheels have no Git checkout. Their explicit source digest must not
+    be mistaken for a commit from an unrelated repository in the current dir.
+    """
+    package=Path(__file__).resolve().parent
+    repository=package.parent
+    if (repository/'.git').exists():
+        return subprocess.check_output(['git','-C',str(repository),'rev-parse','HEAD'],
+                                       text=True,stderr=subprocess.DEVNULL).strip()
+    sources={path.name:hashlib.sha256(path.read_bytes()).hexdigest()
+             for path in sorted(package.iterdir()) if path.is_file() and path.suffix in ('.py','.html')}
+    return 'source-sha256:'+digest(sources)
 
 
 def atomic_json(path, value):
