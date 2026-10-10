@@ -12,6 +12,35 @@ from vision_rsi.paired_study import create,load,step,compare
 
 
 class PairedStudyTests(unittest.TestCase):
+    def test_preregistration_preserves_shared_api_and_controller_caps_without_credentials(self):
+        self.spec['research_rounds']=1
+        ledger=str(self.root/'shared-api.sqlite3')
+        self.config['llm'].update(usage_ledger=ledger,usage_call_limit=9,api_key='MUST_NOT_PERSIST')
+        self.config['controller']={'tool_attempt_limit':12}
+        record=self.create()
+        for pair in record['identity']['pairs']:
+            self.assertEqual(pair['config']['controller'],{'tool_attempt_limit':12})
+            self.assertEqual(pair['config']['llm']['usage_ledger'],ledger)
+            self.assertEqual(pair['config']['llm']['usage_call_limit'],9)
+            for arm in ('baseline','candidate'):
+                binding=pair[arm]['binding']
+                self.assertEqual(binding['controller_tool_attempt_limit'],12)
+                self.assertEqual(binding['research_model']['usage_ledger'],ledger)
+                self.assertEqual(binding['research_model']['usage_call_limit'],9)
+        self.assertNotIn('MUST_NOT_PERSIST',json.dumps(record))
+        self.assertFalse(Path(ledger).exists())
+
+    def test_invalid_caps_are_not_silently_discarded_during_preregistration(self):
+        for controller in ({'tool_attempt_limit':True},{'unknown':1}):
+            self.config['controller']=controller
+            with self.assertRaises(ValueError):self.create()
+        self.config.pop('controller')
+        for llm in ({'usage_call_limit':1},{'usage_call_limit':True,'usage_ledger':str(self.root/'usage.sqlite3')},
+                    {'usage_ledger':'relative.sqlite3'}):
+            self.config['llm']={'model':'fixture','base_url':'https://fixture.invalid',**llm}
+            with self.assertRaises(ValueError):self.create()
+        self.assertFalse(self.studies.exists())
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
         self.sessions=self.root/'sessions';self.campaigns=self.root/'campaigns';self.runs=self.root/'runs';self.studies=self.root/'studies'

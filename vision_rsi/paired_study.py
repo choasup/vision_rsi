@@ -36,8 +36,16 @@ def create(spec,config,root='runs/paired-studies',sessions='runs/training-sessio
     if not isinstance(spec['pairs'],list) or not 2<=len(spec['pairs'])<=100:raise ValueError('Study requires 2..100 preregistered pairs')
     # Copy only supported service configuration; never persist credentials.
     safe={'remote':{k:config['remote'][k] for k in ('ssh_host','ssh_port','workspace','python','coco_root') if k in config['remote']},
-          'llm':{k:config['llm'][k] for k in ('model','base_url','api_key_env','thinking') if k in config['llm']},
+          'llm':{k:config['llm'][k] for k in ('model','base_url','api_key_env','thinking','usage_ledger','usage_call_limit') if k in config['llm']},
           'training':dict(config.get('training',{}))}
+    from .controller_budget import configured_limit
+    configured_limit(config)
+    if 'controller' in config:safe['controller']=dict(config['controller'])
+    from .llm_usage import ledger_path,validate_call_limit
+    if 'usage_ledger' in safe['llm']:ledger_path(safe['llm']['usage_ledger'])
+    if 'usage_call_limit' in safe['llm']:
+        validate_call_limit(safe['llm']['usage_call_limit'])
+        if 'usage_ledger' not in safe['llm']:raise ValueError('Study API call limit requires an absolute shared usage ledger')
     allowed={'detector','epochs','batch_size_per_gpu','seed','checkpoint_steps','world_size','min_size','max_size','learning_rate','weight_decay','fixture','coco_root','weights','weights_sha256','train_annotations_sha256','val_annotations_sha256','acceptance_threshold','timeout_seconds'}
     if set(safe['training'])-allowed:raise ValueError('Unsupported training configuration in study')
     from .coco_train import validate_recipe

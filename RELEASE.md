@@ -198,3 +198,10 @@
 - 实际请求context包含synthetic-rejection反馈；返回支持的min/max_size、learning_rate等方法字段，状态ready_to_submit；祖先配方保留1条。缓存重放在禁止创建API客户端的条件下与原结果一致，没有新增调用。
 - 证据`runs/method-feedback-live/931e24134bc54c01aa177c00098d206e/{preregistered.json,seed-result.json,evidence.json}`及research请求账本/原响应。账本1次responded，报告prompt1228/completion425/total1653 Token，无未知Token调用；账本剩余0，不声称覆盖账户其它账本或实际费用结算。
 - 这是一个合成开发样例的真实API/编译证据，不是模型改善、统计成功率、实际GPU训练或RSI研究效率。没有语义重试、SSH或GPU调用，完整上线门槛仍未完成。
+
+## 配对研究保留控制/API约束（2026-10-10）
+
+- 修复paired study配置复制遗漏`llm.usage_ledger`、`usage_call_limit`和`controller.tool_attempt_limit`的问题：新预登记的两组配置及campaign binding均保留原约束，不因进入study路径而静默去掉上限。
+- 预登记本地验证controller配置、绝对账本路径及调用上限类型；声明调用上限但缺少共享账本时拒绝。验证不创建API账本、不联网；凭据值继续排除，api_key_env名称可保留。
+- 39项paired study/campaign/控制预算/API账本相关测试通过（6.151秒），包括两组绑定一致、密钥未序列化、非法约束拒绝及未创建账本/研究目录。
+- 已有研究冻结记录不回写。本次没有真实API/SSH/GPU调用；共享API调用总上限不等于每组独立相等Token/费用预算，实际公平性、独立保留集和统计RSI效率仍未证明，候选不自动采用。安装包尚未重建，完整上线目标未完成。
