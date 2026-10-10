@@ -439,3 +439,16 @@ Training 需求理解会在内部对已收到的接口格式错误最多修正�
 此命令完成传输打包，不解码视频、不执行推理，也不注册能力；联合多图/视频模型适配器仍待实现和验证。现有 COCO Test 仍只接受其单图契约。旧任务包需重新 build 才包含该命令。
 
 接收端可执行 ` .\run.cmd verify-input --input C:\samples\packet.json `，核对包内字节、每个输入的媒体数量与顺序、视频策略、总大小和契约绑定指纹。接收端无需访问发送端文件路径。完整 JSON 包读取上限为 90 MiB。校验成功仅表示传输内容符合该契约；哈希不是身份认证，也不证明模型效果。
+
+
+### 视频解码执行
+
+新任务包在 build 阶段冻结可支持的视频解码计划，`check` 显示 `video_decoders`。目前支持 `N fps`、`ordered` 或 `preserve timestamps and order`、`audio=ignore`：选择第一张源帧，之后选择与上一张至少相隔 `1/N` 秒的第一张源帧，保留原始 PTS/时间基准；不合成重复帧。未知策略保持 blocked，不在 Test 时猜测。
+
+```powershell
+.\run.cmd decode-input --input C:\samples\packet.json --field clip --output C:\samples\frames.json
+```
+
+使用配置的 SSH 服务器执行 CPU FFmpeg，要求 Linux bwrap、FFmpeg/ffprobe 及兼容共享库。解码进程没有网络/GPU/宿主凭据，只读一个输入文件，仅私有输出目录可写。默认计划上限为 640×480、64 帧、30 秒；超出拒绝，不能静默缩放或截断。Training 契约可用 `processing.decoder` 明确覆盖：`protocol=source_first_min_interval_v1`、`fps`、`max_frames`、`max_width`、`max_height`、`max_duration_seconds`、`audio=ignore`；所有字段必填，最大原始 RGB 总量 64 MiB。此处限制是已冻结的执行边界，不是任务效果要求。
+
+输出带帧内容哈希、原始时间戳、计划与视频内容绑定；本地再次验证远端返回字节和采样间隔。当前只完成解码，不执行事件理解、联合多图模型或质量验收。

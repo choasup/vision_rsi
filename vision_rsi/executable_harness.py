@@ -14,7 +14,8 @@ ROOT=Path(__file__).resolve().parent
 
 def main():
     p=argparse.ArgumentParser(description='Frozen task controls; quality requires validated capability evidence')
-    p.add_argument('mode',choices=['check','validate-input','validate-output','prepare-input','verify-input','training','test'])
+    p.add_argument('mode',choices=['check','validate-input','validate-output','prepare-input','verify-input','decode-input','training','test'])
+    p.add_argument('--field')
     p.add_argument('--action',choices=['prepare','advance','watch','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate'],default='prepare')
     p.add_argument('--input');p.add_argument('--input-dir');p.add_argument('--samples-manifest');p.add_argument('--output');p.add_argument('--output-dir')
     p.add_argument('--version');p.add_argument('--run-id');p.add_argument('--campaign-id');p.add_argument('--steps',type=int,default=3)
@@ -40,6 +41,17 @@ def main():
     contract=json.loads((ROOT/'contract.json').read_text(encoding='utf-8'))
     from interface_runtime import validate_sample,validate_schema
     try:
+        if a.mode=='decode-input':
+            if not a.input or not a.output or not a.field:raise ValueError('decode-input requires --input packet.json --field video_field --output frames.json')
+            from vision_rsi.media import decode_packet
+            from vision_rsi.runner import atomic_json
+            destination=Path(a.output).resolve()
+            if destination.exists() or destination.is_relative_to(ROOT):raise ValueError('Decoded output must be new and outside frozen harness')
+            with Path(a.input).open('rb') as stream:raw=stream.read(90*1024*1024+1)
+            if len(raw)>90*1024*1024:raise ValueError('Media packet exceeds 90 MiB')
+            result=decode_packet(contract,json.loads(raw.decode('utf-8-sig')),a.field,identity.get('video_decoders',{}).get(a.field),json.loads((ROOT/'config.json').read_text())['remote'])
+            atomic_json(destination,result)
+            print(json.dumps({k:v for k,v in result.items() if k!='frames'},ensure_ascii=False,indent=2));return 0
         if a.mode=='verify-input':
             if not a.input:raise ValueError('verify-input requires --input packet.json')
             from vision_rsi.media import verify_sample_request
@@ -61,7 +73,7 @@ def main():
             if a.mode=='check':
                 validate_sample(contract,contract['example_input']);validate_schema(contract['output_schema'],contract['example_output'])
                 result={'status':'executable_controls_checked','task_id':identity['task_id'],'contract_version':identity['contract_version'],
-                        'training_performed':False,'model_quality_verified':False,'shared_storage':identity['storage']}
+                        'training_performed':False,'model_quality_verified':False,'shared_storage':identity['storage'],'video_decoders':identity.get('video_decoders',{})}
             else:
                 if not a.input:raise ValueError('--input required')
                 value=json.loads(Path(a.input).read_text(encoding='utf-8-sig'))
@@ -138,8 +150,10 @@ def build_executable(session,interface,config,storage,root):
     files['run.cmd']=launcher.encode()
     files.update({'vision_rsi/'+path.name:path.read_bytes() for path in sorted(Path(__file__).parent.glob('*.py'))})
     original=json.loads((base/'manifest.json').read_text(encoding='utf-8'))
+    from .video_runtime import compile_plan
+    decoders={name:compile_plan(field['processing']) for name,field in latest['contract']['inputs'].items() if field['type']=='video'}
     identity={'task_id':session['task_id'],'session_id':session['session_id'],'contract_version':latest['version'],
-              'git_revision':original['git_revision'],'storage':storage,'artifacts':{name:hashlib.sha256(raw).hexdigest() for name,raw in files.items()}}
+              'git_revision':original['git_revision'],'storage':storage,'video_decoders':decoders,'artifacts':{name:hashlib.sha256(raw).hexdigest() for name,raw in files.items()}}
     bundle_id=digest(identity);target=Path(root).resolve()/('executable-'+bundle_id)
     manifest={'bundle_id':bundle_id,'identity':identity,'status':'executable_controls_only','model_quality_verified':False}
     if target.exists():

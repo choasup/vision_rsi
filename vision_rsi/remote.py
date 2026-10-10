@@ -169,3 +169,21 @@ def check_candidate(remote,request):
     result=subprocess.run(ssh_argv(remote)+[command],input=json.dumps(dict(request,workspace=remote['workspace'])),capture_output=True,text=True,timeout=30)
     if result.returncode:raise RuntimeError('Candidate check failed: '+result.stderr[-2000:])
     return json.loads(result.stdout)
+
+
+def decode_video(remote,request):
+    import base64
+    import hashlib
+    from pathlib import Path
+    from .video_runtime import validate_plan,validate_result
+    validate_plan(request['plan'])
+    source=Path(__file__).with_name('video_runtime.py').read_bytes()
+    encoded=base64.b64encode(source).decode()
+    program="import base64; exec(compile(base64.b64decode('"+encoded+"'), '<video-decode>', 'exec'))"
+    command=shlex.quote(remote.get('python','python3'))+' -c '+shlex.quote(program)
+    result=subprocess.run(ssh_argv(remote)+[command],input=json.dumps(dict(request,workspace=remote['workspace'])),capture_output=True,text=True,timeout=40)
+    if result.returncode:raise RuntimeError('Video decode failed: '+result.stderr[-2000:])
+    if len(result.stdout)>90*1024*1024:raise ValueError('Video response exceeds size limit')
+    value=json.loads(result.stdout);validate_result(request,value)
+    value['driver_sha256']=hashlib.sha256(source).hexdigest()
+    return value

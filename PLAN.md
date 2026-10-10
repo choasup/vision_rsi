@@ -340,3 +340,11 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - Shared verifier checks embedded strict base64 bytes against exact declared size/SHA-256, per-field count/order/type, video processing against frozen contract, aggregate limits and contract-bound input fingerprint. No sender path reopened and no decoding/inference claims accepted. JSON object field order is immaterial; joint image list order remains material.
 - New exported verify-input CLI enforces a 90 MiB serialized packet read bound. Packaging self-verifies before writing. Standalone CLI tests reject modified hashes; transport tests reject reordered/missing media, content/policy/text/fingerprint changes and false execution flags; original packet remains verifiable after source media deletion. No media model quality claim.
+
+
+## Isolated video decoding execution (2026-10-10)
+
+- Training harness build freezes supported numeric-fps/source-order/audio-ignore sampling and explicit decoder bounds; unknown semantics remain blocked. Exported decode-input consumes a verified packet and frozen named video plan, SSH CPU decode only. No silent frame truncation or resizing.
+- FFmpeg/ffprobe execute under bwrap uid65534, no network/GPU/home/proc/host etc, read-only tool/shared-library mounts plus one input and private writable output. Ubuntu BLAS/LAPACK alternatives receive only two resolved library files. Tool CPU/address-space/file/process limits and probe/decode deadlines enforced.
+- Actual H20 FFmpeg4.4.2 synthetic 64x48 / 4fps / 1.5s MP4 decoded under this isolation at2fps to source PTS seconds[0,0.5,1],27,687 RGB PPM bytes. Repeated frame hashes identical; max_frames=1 rejected instead of truncating. Ignored evidence runs/video-decode-integration/evidence.json. This verifies decoding, not event understanding or task quality.
+- Receiver independently checks returned frame RGB headers/dimensions/bytes/SHA, exact rational timestamps, interval/count/aggregate limits and input/plan identity. Pure regression tests cover unsupported policy, altered fps, malformed plans/timestamps and response tampering. Joint/video model adaptation and acceptance still incomplete.

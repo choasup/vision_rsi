@@ -14,6 +14,19 @@ def _fingerprint(contract,sample,assets):
     return hashlib.sha256(json.dumps(identity,sort_keys=True,ensure_ascii=False,allow_nan=False).encode()).hexdigest()
 
 
+def decode_packet(contract,packet,field,compiled,remote):
+    verify_sample_request(contract,packet)
+    from .video_runtime import compile_plan
+    from .remote import decode_video
+    definition=contract['inputs'].get(field,{})
+    if definition.get('type')!='video' or compiled!=compile_plan(definition['processing']):raise ValueError('Video field or frozen decoder plan differs')
+    if compiled['status']!='ready':raise ValueError(compiled['reason'])
+    asset=next((a for a in packet['assets'] if a['field']==field),None)
+    if asset is None:raise ValueError('Video input absent from this sample')
+    result=decode_video(remote,{'plan':compiled['plan'],'content_base64':asset['content_base64'],'sha256':asset['sha256']})
+    return dict(result,sample_id=packet['sample']['sample_id'],field=field,input_fingerprint=packet['input_fingerprint'])
+
+
 def verify_sample_request(contract,packet):
     """Verify embedded bytes without reopening sender paths or trusting claims."""
     if not isinstance(packet,dict) or packet.get('protocol')!='vision_sample_transport_v1':raise ValueError('Unsupported media transport protocol')
