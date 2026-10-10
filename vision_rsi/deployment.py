@@ -17,7 +17,23 @@ def digest(value): return sha(json.dumps(value,sort_keys=True).encode())
 def deploy(request):
     root=PurePosixPath(request['workspace'])
     if not root.is_absolute() or '..' in root.parts or str(root)=='/': raise ValueError('Dedicated absolute workspace required')
-    files=request['files']
+    files=request.get('files')
+    if request.get('parent_directory'):
+        if files:raise ValueError('Cannot mix frozen parent sources with local source transfer')
+        workspace_root=Path(root).resolve();parent=Path(request['parent_directory']).resolve();releases=(workspace_root/'releases').resolve()
+        if not releases.is_relative_to(workspace_root):raise ValueError('Release storage outside workspace')
+        if not parent.is_relative_to(releases) or parent==releases:raise ValueError('Frozen parent outside releases')
+        manifest=json.loads((parent/'manifest.json').read_text())
+        expected=request['parent_sources']
+        if manifest['identity']['sources']!=expected:raise ValueError('Frozen parent source identity differs')
+        files={}
+        for name,checksum in expected.items():
+            if not re.fullmatch(r'vision_rsi/[A-Za-z_][A-Za-z0-9_]*\.py',name):raise ValueError('Invalid frozen source name')
+            path=(parent/name).resolve()
+            if not path.is_relative_to(parent):raise ValueError('Frozen source outside parent')
+            content=path.read_bytes()
+            if sha(content)!=checksum:raise ValueError('Frozen parent source changed')
+            files[name]=base64.b64encode(content).decode()
     if not isinstance(files,dict) or not 1<=len(files)<=100: raise ValueError('Invalid source bundle')
     decoded={}
     for name,value in files.items():

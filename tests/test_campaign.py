@@ -66,3 +66,24 @@ class CampaignTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             with lease(path):raise RuntimeError('simulated crash')
         with lease(path):pass
+
+    @patch('vision_rsi.experiments.propose_next')
+    @patch('vision_rsi.campaign.TrainingRuns')
+    @patch('vision_rsi.campaign.collect')
+    @patch('vision_rsi.campaign.observe')
+    @patch('vision_rsi.campaign.submit')
+    @patch('vision_rsi.campaign.prepare')
+    def test_bounded_research_round_moves_to_new_plan_without_changing_contract(self,prepare,submit,observe,collect,runs,propose):
+        self.config['llm']={'model':'fixture','base_url':'https://fixture.invalid'}
+        prepare.return_value=self.plan;runs.return_value.list.return_value=[]
+        next_record=dict(self.record,run_id='train-two')
+        submit.side_effect=[self.record,next_record]
+        self.advance(research_rounds=1)
+        done=dict(self.record,status='completed',actual_gpu_hours=.01,details={'acceptance_review':{'passed':False,'box_AP':42,'threshold':60}})
+        observe.return_value=done;collect.return_value=done;runs.return_value.get.return_value=done
+        self.advance(research_rounds=1)
+        propose.return_value=dict(self.plan,plan_id='p2')
+        result=self.advance(research_rounds=1)
+        self.assertEqual(result['run_id'],'train-two');self.assertEqual(result['proposals_attempted'],1)
+        self.assertEqual(result['plan']['plan_id'],'p2');self.assertFalse(result['policy_adopted'])
+        propose.assert_called_once()

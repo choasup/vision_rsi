@@ -84,6 +84,7 @@ def main(argv):
     parser.add_argument('--run-id');parser.add_argument('--run-store',default='runs/training-runs')
     parser.add_argument('--campaign-store',default='runs/campaigns')
     parser.add_argument('--steps',type=int,default=3)
+    parser.add_argument('--research-rounds',type=int,default=0,help='Bounded automatic method proposals after measured training failure (0..10)')
     parser.add_argument('--candidate-id');parser.add_argument('--candidate-module')
     parser.add_argument('--candidate-store',default='runs/research-candidates')
     args=parser.parse_args(argv)
@@ -100,7 +101,7 @@ def main(argv):
             policy={'candidate_id':args.candidate_id,'module':args.candidate_module,'store':str(Path(args.candidate_store).resolve())} if args.candidate_id else None
             config=json.loads(Path(args.config).read_text(encoding='utf-8'))
             result=advance(store.show(args.session_id),config,args.campaign_store,args.run_store,args.steps,policy,
-                           {'agent-status':'show','agent-pause':'pause','agent-resume':'resume'}.get(args.action))
+                           {'agent-status':'show','agent-pause':'pause','agent-resume':'resume'}.get(args.action),args.research_rounds)
             if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
             else:
                 print(execution_summary(result))

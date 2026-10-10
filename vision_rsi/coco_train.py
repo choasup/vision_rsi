@@ -10,7 +10,7 @@ import json
 import importlib.metadata
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import signal
 
 from .coco_eval import evaluate, file_sha
@@ -18,13 +18,15 @@ from .detector import COCO_IDS, detections
 from .runner import atomic_json, digest
 
 
-def validate_recipe(recipe):
+def validate_recipe(recipe,path_flavor='native'):
     allowed={'detector','coco_root','weights','weights_sha256','train_annotations_sha256','val_annotations_sha256','epochs','batch_size_per_gpu','seed','checkpoint_steps','world_size','min_size','max_size','learning_rate','weight_decay','fixture','acceptance_threshold'}
     if not isinstance(recipe,dict) or set(recipe)-allowed: raise ValueError('Unknown training recipe fields')
     if recipe.get('detector')!='torchvision_fasterrcnn_resnet50_fpn_v2':
         raise ValueError('Unsupported frozen baseline detector')
+    if path_flavor not in ('native','posix'):raise ValueError('Unknown execution path flavor')
+    path_type=PurePosixPath if path_flavor=='posix' else Path
     for key in ('coco_root','weights'):
-        if not isinstance(recipe.get(key),str) or not Path(recipe[key]).is_absolute():
+        if not isinstance(recipe.get(key),str) or not path_type(recipe[key]).is_absolute() or '..' in path_type(recipe[key]).parts:
             raise ValueError(key+' requires absolute execution-host path')
     for key in ('weights_sha256','train_annotations_sha256','val_annotations_sha256'):
         value=recipe.get(key)

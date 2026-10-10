@@ -15,6 +15,11 @@ def fixture_recipe(root):
 
 
 class CocoTrainingValidationTests(unittest.TestCase):
+    def test_remote_linux_paths_are_independent_of_windows_host(self):
+        recipe=dict(fixture_recipe('.'),coco_root='/home/research/coco',weights='/home/research/weights/model.pth')
+        validate_recipe(recipe,path_flavor='posix')
+        for path in ('relative/coco','C:\\coco','/home/../coco'):
+            with self.assertRaises(ValueError):validate_recipe(dict(recipe,coco_root=path),path_flavor='posix')
     def test_recipe_rejects_unpinned_or_invalid_training(self):
         recipe=fixture_recipe('.')
         validate_recipe(recipe)
@@ -46,6 +51,7 @@ class TrainingPlanTests(unittest.TestCase):
         session={'task_id':'coco','session_id':'one','versions':[{'version':1,'contract':contract}]}
         with tempfile.TemporaryDirectory() as folder,patch('vision_rsi.training_plan.revision',return_value='fixed'):
             recipe=fixture_recipe(folder)
+            recipe.update(coco_root='/remote/coco',weights='/remote/weights.pth')
             recipe['acceptance_threshold']=1
             result=prepare(session,{'training':recipe,'budget_gpu_hours':999},folder)
             self.assertEqual(result['recipe']['acceptance_threshold'],60)

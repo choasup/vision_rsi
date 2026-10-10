@@ -31,6 +31,12 @@ class TrainingRuns:
                         [*row[:3],json.loads(row[3]),*row[4:7],json.loads(row[7])]))
     def list(self,session):
         return [self.get(row[0]) for row in self.db.execute('SELECT id FROM runs WHERE session=? ORDER BY created',(session,)).fetchall()]
+    def remaining(self,session,total):
+        if isinstance(total,bool) or not isinstance(total,(int,float)) or not math.isfinite(total) or total<=0:raise ValueError('Invalid session GPU budget')
+        frozen=self.db.execute('SELECT gpu_hours FROM budgets WHERE session=?',(session,)).fetchone()
+        if frozen and frozen[0]!=total:raise ValueError('Session GPU budget changed; no implicit authorization increase')
+        used=self.db.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM runs WHERE session=?',(session,)).fetchone()[0]
+        return max(0,total-used)
     def update(self,run_id,state,details,actual=None):
         with self.db:self.db.execute('UPDATE runs SET state=?,details=?,actual=? WHERE id=?',(state,json.dumps(details),actual,run_id))
         return self.get(run_id)

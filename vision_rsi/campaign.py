@@ -40,6 +40,7 @@ def available(state):
     elif state.get('run_status') not in LOCAL_TERMINAL:kinds=['observe','logs']
     elif state['run_status']=='completed' and not state.get('receipt_collected'):kinds=['collect']
     elif not state.get('analysis'):kinds=['analyze']
+    elif not state['analysis']['quality_verified'] and state.get('receipt_collected') and not state.get('research_stopped') and state.get('proposals_attempted',0)<state.get('research_rounds',0):kinds=['propose_experiment']
     else:return []
     sequence=len(state['history'])
     return [{'id':kind+'-'+str(sequence),'kind':kind,'estimated_cost':1,'expected_gain':2 if kind!='logs' else .5,'uncertainty':.1} for kind in kinds]
@@ -76,6 +77,11 @@ def execute(action,state,session,config,folder,runs):
     if kind=='observe':return observe(state['run_id'],remote,runs)
     if kind=='logs':return observe(state['run_id'],remote,runs,'logs')
     if kind=='collect':return collect(state['run_id'],remote,runs)
+    if kind=='propose_experiment':
+        from .experiments import propose_next
+        record=runs.get(state['run_id'])
+        request_id='experiment-'+state['campaign_id'][:24]+'-'+str(state.get('proposals_attempted',0))
+        return propose_next(record,runs,config['llm'],folder/'experiments',request_id)
     if kind=='analyze':
         record=runs.get(state['run_id']);verdict=record['details'].get('acceptance_review')
         analysis={'run_id':record['run_id'],'process_status':record['status'],'actual_gpu_hours':record['actual_gpu_hours'],
@@ -100,15 +106,24 @@ def project(state,action,result):
     elif kind=='analyze':
         state['analysis']=result
         state['status']='awaiting_serving_validation' if result['quality_verified'] else 'needs_research'
+    elif kind=='propose_experiment':
+        state['proposals_attempted']=state.get('proposals_attempted',0)+1
+        if result['status']=='ready_to_submit':
+            state['plan']=result;state['run_id']=None;state['run_status']=None;state['receipt_collected']=False;state['analysis']=None;state['status']='ready'
+        else:
+            state['status']=result['status']
+            state['research_stopped']=result['status']=='budget_exhausted'
 
 
-def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',steps=3,policy=None,control=None):
+def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',steps=3,policy=None,control=None,research_rounds=0):
     if isinstance(steps,bool) or not isinstance(steps,int) or not 1<=steps<=10:raise ValueError('Controller steps must be 1..10')
+    if isinstance(research_rounds,bool) or not isinstance(research_rounds,int) or not 0<=research_rounds<=10:raise ValueError('Research rounds must be 0..10')
     if not session['versions']:raise ValueError('Define the Training contract first')
     if session['versions'][-1].get('review_required'):raise ValueError('Review pending requirements changes before advancing Training; active requirements have not been overwritten')
     binding={'session_id':session['session_id'],'contract':session['versions'][-1]['contract'],
              'remote':remote_identity(config['remote']),'training':config.get('training',{}),
-             'coco_root':config['remote'].get('coco_root'),'run_store':str(Path(run_store).resolve()),'policy':policy}
+             'coco_root':config['remote'].get('coco_root'),'run_store':str(Path(run_store).resolve()),'policy':policy,
+             'research_rounds':research_rounds,'research_model':{key:config.get('llm',{}).get(key) for key in ('model','base_url')} if research_rounds else None}
     control_sources={path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(Path(__file__).parent.glob('*.py'))}
     campaign_id=digest(binding);folder=Path(root)/session['session_id']/campaign_id;folder.mkdir(parents=True,exist_ok=True)
     path=folder/'state.json'
@@ -118,7 +133,7 @@ def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',
             if state['binding']!=binding:raise ValueError('Training controller binding changed')
         else:
             state={'campaign_id':campaign_id,'binding':binding,'session_id':session['session_id'],'task_id':session['task_id'],
-                   'status':'new','history':[],'intent':None,'git_revision':revision(),'policy_adopted':False}
+                   'status':'new','history':[],'intent':None,'git_revision':revision(),'policy_adopted':False,'research_rounds':research_rounds}
         if control:
             if control not in ('pause','resume','show'):raise ValueError('Unknown controller command')
             if control!='show':state['paused']=control=='pause';atomic_json(path,state)

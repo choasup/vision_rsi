@@ -91,16 +91,21 @@ def deploy_training(remote, plan):
     from .runner import digest
     files={}
     hashes={}
-    for path in sorted(Path(__file__).parent.glob('*.py')):
-        content=path.read_bytes();name='vision_rsi/'+path.name
-        files[name]=base64.b64encode(content).decode()
-        hashes[name]=hashlib.sha256(content).hexdigest()
-    if {Path(name).name:value for name,value in hashes.items()}!=plan['source_hashes']:
-        raise ValueError('Source changed after Training plan was prepared')
+    parent=plan.get('parent_deployment')
+    if parent:
+        hashes={'vision_rsi/'+name:value for name,value in plan['source_hashes'].items()}
+    else:
+        for path in sorted(Path(__file__).parent.glob('*.py')):
+            content=path.read_bytes();name='vision_rsi/'+path.name
+            files[name]=base64.b64encode(content).decode()
+            hashes[name]=hashlib.sha256(content).hexdigest()
+        if {Path(name).name:value for name,value in hashes.items()}!=plan['source_hashes']:
+            raise ValueError('Source changed after Training plan was prepared')
     identity={'sources':hashes,'recipe':plan['recipe'],'contract':plan['contract']}
     bundle_id=digest(identity)
     request={'workspace':remote['workspace'],'bundle_id':bundle_id,'files':files,
              'recipe':plan['recipe'],'contract':plan['contract']}
+    if parent:request.update(parent_directory=parent,parent_sources=hashes)
     source=Path(__file__).with_name('deployment.py').read_bytes()
     encoded=base64.b64encode(source).decode()
     program="import base64; exec(compile(base64.b64decode('"+encoded+"'), '<training-deploy>', 'exec'))"

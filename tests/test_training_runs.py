@@ -25,6 +25,12 @@ class TrainingRunsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'exhausted'):self.store.reserve(plan('three'),REMOTE)
         self.store.update(first['run_id'],'completed',first['details'],actual=.001)
         self.store.reserve(plan('three'),REMOTE)
+    def test_remaining_budget_includes_uncertain_reservations(self):
+        record,_=self.store.reserve(plan(),REMOTE)
+        self.assertAlmostEqual(self.store.remaining('session',.03),.03-45/3600)
+        with self.assertRaises(ValueError):self.store.remaining('session',1)
+        self.store.update(record['run_id'],'completed',record['details'],actual=.001)
+        self.assertAlmostEqual(self.store.remaining('session',.03),.029)
     @patch('vision_rsi.training_runs.deploy_training',side_effect=RuntimeError('network unavailable'))
     def test_deployment_failure_releases_unused_reservation(self,_):
         with self.assertRaises(RuntimeError):submit(plan(),REMOTE,self.store)

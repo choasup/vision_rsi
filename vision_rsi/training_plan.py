@@ -33,7 +33,7 @@ def prepare(session,config,root):
     recipe['acceptance_threshold']=acceptance.get('threshold')
     recipe['fixture']=False  # User tasks can never silently become fixture runs.
     recipe.pop('timeout_seconds',None)
-    try: validate_recipe(recipe)
+    try: validate_recipe(recipe,path_flavor='posix')
     except (ValueError,KeyError) as error: blockers.append('训练执行配置待补充: '+str(error))
     world=recipe.get('world_size')
     valid_world=isinstance(world,int) and not isinstance(world,bool) and 1<=world<=8
