@@ -307,6 +307,18 @@ PATH_TO_HARNESS\run.cmd test --version VALIDATED_VERSION --input-dir images --ou
 
 ## 批量推理与安装验证
 
+Windows x64 CPython 3.12 的本地媒体/COCO 依赖另提供 `requirements-control-windows-py312.lock`，固定 Pillow12.3.0、NumPy2.5.3、pycocotools2.0.11 及对应 wheel SHA-256。该清单不适用于其它平台/解释器版本，也不包含远端训练依赖、构建工具和 Agent 包本身。可在创建虚拟环境后使用：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --require-hashes -r requirements-control-windows-py312.lock
+.\.venv\Scripts\python.exe -m pip install --no-deps .
+.\.venv\Scripts\python.exe -m vision_rsi training --help
+```
+
+已用本地 wheelhouse 和 `--no-index --require-hashes` 在第二个新虚拟环境完成离线安装，`pip check` 及仓库外模块 CLI/8项媒体与COCO测试通过。本机应用控制曾拦截新生成的 console exe（WinError4551）；上述 `python -m vision_rsi` 入口已实测可用。
+
+
+
 当前能力执行示例仍是 toy 强度矩阵检测，用于验证生命周期，不代表 COCO 效果。先执行上面的 toy training 命令注册能力，再运行：
 
 ```powershell
@@ -325,10 +337,10 @@ Windows 可在项目根目录创建隔离环境，无需激活 PowerShell 脚本
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install ".[coco]"
-.\.venv\Scripts\vision-rsi.exe training --help
+.\.venv\Scripts\python.exe -m vision_rsi training --help
 ```
 
-已在新建 Python 3.12.14 虚拟环境实际安装 `[coco]`，从仓库外启动安装后的 CLI，并通过7项 COCO评测和图片格式校验测试。安装解析到 NumPy2.5.3（传递依赖尚未全量锁定）；这证明隔离安装和小样本评测可用，不证明真实任务达标。
+已在新建 Python 3.12.14 虚拟环境实际安装 `[coco]`，从仓库外启动安装后的 CLI，并通过7项 COCO评测和图片格式校验测试。安装解析到 NumPy2.5.3；这证明隔离安装和小样本评测可用，不证明真实任务达标。
 
 当前 0.1.0.dev1 为开发版本。已验证 wheel 构建、隔离目录安装、从仓库外调用模块、40 项自动测试及 toy CLI 批处理恢复；完整上线门槛见 RELEASE.md。
 
