@@ -157,7 +157,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','research-init','research-step','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -189,6 +189,18 @@ def main(argv):
     args=parser.parse_args(argv)
     if args.interactive and args.action not in ('start','show','reply','define'):
         parser.error('--interactive is supported for start/show/reply/define')
+    if args.action=='release-status':
+        import sqlite3
+        from .release_status import inspect
+        if not args.session_id:parser.error('release-status requires --session-id')
+        try:result=inspect(args.session_id,args.sessions,args.registry)
+        except (ValueError,OSError,KeyError,TypeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
+        if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
+        else:
+            print('任务发布证据: '+result['status'])
+            for blocker in result['blockers']:print('- '+blocker)
+            print('仅核查本地产物；未调用推理、远端或API，不代表整个Agent已上线。')
+        return
     if args.action in ('research-init','research-step'):
         from .task_research import prepare,advance
         if not args.session_id:parser.error('research requires --session-id')

@@ -811,3 +811,11 @@ python -m vision_rsi training research-step --session-id SESSION --steps 1 --rep
 会话需求或接口版本改变后，原研究不会被覆盖；可用新的 `--research-root` 建立另一研究。研究在第一次模型请求就收到完整固定接口。真实训练仍使用training的预算和执行门槛，候选开发用例通过不能代替任务效果验收。
 
 配对研究的spec可显式添加 `llm_call_limit_per_arm`（整数，0–1000000）。每个baseline/candidate会话将预登记独立的API调用账本和相同上限，并在执行时使用各自配置，防止先运行的一臂消耗另一臂额度。若输入配置已有全局usage_ledger或usage_call_limit，则拒绝该选项，不把既有全局上限复制成多份。已有臂账本不能重新初始化；旧研究保持原共享配置，比较结果明确标为shared_or_unbounded。调用次数额度不是Token或金额上限，CPU/时间资源公平、保留任务独立性和真实RSI提升仍需分别验证。
+
+检查当前会话的本地发布证据：
+
+```powershell
+python -m vision_rsi training release-status --session-id SESSION --json
+```
+
+此命令只读会话与能力注册表，重核当前合同、能力清单/产物SHA、训练验收和CPU服务评测；缺少预算、能力未注册、接口不支持或产物变化均报告阻塞。`local_evidence_ready_for_test` 仅表示本地证据齐备，仍需实际运行test验证远端可用性，不代表整个Agent上线、任意输入效果保证或RSI提升。

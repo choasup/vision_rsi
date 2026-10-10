@@ -577,3 +577,10 @@
 - 现核对规范化触发器SQL；已有额度绑定而触发器缺失/变化时构造客户端账本拒绝，不自动修复或重置。每次reserve先BEGIN IMMEDIATE，在同一事务内核验触发器后插入，防止已创建对象绕过后续改动。snapshot只读报告admission_trigger_verified，未验证时enforced=false、remaining=null。
 - 41项llm_usage/llm/not_dispatched/paired_study测试通过（4.674秒）：同名空触发器与删除触发器均被拒绝、既有对象预留拒绝、账本计数保持；并发额度边界/旧预算恢复仍通过。首次fixture未关闭SQLite连接造成Windows清理失败，更正显式关闭后重跑通过。
 - 只读实际历史调用账本runs/task-research-live/81fe5c73c78e489f8922f5afe50b401d/usage.sqlite3：calls1/cap1/触发器通过/remaining0，兼容旧SQL格式。无新API/SSH/GPU。SQL守卫不证明历史账本未被删改或金额账单准确；不改变RSI统计/独立性/自动采用门槛。安装包未更新，完整上线目标未完成。
+
+## 任务本地发布证据只读审计（2026-10-11）
+
+- 新增training release-status：Sessions与registry SQLite只读，缺失registry不创建；核对当前任务支持范围/需求状态、manifest注册身份及SHA、准确artifact集合及逐文件SHA、训练计划/收据run/session/contract身份，复用训练和CPU服务验收，重核checkpoint/training identity/recipe/source绑定。文件读取有界。
+- 本地齐备仅返回local_evidence_ready_for_test，不声称实际推理、远端可用、整Agent上线或RSI效果。无注册能力、其它会话/旧合同、伪validated元数据和篡改产物不通过。已加入未来安装回归清单，但安装包未重建。
+- 20项release_status/acceptance/serving_acceptance/cli_help/training_shell测试通过（0.809秒），含完整合成收据通过本地审计但runtime/RSI标记仍false、伪validated缺产物拒绝、manifest改动拒绝、会话DB不变/缺失registry不创建。合成报告不代表真实模型通过。
+- 实际CLI核查my-vision-task/v5：blocked，缺资源预算、未完成预算澄清、该任务无注册能力。未调用LLM/SSH/GPU，完整上线目标未完成。
