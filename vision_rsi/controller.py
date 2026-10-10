@@ -12,7 +12,7 @@ from .observatory import dashboard
 from .remote import probe
 from .runner import digest
 
-TOOLS = {'inspect_repository', 'read_source', 'remote_environment', 'synthesize','stage_candidate','check_candidate','check_contract'}
+TOOLS = {'inspect_repository', 'read_source', 'remote_environment', 'synthesize','stage_candidate','check_candidate','check_contract','read_training_run'}
 
 
 def observation_context(value):
@@ -147,6 +147,9 @@ def parse_plan(content, known):
         raise ValueError('Plan cites nonexistent evidence')
     result={k: plan[k] for k in ('tool', 'summary', 'question', 'expected_evidence')} | {'refs': refs}
     if plan['tool']=='read_source':result['arguments']=source_arguments(plan.get('arguments'))
+    if plan['tool']=='read_training_run':
+        from .research_training import arguments
+        result['arguments']=arguments(plan.get('arguments'))
     if plan['tool']=='synthesize':result['arguments']=synthesis_arguments(plan.get('arguments'))
     if plan['tool']=='check_candidate':result['arguments']=check_arguments(plan.get('arguments'))
     if plan['tool']=='check_contract':result['arguments']=contract_check_arguments(plan.get('arguments'))
@@ -162,6 +165,12 @@ def parse_plan(content, known):
 
 
 def execute(tool, config, repository,arguments=None):
+    if tool=='read_training_run':
+        from .research_training import inspect,arguments as validate_arguments
+        context=config.get('_training_evidence_context')
+        if not isinstance(context,dict):raise ValueError('Training evidence store is not bound')
+        contract,_=frozen_contract(config)
+        return inspect(context,validate_arguments(arguments)['run_id'],contract)
     if tool in ('check_candidate','check_contract'):
         from .candidates import Candidates
         args=(contract_check_arguments(arguments) if tool=='check_contract' else check_arguments(arguments));context=config.get('_research_candidate_context')
@@ -307,14 +316,16 @@ def research_step(config, directory, steps=1, repository='.'):
             if pending is None:
                 completed_actions = {e['payload']['action'] for e in events if e['kind'] == 'result' and e['payload']['status'] == 'completed'}
                 completed_tools = {e['payload'].get('tool') for e in events if e['key'] in completed_actions}
-                available = TOOLS - (completed_tools-{'read_source','stage_candidate','check_candidate','check_contract'})
+                available = TOOLS - (completed_tools-{'read_source','stage_candidate','check_candidate','check_contract','read_training_run'})
+                if not config.get('_training_evidence_context') or not config.get('_task_readiness_context',{}).get('recent_run_ids'):
+                    available.discard('read_training_run')
                 if config.get('research',{}).get('allow_candidate_checks') is not True or 'stage_candidate' not in completed_tools:
                     available-= {'check_candidate','check_contract'}
                 if not config.get('research',{}).get('task_contract'):available.discard('check_contract')
                 if config.get('research',{}).get('allow_candidate_writes') is not True or 'inspect_repository' not in completed_tools:
                     available.discard('stage_candidate')
                 if 'inspect_repository' not in completed_tools:available.discard('read_source')
-                if not completed_tools.intersection({'inspect_repository', 'remote_environment'}):
+                if not completed_tools.intersection({'inspect_repository', 'remote_environment','read_training_run'}):
                     available -= {'synthesize'}
                 if not available:
                     break
@@ -354,6 +365,11 @@ def research_step(config, directory, steps=1, repository='.'):
                     if config.get('research',{}).get('task_contract'):
                         contract,contract_hash=frozen_contract(config)
                         prompt['frozen_task_contract']={'sha256':contract_hash,'contract':contract}
+                    if 'read_training_run' in available:
+                        prompt['tools']['read_training_run']='Read an existing run from this task session, verify frozen plan identity and re-review any collected receipt locally. No SSH or training, no automatic acceptance/adoption.'
+                        prompt['schema']['tool_argument_shapes']['read_training_run']={'run_id':'exact recent_run_ids entry from task_readiness'}
+                        prompt['schema']['arguments_rule']+=' read_training_run requires arguments exactly run_id; never supply a path or session ID.'
+                        prompt['instruction']+=' A successful read_training_run result is also eligible synthesis evidence. Locally re-reviewed receipts are not independent authenticity, serving availability or RSI evidence.'
                     prompt['response_contract']={
                         'required_keys':['tool','summary','question','expected_evidence','refs'],
                         'optional_keys':['arguments'],
@@ -416,7 +432,7 @@ def research_step(config, directory, steps=1, repository='.'):
                             and e['payload'].get('observation',{}).get('git_revision')==plan['arguments']['base_revision']
                             for e in events if e['key'] in plan['refs']):
                         raise ValueError('Candidate must cite the observed base revision result')
-                    if plan['tool'] in ('read_source','stage_candidate','check_candidate','check_contract') and any(e['kind']=='action' and e['key'] in completed_actions
+                    if plan['tool'] in ('read_source','stage_candidate','check_candidate','check_contract','read_training_run') and any(e['kind']=='action' and e['key'] in completed_actions
                             and e['payload'].get('tool')==plan['tool'] and e['payload'].get('arguments')==plan['arguments'] for e in events):
                         raise ValueError('Identical research action already completed')
                 except (ValueError, KeyError, TypeError, AttributeError) as error:
@@ -437,7 +453,7 @@ def research_step(config, directory, steps=1, repository='.'):
                         'binding':{'action_key':pending['key'],'objective_sha256':digest(events[0]['payload'])}})
                 if pending['payload']['tool']=='synthesize':validate_synthesis_evidence(pending['payload'].get('arguments'),ledger.events())
                 observation = (execute(pending['payload']['tool'],execution_config,repository,pending['payload'].get('arguments'))
-                               if pending['payload']['tool'] in ('read_source','synthesize','stage_candidate','check_candidate','check_contract') else execute(pending['payload']['tool'], config, repository))
+                               if pending['payload']['tool'] in ('read_source','synthesize','stage_candidate','check_candidate','check_contract','read_training_run') else execute(pending['payload']['tool'], config, repository))
                 status = 'completed'
                 summary = '研究工具已执行：' + pending['payload']['tool']
             except Exception as error:

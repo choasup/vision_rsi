@@ -223,7 +223,7 @@ def main(argv):
                     from contextlib import redirect_stdout, nullcontext
                     import sys
                     with redirect_stdout(sys.stderr) if args.json else nullcontext():
-                        return advance(current,config,args.research_root,1,args.repository,task_context=context)
+                        return advance(current,config,args.research_root,1,args.repository,task_context=context,training_runs=args.run_store)
                 result=watch(next_step,lambda:status(session_now(),args.research_root),
                              turns=args.research_watch_turns,duration=args.watch_seconds)
             else:
@@ -233,7 +233,7 @@ def main(argv):
                 from contextlib import redirect_stdout, nullcontext
                 import sys
                 with redirect_stdout(sys.stderr) if args.json else nullcontext():
-                    result=advance(session,config,args.research_root,args.steps,args.repository,task_context=context)
+                    result=advance(session,config,args.research_root,args.steps,args.repository,task_context=context,training_runs=args.run_store)
         except (ValueError,OSError,KeyError,TypeError,RuntimeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
         if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
         elif args.action in ('research-status','research-pause','research-resume'):

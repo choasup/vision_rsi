@@ -96,9 +96,11 @@ def prepare(session,root='runs/task-research'):
                 'task_contract':{'path':str(path),'sha256':expected},'gpu_used':False,'training_performed':False}
 
 
-def advance(session,config,root='runs/task-research',steps=1,repository='.',task_context=None):
+def advance(session,config,root='runs/task-research',steps=1,repository='.',task_context=None,training_runs=None):
     result=prepare(session,root)
     bound=dict(config,research=dict(config.get('research',{}),task_contract=result['task_contract']))
+    if training_runs is not None:
+        bound['_training_evidence_context']={'run_store':str(Path(training_runs).resolve()),'session_id':session['session_id']}
     if task_context is not None:
         if (task_context.get('session_id')!=session['session_id'] or task_context.get('task_id')!=session['task_id']
                 or task_context.get('contract_version')!=session['versions'][-1].get('version')):

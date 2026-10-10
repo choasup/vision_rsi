@@ -55,6 +55,8 @@ def inspect(session_id,config,sessions,runs,config_path='config.local.json'):
             'status':'blocked' if blockers else 'ready_for_prepare','blockers':list(dict.fromkeys(blockers)),
             'training_adapter':adapter,'configuration':configuration,'authorized_gpu_hours':budget if authorized else None,
             'remaining_gpu_hours_snapshot':remaining,'recorded_runs':len(records),'unsettled_run_ids':unsettled,
+            'recent_run_ids':[record['run_id'] for record in records[-10:]],
+            'run_list_truncated':len(records)>10,
             'suggested_actions':actions,
             'read_only':True,'remote_called':False,'llm_called':False,'training_performed':False,
             'task_quality_status':'not_checked','release_verified':False,
