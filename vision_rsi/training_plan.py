@@ -17,6 +17,7 @@ def prepare(session,config,root):
     if not session['versions']: raise ValueError('Define the task interface before preparing training')
     latest=session['versions'][-1];contract=latest['contract']
     blockers=list(issues(contract))
+    blockers.extend('待确认需求变更: '+change['path'] for change in latest.get('review_required',[]))
     inputs=contract.get('inputs') or {}
     if len(inputs)!=1 or any(not isinstance(x,dict) or x.get('type')!='image' or x.get('required') is not True for x in inputs.values()):
         blockers.append('当前 COCO baseline 适配器仅实现一个必需 image 输入；其他任务保留接口，不假装已实现。')

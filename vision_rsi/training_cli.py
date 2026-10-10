@@ -9,7 +9,7 @@ from .contracts import Sessions, validate_sample, validate_schema, validate_mani
 
 
 def summary(result):
-    labels={'clarifying':'需要补充关键信息','task_defined':'任务已明确；执行条件待补充','ready_for_harness':'接口检查通过'}
+    labels={'clarifying':'需要补充关键信息','task_defined':'任务已明确；执行条件待补充','ready_for_harness':'接口检查通过','requirements_review':'需求变更待核对，原要求保留'}
     lines=['任务: '+result['task_id'], '会话: '+result['session_id'], '状态: '+labels.get(result['status'],result['status'])]
     if not result['versions']: return '\n'.join(lines+['请描述你要完成的任务。'])
     latest=result['versions'][-1];contract=latest['contract']
@@ -21,7 +21,13 @@ def summary(result):
     acceptance=contract.get('acceptance') or {}
     if acceptance.get('threshold') is not None:
         lines.append('效果目标: '+str(acceptance.get('metric'))+' '+('≥' if acceptance.get('direction')=='maximize' else '≤')+' '+str(acceptance['threshold']))
-    if result['status']=='task_defined':
+    if latest.get('review_required'):
+        lines.append('模型提出以下变更，尚未生效:')
+        for change in latest['review_required']:
+            if change['path'] in ('inputs','output_schema'):lines.append('- '+change['path']+': 接口发生变化（/contract 查看草案）')
+            else:lines.append('- '+change['path']+': '+str(change['before'])[:160]+' → '+str(change['after'])[:160])
+        lines.append('草案版本: '+str(latest['version'])+'；/accept 接受，/reject 保留原要求；也可继续自然语言修正。')
+    elif result['status']=='task_defined':
         lines.append('需求已保存，无需重复说明。Agent 会选择模型和训练方法。')
         if not contract.get('budget'): lines.append('执行前待补充: 最多允许多少 GPU 小时（8 卡运行 1 小时 = 8 GPU 小时）。')
         else: lines.append('执行前会核查剩余问题；/contract 可查看完整定义。')
@@ -62,7 +68,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','advance','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','accept','reject','list','build','prepare','advance','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -174,6 +180,9 @@ def main(argv):
             elif args.action=='reply':
                 if not args.message: raise ValueError('--message required')
                 result=clarify(session,args.message)
+            elif args.action in ('accept','reject'):
+                if not args.version:raise ValueError('Specify --version with the exact pending requirements draft number')
+                result=getattr(store,args.action)(session,int(args.version))
             elif args.action=='define': result=store.define(session,json.loads(Path(args.contract).read_text(encoding='utf-8')))
             elif args.action in ('validate','export'):
                 if not result['versions']: raise ValueError('No interface defined')
@@ -197,18 +206,26 @@ def main(argv):
             while True:
                 print(summary(result))
                 try:
-                    message=input('补充需求（/quit 退出，/show 摘要，/contract 完整接口）：\n> ').strip()
+                    message=input('补充需求（/quit 退出，/show 摘要，/contract 接口，/accept 接受变更，/reject 拒绝）：\n> ').strip()
                 except (EOFError, KeyboardInterrupt):
                     print('\n会话已保存。session_id: '+session)
                     break
                 if message=='/quit': break
                 if message=='/contract':
                     current=store.show(session)
-                    print(json.dumps(current['versions'][-1]['contract'] if current['versions'] else {},ensure_ascii=False,indent=2))
+                    latest=current['versions'][-1] if current['versions'] else {}
+                    contract={'active_contract':latest['contract'],'proposed_contract':latest['proposed_contract'],'draft_version':latest['version']} if latest.get('review_required') else latest.get('contract',{})
+                    print(json.dumps(contract,ensure_ascii=False,indent=2))
+                    continue
+                if message in ('/accept','/reject'):
+                    current=store.show(session)
+                    if not current['versions']:print('当前没有需求草案。');continue
+                    result=getattr(store,message[1:])(session,current['versions'][-1]['version'])
                     continue
                 if message=='/show': result=store.show(session)
                 elif message: result=clarify(session,message)
         else:
-            print(execution_summary(result) if args.action in ('prepare','run') and not args.json else json.dumps(result,ensure_ascii=False,indent=2))
+            if not args.json and args.action in ('start','reply','show','define','accept','reject'):print(summary(result))
+            else:print(execution_summary(result) if args.action in ('prepare','run') and not args.json else json.dumps(result,ensure_ascii=False,indent=2))
     except (ValueError,TypeError,KeyError,OSError,RuntimeError,subprocess.SubprocessError) as error:
         parser.exit(1,str(error)+'\n')

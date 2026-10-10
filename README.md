@@ -1,5 +1,16 @@
 # Vision RSI Agent
 
+Training的自然语言澄清会保留已定义的要求。模型提出目标、输入输出、验收指标/阈值/协议或预算变更时，只保存为草案，原定义继续保留；新计划、harness和advance会等待处理该草案。交互模式显示差异，使用`/accept`接受当前草案、`/reject`保留原要求，或继续自然语言修正。非交互模式明确指定草案版本，防止误接受旧版本：
+
+```powershell
+.\vision-rsi.cmd training show --session-id SESSION_ID
+.\vision-rsi.cmd training accept --session-id SESSION_ID --version DRAFT_NUMBER
+# 或拒绝；完整生效定义与草案可用show --json查看
+.\vision-rsi.cmd training reject --session-id SESSION_ID --version DRAFT_NUMBER
+```
+
+这是已建立结构化要求的变化保护；不是对首次自然语言理解正确性的证明。第一次需求整理仍需查看摘要。接口描述或目标措辞变化也会显示供核对，实施假设/待回答问题的更新不强制变更确认。显式training define视为用户直接提供新定义，仍执行接口校验。
+
 已有Training会话可直接推进控制流程：
 
 ```powershell

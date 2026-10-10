@@ -11,6 +11,7 @@ from .runner import revision
 def build(session, root):
     if not session['versions']: raise ValueError('No task interface defined')
     latest=session['versions'][-1];contract=latest['contract']
+    if latest.get('review_required'):raise ValueError('Review pending requirements changes before building a new harness')
     blockers=[x for x in issues(contract) if '预算' not in x and not x.startswith('待澄清:')]
     if blockers: raise ValueError('Interface needs repair: '+'; '.join(blockers))
     source=Path(__file__).with_name('contracts.py').read_text(encoding='utf-8-sig')

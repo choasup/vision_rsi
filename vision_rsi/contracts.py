@@ -185,7 +185,8 @@ class Sessions:
                 version['contract']=normalized
                 version['issues']=issues(normalized)
         latest=versions[-1] if versions else None
-        return {'session_id':row[0],'task_id':row[1],'turns':json.loads(row[2]),'versions':versions,'pending_request':bool(row[4]),'status':definition_status(latest['contract'],latest['issues']) if latest else 'clarifying'}
+        status='requirements_review' if latest and latest.get('review_required') else definition_status(latest['contract'],latest['issues']) if latest else 'clarifying'
+        return {'session_id':row[0],'task_id':row[1],'turns':json.loads(row[2]),'versions':versions,'pending_request':bool(row[4]),'status':status}
     def define(self,session,contract,origin='user'):
         contract=normalize_contract(contract)
         with self.db() as db:
@@ -206,17 +207,54 @@ class Sessions:
             if message: turns.append({'role':'user','content':message})
             db.execute('UPDATE sessions SET turns=?,pending=1 WHERE id=?',(json.dumps(turns,ensure_ascii=False),session))
         prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask at most five critical questions per turn, record secondary choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output. Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
+        prompt['change_policy']='Preserve established goal wording, input/output interface, acceptance values and budget exactly unless the user explicitly requests a change. Put implementation choices in assumptions. Do not paraphrase unchanged goal/protocol descriptions. Structural changes are reviewed separately before execution.'
         response=OpenAICompatibleClient(dict(config,**({'thinking':'disabled'} if config.get('model')=='deepseek-flash' else {}))).complete([{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=3072)
         text=response['content'].strip()
         if text.startswith('```'): text=text.split('\n',1)[1].rsplit('```',1)[0]
-        try: contract=normalize_contract(json.loads(text)); errors=issues(contract)
+        review=[];proposed=None
+        try:
+            contract=normalize_contract(json.loads(text))
+            json.dumps(contract,allow_nan=False)
+            errors=issues(contract)
+            if versions:
+                from .requirements import changes
+                previous=normalize_contract(versions[-1]['contract'])
+                review=changes(previous,contract)
+                if review:
+                    proposed=contract;contract=previous
+                    errors=issues(contract)+['待确认需求变更: '+change['path'] for change in review]
         except (ValueError,TypeError,KeyError,AttributeError) as error:
             contract=normalize_contract(versions[-1]['contract']) if versions else {}
             errors=issues(contract)+['解析失败: '+type(error).__name__+'；已保留上一版需求']
         with self.db() as db:
-            versions.append({'version':len(versions)+1,'origin':'llm_draft','contract':contract,'issues':errors,'usage':response.get('usage',{})})
+            version={'version':len(versions)+1,'origin':'llm_draft','contract':contract,'issues':errors,'usage':response.get('usage',{})}
+            if review:version.update(review_required=review,proposed_contract=proposed)
+            versions.append(version)
             turns.append({'role':'assistant','content':json.dumps({'contract':contract,'issues':errors},ensure_ascii=False)})
             db.execute('UPDATE sessions SET turns=?,versions=?,pending=0 WHERE id=?',(json.dumps(turns,ensure_ascii=False),json.dumps(versions,ensure_ascii=False),session))
+        return self.show(session)
+
+    def accept(self,session,version):
+        return self.review(session,version,True)
+
+    def reject(self,session,version):
+        return self.review(session,version,False)
+
+    def review(self,session,version,accept):
+        if isinstance(version,bool) or not isinstance(version,int) or version<1:raise ValueError('Specify the exact draft version to accept')
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT turns,versions,pending FROM sessions WHERE id=?',(session,)).fetchone()
+            if not row:raise ValueError('Unknown session')
+            if row[2]:raise ValueError('API request is still pending or uncertain')
+            versions=json.loads(row[1]);turns=json.loads(row[0])
+            if not versions or versions[-1]['version']!=version or not versions[-1].get('review_required'):
+                raise ValueError('Only the current pending requirements draft can be accepted')
+            contract=versions[-1]['proposed_contract'] if accept else versions[-1]['contract']
+            versions.append({'version':len(versions)+1,'origin':'user_accepted_model_draft' if accept else 'user_rejected_model_draft',
+                             'reviewed_draft_version':version,'contract':contract,'issues':issues(contract)})
+            turns.append({'role':'user','content':('接受' if accept else '拒绝')+'需求草案 v'+str(version)})
+            db.execute('UPDATE sessions SET turns=?,versions=? WHERE id=?',(json.dumps(turns,ensure_ascii=False),json.dumps(versions,ensure_ascii=False,allow_nan=False),session))
         return self.show(session)
 
 

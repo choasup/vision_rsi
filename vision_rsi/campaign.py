@@ -105,6 +105,7 @@ def project(state,action,result):
 def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',steps=3,policy=None,control=None):
     if isinstance(steps,bool) or not isinstance(steps,int) or not 1<=steps<=10:raise ValueError('Controller steps must be 1..10')
     if not session['versions']:raise ValueError('Define the Training contract first')
+    if session['versions'][-1].get('review_required'):raise ValueError('Review pending requirements changes before advancing Training; active requirements have not been overwritten')
     binding={'session_id':session['session_id'],'contract':session['versions'][-1]['contract'],
              'remote':remote_identity(config['remote']),'training':config.get('training',{}),
              'coco_root':config['remote'].get('coco_root'),'run_store':str(Path(run_store).resolve()),'policy':policy}
