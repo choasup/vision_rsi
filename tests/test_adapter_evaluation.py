@@ -11,6 +11,27 @@ from test_event_eval import event
 
 
 class AdapterEvaluationTests(unittest.TestCase):
+    @patch('vision_rsi.remote.check_candidate')
+    def test_portable_bundle_runs_single_and_batch_without_git_store(self,remote):
+        from vision_rsi.candidate_bundle import build,run
+        bundle=build(self.store,self.candidate,'vision_rsi.adapter_fixture','predict',self.contract,self.root/'bundles')
+        sample=self.data['samples'][0]
+        remote.side_effect=lambda endpoint,request:{'status':'executed_unverified','source_hashes':request['source_hashes'],
+            'limits':{'gpu':False,'network':False},'observation':{'results':[{'events':[]} for case in request['cases']]}}
+        copied=self.root/'portable.json';copied.write_bytes(Path(bundle['path']).read_bytes())
+        result=run(copied,[sample],{},self.root/'executions',bundle['bundle_id'])
+        self.assertEqual(result['outputs'],[{'events':[]}]);self.assertFalse(result['quality_verified'])
+        self.assertEqual(run(copied,[sample],{},self.root/'executions',bundle['bundle_id']),result)
+        self.assertEqual(remote.call_count,1)
+        batch=run(copied,[sample,dict(sample,sample_id='clip2')],{},self.root/'executions')
+        self.assertEqual(len(batch['outputs']),2);self.assertEqual(remote.call_count,2)
+        with self.assertRaisesRegex(ValueError,'Pinned bundle'):run(copied,[sample],{},self.root/'executions','0'*64)
+        remote.side_effect=RuntimeError('transport outcome unknown')
+        sample=dict(sample,sample_id='uncertain')
+        with self.assertRaisesRegex(RuntimeError,'transport'):run(copied,[sample],{},self.root/'executions')
+        with self.assertRaisesRegex(RuntimeError,'Uncertain bundle'):run(copied,[sample],{},self.root/'executions')
+        self.assertEqual(remote.call_count,3)
+
     def test_candidate_bundle_is_portable_and_refuses_changed_existing_bytes(self):
         from vision_rsi.candidate_bundle import build,verify
         result=build(self.store,self.candidate,'vision_rsi.adapter_fixture','predict',self.contract,self.root/'bundles')

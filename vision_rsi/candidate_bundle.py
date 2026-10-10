@@ -47,3 +47,62 @@ def build(store,candidate_id,module,function,contract_path,output):
         with path.open('x',encoding='utf-8') as stream:json.dump(bundle,stream,ensure_ascii=False,sort_keys=True,allow_nan=False)
         verify(path)
     return {'bundle_id':bundle['bundle_id'],'directory':str(folder),'path':str(path),'production_accepted':False,'capability_registered':False}
+
+
+def run(bundle_path,samples,remote,output,expected_bundle_id=None):
+    from .contracts import validate_sample,validate_schema
+    from .campaign import lease
+    from .runner import atomic_json
+    from .remote import check_candidate
+    bundle=verify(bundle_path);identity=bundle['identity']
+    if expected_bundle_id is not None and bundle['bundle_id']!=expected_bundle_id:raise ValueError('Pinned bundle identity changed')
+    contract=json.loads(base64.b64decode(bundle['contract_base64']).decode('utf-8-sig'))
+    if not isinstance(samples,list) or not 1<=len(samples)<=16:raise ValueError('Require 1..16 samples')
+    for sample in samples:validate_sample(contract,sample)
+    cases=[{'sample':sample} for sample in samples]
+    encode_cases(identity['module'],identity['function'],cases)
+    request={'files':bundle['files'],'source_hashes':identity['source_hashes'],
+             'module':identity['module'],'function':identity['function'],'cases':cases}
+    binding={'bundle_id':bundle['bundle_id'],'request_sha256':digest(request),'remote':remote,
+             'executor_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+             'validator_sha256':hashlib.sha256(Path(__file__).with_name('contracts.py').read_bytes()).hexdigest()}
+    folder=Path(output).resolve()/digest(binding);folder.mkdir(parents=True,exist_ok=True);path=folder/'execution.json'
+    with lease(folder/'execution.lock',owner='Candidate bundle execution'):
+        if path.exists():
+            _,saved=read_document(path,8*1024*1024)
+            if saved.get('binding')!=binding:raise ValueError('Saved bundle execution binding changed')
+            if saved['status']=='reserved':raise RuntimeError('Uncertain bundle execution; not repeated automatically')
+            if saved.get('record_sha256')!=digest({key:value for key,value in saved.items() if key!='record_sha256'}):raise ValueError('Saved bundle execution content changed')
+            if saved['status']!='development_execution_completed' or saved.get('production_accepted') is not False:raise ValueError('Invalid development execution state')
+            for result in saved['outputs']:validate_schema(contract['output_schema'],result)
+            return saved
+        record={'binding':binding,'status':'reserved','production_accepted':False,'capability_registered':False,
+                'quality_verified':False,'gpu_used':False}
+        atomic_json(path,record)
+        response=check_candidate(remote,request)
+        if response.get('source_hashes')!=identity['source_hashes']:raise ValueError('Runtime source identity mismatch')
+        limits=response.get('limits',{})
+        if limits.get('gpu') is not False or limits.get('network') is not False:raise ValueError('Runtime isolation evidence missing')
+        results=response.get('observation',{}).get('results')
+        if response.get('status')!='executed_unverified' or not isinstance(results,list) or len(results)!=len(samples):
+            raise ValueError('Bundle runtime did not produce one output per input')
+        for result in results:validate_schema(contract['output_schema'],result)
+        record.update(status='development_execution_completed',outputs=results,limits=limits,
+                      response_sha256=digest(response),execution_path=str(path))
+        record['record_sha256']=digest(record)
+        atomic_json(path,record);return record
+
+
+def main(argv=None):
+    import argparse
+    parser=argparse.ArgumentParser(prog='vision-rsi candidate-run',description='Execute a development bundle in CPU sandbox; no production acceptance')
+    parser.add_argument('--bundle',required=True);parser.add_argument('--bundle-id')
+    parser.add_argument('--input',required=True,help='Single sample object or list of 1..16 samples')
+    parser.add_argument('--output',default='runs/candidate-executions');parser.add_argument('--config',default='config.local.json')
+    args=parser.parse_args(argv)
+    try:
+        _,samples=read_document(args.input,512*1024)
+        if isinstance(samples,dict):samples=[samples]
+        config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
+        print(json.dumps(run(args.bundle,samples,config['remote'],args.output,args.bundle_id),ensure_ascii=False,indent=2))
+    except (ValueError,TypeError,KeyError,OSError,RuntimeError) as error:parser.exit(1,str(error)+'\n')

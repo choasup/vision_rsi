@@ -17,8 +17,10 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live-remote',action='store_true');parser.add_argument('--config',default='config.local.json')
     parser.add_argument('--lineage',action='store_true',help='Also verify inherited-module execution in a child candidate')
+    parser.add_argument('--bundle-execution',action='store_true',help='Also execute an independent copy of the child bundle')
     args=parser.parse_args()
     if not args.live_remote:parser.error('--live-remote required; two bounded CPU sandbox checks, no GPU/API')
+    if args.bundle_execution and not args.lineage:parser.error('--bundle-execution requires --lineage')
     repo=Path(__file__).resolve().parents[1]
     remote=json.loads(Path(args.config).read_text(encoding='utf-8'))['remote']
     folder=repo/'runs/adapter-evaluation-live'/uuid.uuid4().hex;folder.mkdir(parents=True)
@@ -45,7 +47,7 @@ def main():
               'evaluation_plan':'Fixed matching/nonmatching event fixtures; repeated context must reuse runtime evidence',
               'edits':[{'path':'vision_rsi/adapter_metric_probe.py','base_sha256':None,
                         'content':'import os\ndef predict(sample):\n    events = [{"label":"action", "start_seconds":0, "end_seconds":1}] if os.getuid() == 65534 else []\n    return {"events":events}\n'}]}
-    atomic_json(folder/'preregistered.json',{'scope':__doc__,'llm_calls':0,'gpu_allowed':False,'expected_remote_checks':3 if args.lineage else 2,
+    atomic_json(folder/'preregistered.json',{'scope':__doc__,'llm_calls':0,'gpu_allowed':False,'expected_remote_checks':4 if args.bundle_execution else (3 if args.lineage else 2),
         'probe_source_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'expected_f1':[1,0],'criteria':['actual UID65534-dependent adapter output','matching metric met','different metric not met',
         'exact duplicate reuses saved runtime','network and GPU disabled','no capability registration or agent adoption']})
@@ -82,6 +84,15 @@ def main():
             assert 'vision_rsi/adapter_metric_probe.py' in calls[-1] and 'vision_rsi/harness_metric_child.py' in calls[-1]
             repeated=evaluate(store,child['candidate_id'],remote,'vision_rsi.harness_metric_child','predict',folder/'contract.json',datasets[0])
             assert repeated==child_report and len(calls)==3
+            if args.bundle_execution:
+                from vision_rsi.candidate_bundle import build,run
+                bundle=build(store,child['candidate_id'],'vision_rsi.harness_metric_child','predict',folder/'contract.json',folder/'bundles')
+                portable=folder/'independent-bundle.json';portable.write_bytes(Path(bundle['path']).read_bytes())
+                sample=json.loads(datasets[0].read_text(encoding='utf-8'))['samples']
+                execution=run(portable,sample,remote,folder/'bundle-executions',bundle['bundle_id'])
+                assert execution['outputs']==[{'events':[event]}]
+                assert run(portable,sample,remote,folder/'bundle-executions',bundle['bundle_id'])==execution
+                assert len(calls)==4 and not execution['quality_verified']
         passed=True
     except Exception as error:failure=type(error).__name__+': '+str(error)[:500]
     finally:

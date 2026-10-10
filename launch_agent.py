@@ -18,6 +18,7 @@ def task_cli_paths(arguments,caller):
            '--contract','--sample','--result','--output','--manifest','--input','--input-dir','--output-dir','--task'}
     paths={'training':task_paths,'test':task_paths,
            'candidate':task_paths|{'--store','--proposal','--evidence','--cases','--report','--dataset'},
+           'candidate-run':{'--bundle','--input','--output','--config'},
            'workspace-init':{'--directory'},
            'evaluate-events':{'--ground-truth','--predictions','--contract','--output'},
            'experiment-request':{'--store'}}.get(arguments[0])

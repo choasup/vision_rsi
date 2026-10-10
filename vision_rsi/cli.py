@@ -23,7 +23,7 @@ adaptation and video training are incomplete; current real training uses the COC
 Legacy run/demo/compare commands use synthetic fixtures and do not establish RSI quality.''')
     parser.add_argument('command',nargs='?',choices=[
         'workspace-init','training','test','capabilities','doctor','llm-usage','experiment-request',
-        'candidate','study','evaluate-coco','evaluate-events','resources','resources-train',
+        'candidate','candidate-run','study','evaluate-coco','evaluate-events','resources','resources-train',
         'resources-equivalence','baseline-evaluate','baseline-watch','baseline-status','baseline-audit',
         'remote-check','llm-check','coco-train','serve','job-submit','job-status','job-logs','job-cancel',
         'run','demo','compare','research-import','research-event','research-view','research-step'])
@@ -36,6 +36,9 @@ def main():
     if sys.argv[1]=='workspace-init':
         from .workspace import main as workspace_main
         return workspace_main(sys.argv[2:])
+    if sys.argv[1]=='candidate-run':
+        from .candidate_bundle import main as bundle_main
+        return bundle_main(sys.argv[2:])
     if sys.argv[1]=='training' and len(sys.argv)==2:
         from .training_cli import main as training_main
         return training_main(['--help'])
