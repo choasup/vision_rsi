@@ -929,3 +929,11 @@ python -m vision_rsi training release-status --session-id SESSION --json
 开发包还可增加 `--decode-video`（同时需要 `--media-input`），入口定义为 `predict(sample, media, video_frames)`。训练任务合同必须已有可编译的显式视频采样策略及 decoder 上限；导出时固定计划和解码程序身份，不能在推理时临时更改。`video_frames` 按字段携带经校验的 RGB PPM 帧、源 PTS/time_base/seconds 和内容哈希。每个视频计划的最大 RGB 数据不得超过 256 KiB，整批请求仍受 1 MiB 限制，不隐式缩放。
 
 解码先保存请求预留，再执行有界 CPU FFmpeg；重复输入复用校验后的解码结果，未知状态拒绝重发。冻结程序变化后需重新导出和验证。此功能完成帧输入链路，不提供视频理解模型或准确率承诺。
+
+对独立交付包进行开发指标评测：
+
+```powershell
+.\vision-rsi.cmd candidate-evaluate --bundle bundle.json --dataset validation.json --output runs/bundle-evaluations --config config.local.json
+```
+
+开发集格式与候选评测一致：`purpose: "development_validation"`、1 至 16 个 `samples` 及 ID 完全匹配的 `ground_truth`。当前指标仅支持冻结合同中的事件 micro-F1 协议。入口复用包的媒体/视频处理路径，标注只用于控制端计算指标。实际媒体变化会改变执行记录身份并产生独立评测记录，不能只因 JSON 文件未变而复用旧分数。结果仍不授予生产资格。

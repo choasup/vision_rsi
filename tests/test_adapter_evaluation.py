@@ -12,6 +12,34 @@ from test_event_eval import event
 
 class AdapterEvaluationTests(unittest.TestCase):
     @patch('vision_rsi.remote.check_candidate')
+    def test_bundle_metrics_bind_actual_media_and_keep_ground_truth_local(self,remote):
+        from vision_rsi.candidate_bundle import build
+        from vision_rsi.bundle_evaluation import evaluate_bundle
+        sample=self.data['samples'][0]
+        for field,value in sample['inputs'].items():
+            items=value['items'] if value['type']=='image_list' else [value]
+            for index,item in enumerate(items):
+                name=field+str(index)+'.bin';item['uri']=name;(self.root/name).write_bytes(name.encode())
+        self.dataset.write_text(json.dumps(self.data),encoding='utf-8')
+        bundle=build(self.store,self.candidate,'vision_rsi.adapter_fixture','predict',self.contract,self.root/'bundles',True)
+        remote.side_effect=lambda endpoint,request:{'status':'executed_unverified','source_hashes':request['source_hashes'],
+            'limits':{'gpu':False,'network':False},'observation':{'results':[{'events':[]}]}}
+        first=evaluate_bundle(bundle['path'],self.dataset,{},self.root/'evaluations')
+        self.assertEqual(first['metric_report']['event_micro_f1'],0)
+        self.assertFalse(first['production_accepted'])
+        self.assertNotIn('ground_truth',json.dumps(remote.call_args.args[1]))
+        self.assertEqual(evaluate_bundle(bundle['path'],self.dataset,{},self.root/'evaluations'),first)
+        self.assertEqual(remote.call_count,1)
+        (self.root/'views0.bin').write_bytes(b'changed media')
+        second=evaluate_bundle(bundle['path'],self.dataset,{},self.root/'evaluations')
+        self.assertNotEqual(first['identity']['execution_record_sha256'],second['identity']['execution_record_sha256'])
+        self.assertNotEqual(first['report_path'],second['report_path'])
+        self.assertEqual(remote.call_count,2)
+        self.dataset.write_text(json.dumps(dict(self.data,purpose='hidden_test')),encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'no hidden-test'):evaluate_bundle(bundle['path'],self.dataset,{},self.root/'evaluations')
+        self.assertEqual(remote.call_count,2)
+
+    @patch('vision_rsi.remote.check_candidate')
     def test_media_bundle_transports_joint_bytes_and_changed_content_changes_execution(self,remote):
         import base64
         from vision_rsi.candidate_bundle import build,run
