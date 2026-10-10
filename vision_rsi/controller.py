@@ -1,6 +1,5 @@
 """Bounded read-only research controller with durable planning and action records."""
 import json
-import os
 from pathlib import Path
 import subprocess
 import uuid
@@ -54,9 +53,8 @@ def research_step(config, directory, steps=1, repository='.'):
     if not ledger.events():
         raise ValueError('Create a research objective first')
     lock = ledger.directory / 'controller.lock'
-    fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    os.close(fd)
-    try:
+    from .campaign import lease
+    with lease(lock,owner='Research controller'):
         for _ in range(steps):
             events = ledger.events()
             controls = [e['kind'] for e in events if e['kind'] in ('paused', 'resumed')]
@@ -121,5 +119,3 @@ def research_step(config, directory, steps=1, repository='.'):
             dashboard(ledger)
             print(summary, flush=True)
         return {'dashboard': dashboard(ledger), 'events': len(ledger.events()), 'autonomous_background_loop': False}
-    finally:
-        lock.unlink()

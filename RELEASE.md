@@ -412,3 +412,9 @@
 - launch_agent.task_cli_paths扩展按命令限定的本地路径：evaluate-events ground-truth/predictions/contract/output，以及experiment-request store，按调用者cwd转绝对路径，保留training/test既有行为和其它命令行为，不改默认存储路径或文本参数。
 - 21项launcher_paths/cli_help/experiment_observe/event_eval测试通过（2.206秒），包含实际独立子进程从外部cwd读取合成事件并写回调用者目录，以及读取带空格账本目录、前后数据库字节相同。
 - 本轮只源码启动器/测试/文档变更，无API/SSH/GPU，安装模块cwd语义不变；不证明任务质量，完整上线目标仍未完成。
+## 通用只读研究控制器崩溃锁恢复（2026-10-10）
+
+- 上线缺口复核确认实际任务gpu_hours仍null、训练记录0，现有全量val基线AP46.70974265420546低于60；通用开放模型/harness适配、真实研究效率验证尚缺，不把软件探针视为上线通过。
+- 发现通用research_step仍使用O_EXCL锁文件，异常进程退出后永久阻塞。改用与campaign相同的OS lease，锁文件保留但仅OS持有状态决定活跃；不自动删除其它进程的锁，不改变不确定API停止重试规则。
+- 25项controller/campaign/ledger测试通过（4.844秒）。真实子进程在execute内os._exit(73)后，保留pending事件和锁文件，新控制器成功完成原动作且不调用API；活跃lease阻止第二控制器进入，事件不增加。
+- 此测试只读mock工具，不证明写工具的崩溃幂等性。旧版仅文件锁的控制器须停止后再升级，不能与新版跨版本并发；无真实API/SSH/GPU，安装包未更新，完整上线目标仍未完成。
