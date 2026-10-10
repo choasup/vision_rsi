@@ -502,3 +502,8 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Three new tests pass, including an actual nested interactive /prepare that writes a blocked plan from missing resources, retains the exact original contract and makes zero LLM calls; setting propagation and unknown-command/error handling are also checked. No GPU job or real API request submitted by these tests.
 
 - Full217-test suite passed in81.282s; subsequent explicit run/session binding guard passed all4 targeted shell tests. Supplying both session ID and a run belonging elsewhere now fails before reading execution configuration or making remote requests. Main user budget/acceptance remains unchanged; no paid API or GPU execution from testing.
+
+## Full transferred dataset equivalence (2026-10-10)
+
+- Added read-only resources-equivalence: validates a pinned complete full-split CPU decode receipt, exact annotation identity/coverage/zero-area metadata and every transferred image byte hash/total byte count. It reports target byte equivalence separately from reference pixel verification and does not claim a second decode, dataset readiness, model AP or GPU use. Only trusted original verification receipts are valid authority; hashing a forged receipt does not establish that authority.
+- Three tests passed using5000 generated JPEG files actually decoded for the reference: full byte matching, changed pixels/annotation rejection and partial/unpinned/non-decode receipt rejection. This fixture is integrity protocol evidence, not official COCO or model quality. Actual existing5000 official validation images will be checked through a frozen CPU-only SSH job before using this route for training transfer.

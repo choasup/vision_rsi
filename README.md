@@ -554,3 +554,7 @@ Training submission and checkpoint resume now run a read-only CPU resource prefl
 ### Full image integrity verification progress
 
 `python -m vision_rsi.resource_verify --root DATASET_ROOT --split train --progress runs/train-image-progress.json` checks all118287 training images; `--split val` checks5000 validation images. The progress path must be new and outside the dataset. It reports coverage checking and every1000 decoded images; only a completed run emits the final pixel/content fingerprint receipt. Partial progress is not resumable validation, dataset readiness, model evaluation or acceptance. Original annotations remain unchanged; zero-area training annotation IDs are recorded.
+
+### Check transferred image bytes against decoded reference
+
+`vision-rsi.cmd resources-equivalence --root DATASET_ROOT --reference FULL_DECODE_RECEIPT.json --reference-sha256 RECEIPT_SHA256` rehashes every image and the annotations, checks full split coverage and compares the exact ordered content fingerprint to a pinned complete CPU pixel-decoding receipt. It rejects changed images/annotations, partial receipts and changed reference bytes. This is read-only and does not load a model or use GPUs. A successful result reports byte_equivalence_verified=true, reference_pixel_decode_verified=true, pixel_decode_verified=false and dataset_ready=false: target bytes match the decoded reference; the target was not decoded again. Use only the original trusted verification receipt, not a candidate claim; the receipt hash pins identity, not authority.
