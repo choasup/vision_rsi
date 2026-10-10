@@ -11,6 +11,51 @@ from test_event_eval import event
 
 
 class AdapterEvaluationTests(unittest.TestCase):
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    @patch('vision_rsi.remote.check_candidate')
+    def test_controller_failed_metric_to_child_reevaluation(self,remote,client):
+        from vision_rsi.controller import research_step
+        from vision_rsi.ledger import Ledger
+        from vision_rsi.research_memory import metric_memory
+        ledger=Ledger(self.root);ledger.append('objective','objective',{'summary':'fixture iterative development'})
+        parent=json.loads((self.store.root/self.candidate/'candidate.json').read_text())
+        for key,tool,observation in [('inspect','inspect_repository',{'git_revision':git(self.store.repository,'rev-parse','HEAD')}),
+                                     ('parent','stage_candidate',dict(parent,base_revision=parent['identity']['base_revision']))]:
+            ledger.append(key,'action',{'summary':key,'executor':'research-v1','tool':tool})
+            ledger.append(key+':result','result',{'summary':key,'action':key,'status':'completed','observation':observation})
+        config={'llm':{'model':'fixture'},'remote':{},'research':{'allow_candidate_writes':True,'allow_candidate_checks':True,
+            'task_contract':{'path':str(self.contract),'sha256':hashlib.sha256(self.contract.read_bytes()).hexdigest()},
+            'validation_dataset':{'path':str(self.dataset),'sha256':hashlib.sha256(self.dataset.read_bytes()).hexdigest()}}}
+        proposal={'hypothesis':'fixture correction','expected_improvement':'fixed validation F1','evaluation_plan':'same dataset',
+                  'edits':[{'path':'vision_rsi/adapter_fixture.py','base_sha256':parent['source_hashes']['vision_rsi/adapter_fixture.py'],
+                            'content':'def predict(sample):\n    return {"events": [{"label":"action","start_seconds":0,"end_seconds":1}]}\n'}]}
+        prompts=[]
+        def plan(messages,**kwargs):
+            prompt=json.loads(messages[0]['content']);prompts.append(prompt)
+            if len(prompts)==2:
+                self.assertEqual(prompt['candidate_metric_memory']['groups'][0]['latest_failure']['event_micro_f1'],0)
+                value={'tool':'stage_candidate','refs':['parent:result'],
+                       'arguments':{'parent_candidate_id':self.candidate,'base_revision':parent['git_revision'],'proposal':proposal}}
+            else:
+                staged=[e for e in ledger.events() if e['kind']=='result' and e['payload'].get('observation',{}).get('git_revision')]
+                latest=staged[-1]
+                value={'tool':'evaluate_contract','refs':[latest['key']],
+                       'arguments':{'candidate_id':latest['payload']['observation']['candidate_id'],
+                                    'module':'vision_rsi.adapter_fixture','function':'predict'}}
+            return {'content':json.dumps(dict(value,summary='fixture action',question='q',expected_evidence='measured fixture'))}
+        client.return_value.complete.side_effect=plan
+        remote.side_effect=lambda endpoint,request:{'status':'executed_unverified','source_hashes':request['source_hashes'],
+            'observation':{'results':[{'events':[] if request['source_hashes']['vision_rsi/adapter_fixture.py']==parent['source_hashes']['vision_rsi/adapter_fixture.py'] else [event(0,1)]}]}}
+        research_step(config,self.root,steps=3,repository=self.store.repository)
+        memory=metric_memory(ledger.events());group=memory['groups'][0]
+        self.assertEqual(memory['evaluation_count'],2)
+        self.assertEqual(memory['comparison_group_count'],1)
+        self.assertEqual(group['best']['event_micro_f1'],1)
+        self.assertEqual(group['latest_failure']['event_micro_f1'],0)
+        self.assertNotEqual(group['best']['candidate_id'],self.candidate)
+        self.assertEqual(remote.call_count,2)
+        self.assertEqual(client.return_value.complete.call_count,3)
+
     def test_child_candidate_inherits_parent_and_keeps_main_unchanged(self):
         from vision_rsi.controller import execute
         parent=json.loads((self.store.root/self.candidate/'candidate.json').read_text())

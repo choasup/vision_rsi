@@ -16,6 +16,7 @@ import vision_rsi.remote as transport
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live-remote',action='store_true');parser.add_argument('--config',default='config.local.json')
+    parser.add_argument('--lineage',action='store_true',help='Also verify inherited-module execution in a child candidate')
     args=parser.parse_args()
     if not args.live_remote:parser.error('--live-remote required; two bounded CPU sandbox checks, no GPU/API')
     repo=Path(__file__).resolve().parents[1]
@@ -44,7 +45,7 @@ def main():
               'evaluation_plan':'Fixed matching/nonmatching event fixtures; repeated context must reuse runtime evidence',
               'edits':[{'path':'vision_rsi/adapter_metric_probe.py','base_sha256':None,
                         'content':'import os\ndef predict(sample):\n    events = [{"label":"action", "start_seconds":0, "end_seconds":1}] if os.getuid() == 65534 else []\n    return {"events":events}\n'}]}
-    atomic_json(folder/'preregistered.json',{'scope':__doc__,'llm_calls':0,'gpu_allowed':False,'expected_remote_checks':2,
+    atomic_json(folder/'preregistered.json',{'scope':__doc__,'llm_calls':0,'gpu_allowed':False,'expected_remote_checks':3 if args.lineage else 2,
         'probe_source_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'expected_f1':[1,0],'criteria':['actual UID65534-dependent adapter output','matching metric met','different metric not met',
         'exact duplicate reuses saved runtime','network and GPU disabled','no capability registration or agent adoption']})
@@ -67,6 +68,20 @@ def main():
             assert not report['quality_verified'] and not report['capability_registered'] and not report['agent_adopted']
         repeated=evaluate(store,candidate,remote,'vision_rsi.adapter_metric_probe','predict',folder/'contract.json',datasets[0])
         assert repeated==reports[0] and len(calls)==2
+        if args.lineage:
+            parent=json.loads((store.root/candidate/'candidate.json').read_text(encoding='utf-8'))
+            child_store=Candidates(store.root,parent['checkout'])
+            try:
+                child=child_store.create(dict(proposal,edits=[{'path':'vision_rsi/harness_metric_child.py','base_sha256':None,
+                    'content':'from vision_rsi.adapter_metric_probe import predict\n'}]),
+                    {'fixture':True,'lineage_mode':'git_parent','parent_candidate_id':candidate},base=parent['git_revision'])
+            finally:child_store.close()
+            child_report=evaluate(store,child['candidate_id'],remote,'vision_rsi.harness_metric_child','predict',folder/'contract.json',datasets[0])
+            reports.append(child_report)
+            assert child_report['metric_report']['event_micro_f1']==1
+            assert 'vision_rsi/adapter_metric_probe.py' in calls[-1] and 'vision_rsi/harness_metric_child.py' in calls[-1]
+            repeated=evaluate(store,child['candidate_id'],remote,'vision_rsi.harness_metric_child','predict',folder/'contract.json',datasets[0])
+            assert repeated==child_report and len(calls)==3
         passed=True
     except Exception as error:failure=type(error).__name__+': '+str(error)[:500]
     finally:
