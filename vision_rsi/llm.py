@@ -76,6 +76,11 @@ class OpenAICompatibleClient:
         if 'usage_ledger' in self.config:
             from .llm_usage import ledger_path
             ledger_path(self.config['usage_ledger'])
+        if 'usage_call_limit' in self.config:
+            from .llm_usage import validate_call_limit
+            validate_call_limit(self.config['usage_call_limit'])
+            if 'usage_ledger' not in self.config:
+                raise ValueError('LLM usage_call_limit requires a shared usage_ledger')
 
     def complete(self, messages, max_tokens=128):
         self.validate_config()
@@ -97,7 +102,7 @@ class OpenAICompatibleClient:
         ledger=None
         if 'usage_ledger' in self.config:
             from .llm_usage import UsageLedger
-            ledger=UsageLedger(self.config['usage_ledger'])
+            ledger=UsageLedger(self.config['usage_ledger'],self.config.get('usage_call_limit'))
             identity=ledger.reserve(encoded,self.config['model'])
         try:
             result=self._response(request)

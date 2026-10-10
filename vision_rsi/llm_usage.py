@@ -1,4 +1,4 @@
-"""Shared durable API usage observations, not a budget or billing authority."""
+"""Shared API observations and optional ledger-wide call admission, not billing authority."""
 import argparse
 from contextlib import contextmanager
 import hashlib
@@ -15,8 +15,14 @@ def ledger_path(value):
     return Path(value)
 
 
+def validate_call_limit(value):
+    if type(value) is not int or not 0<=value<=1000000:
+        raise ValueError('LLM usage_call_limit must be an integer in 0..1000000')
+
+
 class UsageLedger:
-    def __init__(self,path):
+    def __init__(self,path,call_limit=None):
+        if call_limit is not None:validate_call_limit(call_limit)
         self.path=ledger_path(path)
         self.path.parent.mkdir(parents=True,exist_ok=True)
         with self.connect() as db:
@@ -24,6 +30,18 @@ class UsageLedger:
                 id TEXT PRIMARY KEY, request_sha256 TEXT NOT NULL, model TEXT NOT NULL,
                 created_ns INTEGER NOT NULL, ended_ns INTEGER, status TEXT NOT NULL,
                 prompt_tokens INTEGER, completion_tokens INTEGER, total_tokens INTEGER)''')
+            db.execute('CREATE TABLE IF NOT EXISTS api_call_cap (singleton INTEGER PRIMARY KEY CHECK(singleton=1), calls INTEGER NOT NULL)')
+            db.execute('''CREATE TRIGGER IF NOT EXISTS api_usage_call_admission BEFORE INSERT ON api_usage
+                WHEN EXISTS (SELECT 1 FROM api_call_cap WHERE singleton=1 AND
+                             (SELECT COUNT(*) FROM api_usage)>=calls)
+                BEGIN SELECT RAISE(ABORT,'Project LLM call budget exhausted'); END''')
+            db.commit()
+            if call_limit is not None:
+                db.execute('BEGIN IMMEDIATE')
+                row=db.execute('SELECT calls FROM api_call_cap WHERE singleton=1').fetchone()
+                if row and row[0]!=call_limit:
+                    raise ValueError('Project LLM call limit already bound; revision or reset is not supported')
+                if not row:db.execute('INSERT INTO api_call_cap VALUES (1,?)',(call_limit,))
 
     @contextmanager
     def connect(self):
@@ -34,9 +52,14 @@ class UsageLedger:
 
     def reserve(self,payload,model):
         identity=uuid.uuid4().hex
-        with self.connect() as db:
-            db.execute('INSERT INTO api_usage VALUES (?,?,?,?,NULL,?,NULL,NULL,NULL)',
-                       (identity,hashlib.sha256(payload).hexdigest(),model,time.time_ns(),'pending'))
+        try:
+            with self.connect() as db:
+                db.execute('INSERT INTO api_usage VALUES (?,?,?,?,NULL,?,NULL,NULL,NULL)',
+                           (identity,hashlib.sha256(payload).hexdigest(),model,time.time_ns(),'pending'))
+        except sqlite3.IntegrityError as error:
+            if str(error)=='Project LLM call budget exhausted':
+                raise ValueError('Project LLM call budget exhausted') from None
+            raise
         return identity
 
     def finish(self,identity,usage=None):
@@ -59,11 +82,19 @@ def snapshot(path):
             SUM(CASE WHEN total_tokens IS NULL THEN 1 ELSE 0 END),
             SUM(prompt_tokens),SUM(completion_tokens),SUM(total_tokens)
             FROM api_usage GROUP BY model,status ORDER BY model,status''').fetchall()
+        cap=None
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='api_call_cap'").fetchone():
+            row=db.execute('SELECT calls FROM api_call_cap WHERE singleton=1').fetchone()
+            if row:
+                validate_call_limit(row[0]);cap=row[0]
     finally:db.close()
     groups=[dict(zip(('model','status','calls','unknown_token_calls','reported_prompt_tokens',
                        'reported_completion_tokens','reported_total_tokens'),row)) for row in rows]
-    return {'ledger':str(path),'groups':groups,'calls':sum(r['calls'] for r in groups),
+    calls=sum(r['calls'] for r in groups)
+    return {'ledger':str(path),'groups':groups,'calls':calls,
             'unknown_token_calls':sum(r['unknown_token_calls'] for r in groups),
+            'project_call_limit':cap,'project_call_limit_enforced':cap is not None,
+            'remaining_project_calls':None if cap is None else max(0,cap-calls),
             'budget_enforced':False,'provider_billing_verified':False,'historical_backfill_complete':False}
 
 

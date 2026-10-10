@@ -138,7 +138,7 @@ if __name__=='__main__':raise SystemExit(main())
 def build_executable(session,interface,config,storage,root):
     if set(storage)!={'sessions','runs','campaigns','registry','plans'}:raise ValueError('Harness needs original shared storage locations')
     storage={key:str(Path(value).resolve()) for key,value in storage.items()}
-    safe={'llm':{key:config.get('llm',{})[key] for key in ('model','base_url','api_key_env','thinking','usage_ledger') if key in config.get('llm',{})},
+    safe={'llm':{key:config.get('llm',{})[key] for key in ('model','base_url','api_key_env','thinking','usage_ledger','usage_call_limit') if key in config.get('llm',{})},
           'remote':{key:config.get('remote',{})[key] for key in ('ssh_host','ssh_port','workspace','python','coco_root') if key in config.get('remote',{})},
           'training':config.get('training',{})}
     allowed={'detector','epochs','batch_size_per_gpu','seed','checkpoint_steps','world_size','min_size','max_size','learning_rate','weight_decay','fixture','coco_root','weights','weights_sha256','train_annotations_sha256','val_annotations_sha256','acceptance_threshold','timeout_seconds'}

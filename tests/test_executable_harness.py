@@ -51,7 +51,7 @@ class ExecutableHarnessTests(unittest.TestCase):
         self.session=self.store.define(session['session_id'],contract)
         self.config={'remote':{'ssh_host':'fixture','workspace':'/workspace','coco_root':''},
                      'llm':{'model':'fixture','base_url':'https://fixture.invalid','api_key_env':'UNUSED','api_key':'MUST_NOT_EXPORT',
-                            'usage_ledger':str(self.root/'shared-usage.sqlite3')}}
+                            'usage_ledger':str(self.root/'shared-usage.sqlite3'),'usage_call_limit':10}}
         with patch('vision_rsi.harness.revision',return_value='fixture'):
             self.interface=build(self.session,self.root/'artifacts')
         self.artifact=build_executable(self.session,self.interface,self.config,self.storage,self.root/'artifacts')
@@ -70,6 +70,7 @@ class ExecutableHarnessTests(unittest.TestCase):
         self.assertNotIn('MUST_NOT_EXPORT',(self.folder/'config.json').read_text())
         self.assertEqual(json.loads((self.folder/'config.json').read_text())['llm']['usage_ledger'],
                          self.config['llm']['usage_ledger'])
+        self.assertEqual(json.loads((self.folder/'config.json').read_text())['llm']['usage_call_limit'],10)
         prepared=self.run_harness('training','--action','prepare');self.assertEqual(prepared.returncode,0,prepared.stderr)
         plan=json.loads(prepared.stdout);self.assertEqual(plan['status'],'blocked')
         self.assertEqual(plan['session_id'],self.session['session_id']);self.assertEqual(plan['git_revision'],'fixture')
