@@ -2,6 +2,7 @@
 
 This is not a global Agent budget: clarification, strategy research and GPU
 training have separate records. Unknown outcomes retain one call reservation.
+Known pre-dispatch refusals remain auditable but do not consume a lineage call.
 """
 import json
 from pathlib import Path
@@ -78,7 +79,7 @@ def reconcile(store,parent_id,contract,request_id=None,identity=None):
             if known and known!=(prior_root,sha):raise ValueError('Repair call lineage identity changed')
             store.db.execute('INSERT OR IGNORE INTO repair_calls VALUES (?,?,?)',(prior,prior_root,sha))
         bind(root,contract_sha,maximum)
-        used=store.db.execute('SELECT COUNT(*) FROM repair_calls WHERE root=?',(root,)).fetchone()[0]
+        used=store.db.execute("SELECT COUNT(*) FROM repair_calls c LEFT JOIN requests r ON r.id=c.request_id WHERE c.root=? AND (r.state IS NULL OR r.state!='not_dispatched')",(root,)).fetchone()[0]
         if request_id is not None:
             if used>=maximum:raise ValueError('Adapter repair LLM call budget exhausted; unknown outcomes retain occupancy')
             if identity.get('parent_candidate_id')!=parent_id:raise ValueError('Repair reservation parent differs')
@@ -89,10 +90,11 @@ def reconcile(store,parent_id,contract,request_id=None,identity=None):
         store.db.rollback();raise
     rows=store.db.execute('SELECT c.request_id,r.state FROM repair_calls c LEFT JOIN requests r ON r.id=c.request_id WHERE c.root=? ORDER BY c.request_id',(root,)).fetchall()
     if any(state is None for _,state in rows):raise ValueError('Repair request record missing; reservation retained')
+    occupied=sum(state!='not_dispatched' for _,state in rows)
     return {'scope':'adapter-repair lineage only; excludes clarification, strategy research and GPU training',
             'budget_field':'adapter_repair_calls' if 'adapter_repair_calls' in contract['budget'] else 'legacy_llm_calls_audit_only',
-            'new_calls_authorized':'adapter_repair_calls' in contract['budget'] and 'llm_calls' not in contract['budget'] and len(rows)<maximum,
+            'new_calls_authorized':'adapter_repair_calls' in contract['budget'] and 'llm_calls' not in contract['budget'] and occupied<maximum,
             'global_llm_budget_verified':False,
             'root_candidate_id':root,'contract_sha256':contract_sha,'llm_calls_limit':maximum,
-            'occupied_calls':len(rows),'responded_calls':sum(state=='responded' for _,state in rows),
-            'unsettled_calls':sum(state!='responded' for _,state in rows),'remaining_calls':max(0,maximum-len(rows))}
+            'occupied_calls':occupied,'not_dispatched_calls':sum(state=='not_dispatched' for _,state in rows),'responded_calls':sum(state=='responded' for _,state in rows),
+            'unsettled_calls':sum(state not in ('responded','not_dispatched') for _,state in rows),'remaining_calls':max(0,maximum-occupied)}

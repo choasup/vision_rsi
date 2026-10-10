@@ -111,7 +111,7 @@ class Candidates:
         return verify_candidate(self.root,record)
 
     def propose(self,request_id,contract,evidence,llm):
-        from .llm import OpenAICompatibleClient
+        from .llm import OpenAICompatibleClient, LLMNotDispatched
         if not isinstance(request_id,str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}',request_id):raise ValueError('Invalid request ID')
         base=self.base()
         identity={'base_revision':base,'contract':contract,'evidence':evidence,
@@ -119,6 +119,7 @@ class Candidates:
         row=self.db.execute('SELECT identity,state,response FROM requests WHERE id=?',(request_id,)).fetchone()
         if row:
             if json.loads(row[0])!=identity:raise ValueError('Request ID belongs to a different research context')
+            if row[1]=='not_dispatched':raise LLMNotDispatched('Candidate request was not dispatched; explicit retry requires a new request ID')
             if row[1]!='responded':raise RuntimeError('Uncertain API request; not retried automatically')
             response=json.loads(row[2])
         else:
@@ -153,7 +154,12 @@ class Candidates:
             client=OpenAICompatibleClient(client_config)
             client.validate_config()
             with self.db:self.db.execute('INSERT INTO requests VALUES (?,?,?,NULL)',(request_id,json.dumps(identity),'reserved'))
-            response=client.complete([{'role':'system','content':instruction},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=6000)
+            try:
+                response=client.complete([{'role':'system','content':instruction},{'role':'user','content':json.dumps(prompt,ensure_ascii=False)}],max_tokens=6000)
+            except LLMNotDispatched:
+                with self.db:
+                    self.db.execute('UPDATE requests SET state=? WHERE id=?',('not_dispatched',request_id))
+                raise
             with self.db:self.db.execute('UPDATE requests SET state=?,response=? WHERE id=?',('responded',json.dumps(response),request_id))
         content=response['content'].strip()
         if not content:raise ValueError('LLM returned no proposal text; response retained, no automatic retry. Use a new request ID after correcting model configuration.')

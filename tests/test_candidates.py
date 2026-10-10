@@ -26,6 +26,67 @@ class CandidateTests(unittest.TestCase):
         samples=[dict(contract['example_input'],sample_id='development-valid'),dict(contract['example_input'],sample_id='development-invalid')]
         return self.store.check_adapter(parent['candidate_id'],{},'vision_rsi.adapter_fixture','predict',contract,samples)
 
+    @patch('vision_rsi.remote.check_candidate')
+    def test_actual_project_cap_denial_does_not_spend_repair_budget(self,remote):
+        from vision_rsi.adapter_repair import repair
+        from vision_rsi.repair_budget import reconcile
+        from vision_rsi.llm import LLMNotDispatched
+        failed=self.failed_adapter(remote,call_limit=1)
+        ledger=Path(self.temp.name)/'project.sqlite3'
+        config={'remote':{},'llm':{'model':'fixture','base_url':'https://fixture.invalid',
+                 'api_key_env':'VISION_RSI_TEST_KEY','usage_ledger':str(ledger),'usage_call_limit':0}}
+        with patch.dict('os.environ',{'VISION_RSI_TEST_KEY':'fixture-only'}),patch('vision_rsi.llm.urlopen') as http:
+            with self.assertRaises(LLMNotDispatched):
+                repair(self.store,'cap-zero-repair',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+            http.assert_not_called()
+        budget=reconcile(self.store,failed['candidate_id'],failed['contract'])
+        self.assertEqual(budget['remaining_calls'],1)
+        self.assertEqual(budget['not_dispatched_calls'],1)
+        self.assertEqual(self.store.db.execute('SELECT state FROM requests WHERE id=?',('cap-zero-repair',)).fetchone()[0],'not_dispatched')
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_candidate_known_unsent_requires_new_id(self,client):
+        from vision_rsi.llm import LLMNotDispatched
+        client.return_value.complete.side_effect=LLMNotDispatched('local admission refused')
+        config={'model':'fixture','base_url':'https://fixture.invalid'}
+        for _ in range(2):
+            with self.assertRaises(LLMNotDispatched):self.store.propose('unsent-candidate',{},[],config)
+        self.assertEqual(client.return_value.complete.call_count,1)
+        client.return_value.complete.side_effect=None
+        client.return_value.complete.return_value={'content':json.dumps(proposal())}
+        result=self.store.propose('explicit-new-candidate',{},[],config)
+        self.assertFalse(result.get('adopted',False))
+        self.assertEqual(client.return_value.complete.call_count,2)
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    @patch('vision_rsi.remote.check_candidate')
+    def test_repair_unsent_preserves_history_without_consuming_lineage_call(self,remote,client):
+        from vision_rsi.adapter_repair import repair
+        from vision_rsi.repair_budget import reconcile
+        from vision_rsi.llm import LLMNotDispatched
+        failed=self.failed_adapter(remote,call_limit=1)
+        config={'remote':{},'llm':{'model':'fixture','base_url':'https://fixture.invalid'}}
+        client.return_value.complete.side_effect=LLMNotDispatched('local cap exhausted')
+        for _ in range(2):
+            with self.assertRaises(LLMNotDispatched):
+                repair(self.store,'unsent-repair',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+        self.assertEqual(client.return_value.complete.call_count,1)
+        for rebuild in (False,True):
+            if rebuild:
+                with self.store.db:
+                    self.store.db.execute('DROP TABLE repair_calls');self.store.db.execute('DROP TABLE repair_budgets')
+            budget=reconcile(self.store,failed['candidate_id'],failed['contract'])
+            self.assertEqual(budget['occupied_calls'],0)
+            self.assertEqual(budget['not_dispatched_calls'],1)
+            self.assertEqual(budget['unsettled_calls'],0)
+            self.assertEqual(budget['remaining_calls'],1)
+        client.return_value.complete.side_effect=TimeoutError('actual outcome unknown')
+        with self.assertRaises(TimeoutError):
+            repair(self.store,'explicit-new-repair',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+        budget=reconcile(self.store,failed['candidate_id'],failed['contract'])
+        self.assertEqual(budget['occupied_calls'],1);self.assertEqual(budget['remaining_calls'],0)
+        self.assertEqual(budget['unsettled_calls'],1)
+
     @patch('vision_rsi.llm.OpenAICompatibleClient')
     @patch('vision_rsi.remote.check_candidate')
     def test_adapter_repair_retains_lineage_and_replays_without_api_or_runtime(self,remote,client):
