@@ -20,11 +20,15 @@ Training的自然语言澄清会保留已定义的要求。模型提出目标、
 .\vision-rsi.cmd training agent-status --session-id SESSION_ID
 .\vision-rsi.cmd training agent-pause --session-id SESSION_ID
 .\vision-rsi.cmd training agent-resume --session-id SESSION_ID
+.\vision-rsi.cmd training campaigns --session-id SESSION_ID
+# 按ID恢复已保存的策略和研究轮数，不必重新输入它们
+.\vision-rsi.cmd training agent-status --session-id SESSION_ID --campaign-id CAMPAIGN_SHA256
+.\vision-rsi.cmd training advance --session-id SESSION_ID --campaign-id CAMPAIGN_SHA256
 ```
 
 advance每次最多执行1..10个控制动作，持久化准备计划、提交、查询、收据收集和结果分析；远端仍在运行时返回等待，下次调用恢复同一个作业。动作选择使用控制步数，GPU预算独立由Training调度账本预留/结算，二者不混用。agent-pause只暂停继续决策，已经提交的远端作业仍按原超时/预算运行；需停止作业时使用training cancel。
 
-默认research-rounds=0，未达标后返回needs_research。显式启用0..10轮时，Agent重核原始收据，将测得的失败交给LLM提出下一实验，并在剩余会话GPU预算内继续执行。首阶段只支持学习率、权重衰减、训练轮数、batch、输入分辨率和保存频率；检测器、预训练权重、数据与哈希、种子、卡数、源码、验收目标及总预算均冻结。新实验从父实验远端不可变release复用源码，不混入本地后续开发。非法提案保存但不提交；API响应不确定时不自动重复调用。每个提案响应占用一轮，预算耗尽停止。这是首任务的训练方法研究入口，不等于通用harness代码调整或Agent自身效率已提升。不同research-rounds/策略设置属于独立控制记录，查询与暂停时需保持一致。
+默认research-rounds=0，未达标后返回needs_research。显式启用0..10轮时，Agent重核原始收据，将测得的失败交给LLM提出下一实验，并在剩余会话GPU预算内继续执行。首阶段只支持学习率、权重衰减、训练轮数、batch、输入分辨率和保存频率；检测器、预训练权重、数据与哈希、种子、卡数、源码、验收目标及总预算均冻结。新实验从父实验远端不可变release复用源码，不混入本地后续开发。非法提案保存但不提交；API响应不确定时不自动重复调用。每个提案响应占用一轮，预算耗尽停止。这是首任务的训练方法研究入口，不等于通用harness代码调整或Agent自身效率已提升。不同research-rounds/策略设置属于独立控制记录；建议用campaigns找出ID，再用--campaign-id查询/暂停/恢复。列表是本地最后保存状态，不代表刚刚核查远端进程；实时查询使用training status --run-id。
 
 实验研究策略可通过advance额外参数`--candidate-id CANDIDATE_SHA256 --candidate-module vision_rsi.strategy_NAME`接入动作选择。候选在隔离环境返回动作ID，固定程序重新检查合法性后执行固定Training工具；候选不能调用任意shell或改动验收。这是显式实验策略运行，不表示该策略已通过独立效率评估或被采用。
 

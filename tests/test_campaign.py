@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from vision_rsi.campaign import advance,choose,lease
+from vision_rsi.campaign import advance,choose,lease,list_campaigns
 
 
 class CampaignTests(unittest.TestCase):
@@ -66,6 +66,24 @@ class CampaignTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             with lease(path):raise RuntimeError('simulated crash')
         with lease(path):pass
+
+    @patch('vision_rsi.campaign.prepare')
+    def test_campaign_id_restores_research_settings_and_rejects_changed_execution(self,prepare):
+        prepare.return_value={'status':'blocked','blockers':['missing data']}
+        state=self.advance(research_rounds=2)
+        cid=state['campaign_id']
+        shown=self.advance(control='show',selected_campaign=cid)
+        self.assertEqual(shown['research_rounds'],2)
+        self.assertEqual(shown['campaign_id'],cid)
+        rows=list_campaigns(self.session['session_id'],self.root/'campaigns')
+        self.assertEqual(rows[0]['campaign_id'],cid);self.assertFalse(rows[0]['live_remote_poll'])
+        self.assertTrue(self.advance(control='pause',selected_campaign=cid)['paused'])
+        with self.assertRaisesRegex(ValueError,'cannot be overridden'):
+            self.advance(control='show',selected_campaign=cid,research_rounds=0)
+        self.session['versions'][-1]['contract']['acceptance']['threshold']=65
+        self.assertEqual(self.advance(control='show',selected_campaign=cid)['binding']['contract']['acceptance']['threshold'],60)
+        with self.assertRaisesRegex(ValueError,'differs from selected campaign'):
+            self.advance(selected_campaign=cid)
 
     @patch('vision_rsi.experiments.propose_next')
     @patch('vision_rsi.campaign.TrainingRuns')

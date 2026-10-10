@@ -68,7 +68,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','accept','reject','list','build','prepare','advance','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','accept','reject','list','build','prepare','advance','campaigns','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -84,7 +84,8 @@ def main(argv):
     parser.add_argument('--run-id');parser.add_argument('--run-store',default='runs/training-runs')
     parser.add_argument('--campaign-store',default='runs/campaigns')
     parser.add_argument('--steps',type=int,default=3)
-    parser.add_argument('--research-rounds',type=int,default=0,help='Bounded automatic method proposals after measured training failure (0..10)')
+    parser.add_argument('--research-rounds',type=int,help='Bounded automatic method proposals after measured training failure (0..10; default 0)')
+    parser.add_argument('--campaign-id',help='Resume/query the exact persisted campaign and its frozen strategy/research settings')
     parser.add_argument('--candidate-id');parser.add_argument('--candidate-module')
     parser.add_argument('--candidate-store',default='runs/research-candidates')
     args=parser.parse_args(argv)
@@ -95,17 +96,29 @@ def main(argv):
         config=json.loads(Path(args.config).read_text(encoding='utf-8'))
         return store.clarify(session,config['llm'],message)
     try:
+        if args.action=='campaigns':
+            from .campaign import list_campaigns
+            if not args.session_id:parser.error('campaigns requires --session-id')
+            store.show(args.session_id)
+            records=list_campaigns(args.session_id,args.campaign_store)
+            if args.json:print(json.dumps(records,ensure_ascii=False,indent=2))
+            else:
+                for record in records:
+                    print(record['campaign_id']+' | '+record['status']+(' [paused]' if record['paused'] else '')+' | rounds='+str(record['research_rounds'])+' | run='+str(record['run_id']))
+                print('以上为本地保存的最近状态；实时核查作业请用training status --run-id。')
+            return
         if args.action in ('advance','agent-status','agent-pause','agent-resume'):
             from .campaign import advance
             if bool(args.candidate_id)!=bool(args.candidate_module):parser.error('Experimental policy requires both --candidate-id and --candidate-module')
             policy={'candidate_id':args.candidate_id,'module':args.candidate_module,'store':str(Path(args.candidate_store).resolve())} if args.candidate_id else None
             config=json.loads(Path(args.config).read_text(encoding='utf-8'))
             result=advance(store.show(args.session_id),config,args.campaign_store,args.run_store,args.steps,policy,
-                           {'agent-status':'show','agent-pause':'pause','agent-resume':'resume'}.get(args.action),args.research_rounds)
+                           {'agent-status':'show','agent-pause':'pause','agent-resume':'resume'}.get(args.action),args.research_rounds,args.campaign_id)
             if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
             else:
                 print(execution_summary(result))
                 print('控制记录: '+result['state_path'])
+                print('Campaign: '+result['campaign_id'])
                 if result.get('paused'):print('控制器已暂停；已提交远端作业仍按原预算运行，取消作业请用training cancel。')
                 if result.get('analysis'):print('结果分析: '+json.dumps(result['analysis'],ensure_ascii=False))
                 if policy:print('使用实验候选策略；不代表策略已通过效率验收或被采用。')

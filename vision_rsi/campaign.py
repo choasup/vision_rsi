@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import json
 import hashlib
 import os
+import re
 from pathlib import Path
 
 from .runner import atomic_json,digest,revision
@@ -11,6 +12,22 @@ from .training_plan import prepare
 from .training_runs import TrainingRuns,submit,observe,collect,TERMINAL,remote_identity
 
 LOCAL_TERMINAL=TERMINAL|{'deployment_failed','resume_preflight_failed'}
+
+
+def list_campaigns(session_id,root='runs/campaigns'):
+    if not isinstance(session_id,str) or not re.fullmatch('[A-Za-z0-9_-]{1,128}',session_id):raise ValueError('Invalid session ID')
+    rows=[]
+    for path in sorted((Path(root)/session_id).glob('*/state.json')):
+        state=json.loads(path.read_text(encoding='utf-8'))
+        identity=state['campaign_id']
+        if digest(state['binding'])!=identity or path.parent.name!=identity or state['binding']['session_id']!=session_id:
+            raise ValueError('Stored campaign identity changed')
+        policy=state['binding'].get('policy') or {}
+        rows.append({'campaign_id':identity,'status':state['status'],'paused':state.get('paused',False),
+                     'run_id':state.get('run_id'),'remote_status_last_observed':state.get('run_status'),
+                     'research_rounds':state['binding'].get('research_rounds',0),'candidate_id':policy.get('candidate_id'),
+                     'actions_recorded':len(state['history']),'state_path':str(path.resolve()),'live_remote_poll':False})
+    return rows
 
 
 @contextmanager
@@ -115,15 +132,33 @@ def project(state,action,result):
             state['research_stopped']=result['status']=='budget_exhausted'
 
 
-def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',steps=3,policy=None,control=None,research_rounds=0):
+def advance(session,config,root='runs/campaigns',run_store='runs/training-runs',steps=3,policy=None,control=None,research_rounds=None,selected_campaign=None):
     if isinstance(steps,bool) or not isinstance(steps,int) or not 1<=steps<=10:raise ValueError('Controller steps must be 1..10')
+    saved_binding=None
+    if selected_campaign:
+        if not isinstance(selected_campaign,str) or not re.fullmatch('[0-9a-f]{64}',selected_campaign):raise ValueError('Invalid campaign ID')
+        saved_path=Path(root)/session['session_id']/selected_campaign/'state.json'
+        if not saved_path.is_file():raise ValueError('Unknown campaign for this Training session')
+        saved=json.loads(saved_path.read_text(encoding='utf-8'));saved_binding=saved['binding']
+        if digest(saved_binding)!=selected_campaign or saved['campaign_id']!=selected_campaign or saved_binding['session_id']!=session['session_id']:
+            raise ValueError('Stored campaign identity changed')
+        if research_rounds is not None and research_rounds!=saved_binding.get('research_rounds',0):raise ValueError('Selected campaign research limit cannot be overridden')
+        if policy is not None and policy!=saved_binding.get('policy'):raise ValueError('Selected campaign policy cannot be overridden')
+        research_rounds=saved_binding.get('research_rounds',0);policy=saved_binding.get('policy')
+    if research_rounds is None:research_rounds=0
     if isinstance(research_rounds,bool) or not isinstance(research_rounds,int) or not 0<=research_rounds<=10:raise ValueError('Research rounds must be 0..10')
     if not session['versions']:raise ValueError('Define the Training contract first')
-    if session['versions'][-1].get('review_required'):raise ValueError('Review pending requirements changes before advancing Training; active requirements have not been overwritten')
+    if not control and session['versions'][-1].get('review_required'):raise ValueError('Review pending requirements changes before advancing Training; active requirements have not been overwritten')
     binding={'session_id':session['session_id'],'contract':session['versions'][-1]['contract'],
              'remote':remote_identity(config['remote']),'training':config.get('training',{}),
              'coco_root':config['remote'].get('coco_root'),'run_store':str(Path(run_store).resolve()),'policy':policy,
              'research_rounds':research_rounds,'research_model':{key:config.get('llm',{}).get(key) for key in ('model','base_url')} if research_rounds else None}
+    if saved_binding:
+        comparable=dict(saved_binding)
+        comparable.setdefault('research_rounds',0);comparable.setdefault('research_model',None)
+        comparable.pop('control_sources',None)  # Legacy source snapshots remain in the immutable binding.
+        if not control and binding!=comparable:raise ValueError('Current task/config differs from selected campaign; observe or pause it, but do not execute with changed requirements')
+        binding=saved_binding
     control_sources={path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(Path(__file__).parent.glob('*.py'))}
     campaign_id=digest(binding);folder=Path(root)/session['session_id']/campaign_id;folder.mkdir(parents=True,exist_ok=True)
     path=folder/'state.json'
