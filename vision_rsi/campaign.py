@@ -114,7 +114,8 @@ def execute(action,state,session,config,folder,runs):
         retry=state.get('intent',{}).get('explicit_retry',0)
         if retry:request_id+='-retry-'+str(retry)
         brief=(state.get('intent') or {}).get('decision',{}).get('research_brief')
-        return propose_next(record,runs,config['llm'],folder/'experiments',request_id,research_brief=brief)
+        return propose_next(record,runs,config['llm'],folder/'experiments',request_id,research_brief=brief,
+                            research_history=history_context(state.get('history',[])))
     if kind=='analyze':
         record=runs.get(state['run_id']);verdict=record['details'].get('acceptance_review')
         analysis={'run_id':record['run_id'],'process_status':record['status'],'actual_gpu_hours':record['actual_gpu_hours'],

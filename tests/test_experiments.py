@@ -20,6 +20,31 @@ def proposal():
 
 
 class ExperimentTests(unittest.TestCase):
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_invalid_or_oversized_research_history_is_rejected_before_ledger(self,client):
+        for history in ({},[{'unexpected':'field'}],[{'observation':{'text':'x'*(193*1024)}}]):
+            with self.assertRaises(ValueError):
+                propose_next(self.record,self.runs,self.llm,self.root/'invalid-history','same',research_history=history)
+        self.assertFalse((self.root/'invalid-history').exists());client.assert_not_called()
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_historical_measurement_is_in_prompt_and_bound_to_cached_request(self,client):
+        from vision_rsi.strategy_context import history_context
+        history=history_context([{'action':{'id':'analyze-old','kind':'analyze'},'status':'completed',
+            'result':{'run_id':'old-run','actual_gpu_hours':.1,'acceptance_review':{'box_AP':40,'threshold':60},
+                      'api_key':'MUST_NOT_FORWARD'}}])
+        client.return_value.complete.return_value={'content':json.dumps(proposal())}
+        folder=self.root/'memory'
+        result=propose_next(self.record,self.runs,self.llm,folder,'memory',research_history=history)
+        prompt=json.loads(client.return_value.complete.call_args.args[0][1]['content'])
+        self.assertEqual(prompt['research_history'][0]['observation']['measurement']['value'],40)
+        self.assertNotIn('MUST_NOT_FORWARD',json.dumps(prompt))
+        self.assertEqual(result,propose_next(self.record,self.runs,self.llm,folder,'memory',research_history=history))
+        changed=copy.deepcopy(history);changed[0]['observation']['measurement']['value']=41
+        with self.assertRaisesRegex(ValueError,'context changed'):
+            propose_next(self.record,self.runs,self.llm,folder,'memory',research_history=changed)
+        self.assertEqual(client.return_value.complete.call_count,1)
+
     def test_feedback_is_bounded_and_excludes_other_parent_receipts(self):
         folder=self.root/'bounded-feedback';folder.mkdir()
         context={'run_id':'same','parent_plan_id':'same-plan','receipt_sha256':'same-receipt'}

@@ -166,6 +166,7 @@ class CampaignTests(unittest.TestCase):
         state={'run_id':self.record['run_id'],'campaign_id':'a'*64,'intent':{'decision':{'research_brief':'A bounded hypothesis'}}}
         execute({'kind':'propose_experiment'},state,self.session,{**self.config,'llm':{}},self.root,runs)
         self.assertEqual(planner.call_args.kwargs['research_brief'],'A bounded hypothesis')
+        self.assertEqual(planner.call_args.kwargs['research_history'],[])
 
     @patch('vision_rsi.candidates.Candidates')
     def test_experimental_strategy_cannot_invent_tool(self,candidates):
