@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import resource
 import signal
 import subprocess
 import tempfile
@@ -25,9 +24,24 @@ print(json.dumps({"results":results},allow_nan=False))
 
 
 def limits():
+    import resource
     for key,value in ((resource.RLIMIT_CPU,5),(resource.RLIMIT_AS,512*1024*1024),
                       (resource.RLIMIT_FSIZE,1024*1024),(resource.RLIMIT_NOFILE,32),(resource.RLIMIT_NPROC,32)):
         resource.setrlimit(key,(value,value))
+
+
+MAX_CASE_BYTES=1024*1024
+
+
+def encode_cases(module,function,cases):
+    """Shared local/remote admission; bound the entire serialized request."""
+    if not isinstance(module,str) or not re.fullmatch(r'vision_rsi\.(?:strategy|harness|adapter)_[a-z][a-z0-9_]*',module):raise ValueError('Invalid candidate module')
+    if not isinstance(function,str) or not re.fullmatch('[a-z][a-z0-9_]{0,63}',function):raise ValueError('Invalid candidate function')
+    if not isinstance(cases,list) or not 1<=len(cases)<=16 or any(not isinstance(case,dict) for case in cases):raise ValueError('Need 1..16 keyword argument cases')
+    try:payload=json.dumps({'module':module,'function':function,'cases':cases},allow_nan=False).encode()
+    except (ValueError,TypeError) as error:raise ValueError('Candidate cases must be finite JSON data') from error
+    if len(payload)>MAX_CASE_BYTES:raise ValueError('Candidate cases too large')
+    return payload
 
 
 def run(request):
@@ -36,11 +50,7 @@ def run(request):
     files=request['files']
     if not isinstance(files,dict) or not 1<=len(files)<=20:raise ValueError('Invalid candidate file set')
     module=request['module'];function=request['function'];cases=request['cases']
-    if not re.fullmatch(r'vision_rsi\.(?:strategy|harness|adapter)_[a-z][a-z0-9_]*',module):raise ValueError('Invalid candidate module')
-    if not re.fullmatch('[a-z][a-z0-9_]{0,63}',function):raise ValueError('Invalid candidate function')
-    if not isinstance(cases,list) or not 1<=len(cases)<=16 or any(not isinstance(case,dict) for case in cases):raise ValueError('Need 1..16 keyword argument cases')
-    payload=json.dumps({'module':module,'function':function,'cases':cases},allow_nan=False).encode()
-    if len(payload)>64*1024:raise ValueError('Candidate cases too large')
+    payload=encode_cases(module,function,cases)
     root=Path(workspace)/'candidate-checks';root.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='check-',dir=root) as temp:
         source=Path(temp);source.chmod(0o755)

@@ -164,6 +164,8 @@ class Candidates:
         import base64
         import uuid
         from .remote import check_candidate
+        from .candidate_runtime import encode_cases
+        encode_cases(module,function,cases)
         if not re.fullmatch('[0-9a-f]{64}',candidate_id):raise ValueError('Invalid candidate ID')
         folder=self.root/candidate_id
         record=self.verify(json.loads((folder/'candidate.json').read_text(encoding='utf-8')))

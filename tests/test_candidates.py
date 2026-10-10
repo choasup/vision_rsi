@@ -15,6 +15,22 @@ def proposal():
 
 
 class CandidateTests(unittest.TestCase):
+    @patch('vision_rsi.remote.check_candidate')
+    def test_aggregate_case_limit_rejected_before_remote_or_evidence(self,remote):
+        from vision_rsi.candidate_runtime import encode_cases
+        case={'history':[{'id':'observed','note':'x'*300000}],'actions':[],'budget':1}
+        from vision_rsi.strategy_protocol import validate_context
+        validate_context(**case)
+        payload=encode_cases('vision_rsi.strategy_candidate','propose',[case])
+        self.assertGreater(len(payload),64*1024)
+        with self.assertRaisesRegex(ValueError,'too large'):
+            self.store.check('a'*64,{},'vision_rsi.strategy_candidate','propose',[case]*4)
+        remote.assert_not_called()
+        self.assertFalse((self.store.root/('a'*64)).exists())
+        for cases in ([],[{}]*17,[{'number':float('nan')}]):
+            with self.subTest(cases=str(cases)[:40]),self.assertRaises(ValueError):
+                encode_cases('vision_rsi.strategy_candidate','propose',cases)
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         root=Path(self.temp.name);self.repo=root/'source';self.repo.mkdir()

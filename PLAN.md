@@ -315,3 +315,9 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - Log observations now reconcile authoritative status for the same remote job and project it into campaign state. Completed jobs can proceed to collection even when the strategy selected logs. Terminal GPU accounting uses status evidence; failed reconciliation retains reservations.
 - Regression coverage includes misleading log text and unavailable status. Real COCO data/weights and authorized GPU budget remain outstanding; bounded resource discovery found no matches before its 10,000-directory limit and does not establish absence.
+
+
+## Long strategy context admission (2026-10-10)
+
+- Control and remote candidate runtime now use the same finite-JSON cases encoder, 1..16-case bound and 1 MiB aggregate payload limit. This accommodates an individual 512 KiB strategy context while rejecting oversized aggregate cases before reserving evidence or contacting SSH. Other CPU, memory, wall time and output limits are unchanged.
+- Actual H20 CPU namespace check with 2,500 history rows / 401,615 serialized bytes passed strategy protocol. Candidate remained unadopted; no GPU training or LLM call. Ignored evidence: runs/long-context-integration/summary.json and its referenced protocol receipt. This does not establish unbounded history support or RSI efficiency.
