@@ -279,3 +279,11 @@
 - 26项COCO训练配置/运行时/账本相关测试通过（1.203秒），覆盖单rank/模拟多rank摘要一致、其它rank零重复hash调用和错误传播。
 - 实际远端CPU torchrun两进程Gloo复验：两张合成文件rank0读取2次、rank1读取0次，摘要相同；模拟读取失败时两个rank均收到OSError失败状态并干净退出。证据`runs/resource-bootstrap/shared-image-hash-cpu-broadcast.json`，helper源SHA182241fc22b63ff29550e41e38eb7fcb5a07f42653b483fda7a8323e88c295a3。
 - CUDA_VISIBLE_DEVICES对探针子进程设空，无GPU计算或训练；仅两进程CPU通信证据，不证明8卡NCCL、真实吞吐提升或数值恢复。真实训练GPU预算及上线门槛仍未完成，安装包尚未重建。
+
+## 恢复提交前CPU checkpoint进度门槛（2026-10-10）
+
+- 将新checkpoint进度校验接入resume的CPU资源预检，传递原output directory及选定SHA。远端限定Training存储内路径、固定baseline最大2GiB文件，CUDA_VISIBLE_DEVICES空，torch.load使用CPU/weights_only；哈希在读取前后均核对。
+- 本地必须收到checkpoint_progress_checked=true及相同SHA回执；否则沿用resume_preflight_failed/实际GPU小时0路径，不提交GPU作业。该流程可有短暂本地预留，预检失败会结算为0，不将其描述为从不创建预留。
+- 27项预检/训练账本/COCO配置相关测试通过（1.017秒），覆盖checkpoint请求绑定、缺失/错误回执拒绝、resume传参及既有预检失败不调用submit。补充2GiB检查后远端探针源码语法编译通过。
+- 旧冻结包缺少validate_checkpoint_progress时新控制程序预检拒绝，不自动升级旧代码；旧冻结程序保持自己的原行为。本轮无真实API/SSH/GPU调用，仅mock资源回执及本地语法证据，尚未在真实checkpoint上跑完整CPU预检。
+- CPU进度门槛不证明全部权重/优化器/RNG张量、GPU运行时身份或8卡数值恢复；真实预算与完整上线门槛仍未完成，安装包尚未重建。

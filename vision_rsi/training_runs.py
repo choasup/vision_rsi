@@ -191,7 +191,7 @@ def resume(run_id,remote,store):
     if not created: return dict(record,reused=True)
     new_id=record['run_id'];details=record['details']
     try:
-        details['resource_preflight']=resource_preflight(remote,deployment,base)
+        details['resource_preflight']=resource_preflight(remote,deployment,base,checkpoint={'directory':output,'sha256':checksum})
         argv=[value for value in original['spec']['argv']]
         if '--checkpoint-sha256' in argv:
             index=argv.index('--checkpoint-sha256');del argv[index:index+2]

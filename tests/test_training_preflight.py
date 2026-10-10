@@ -9,6 +9,17 @@ from vision_rsi.runner import digest
 
 
 class PreflightTests(unittest.TestCase):
+    @patch('vision_rsi.training_preflight.subprocess.run')
+    def test_resume_progress_inspection_requires_bound_cpu_receipt(self,run):
+        checkpoint={'directory':'/workspace/training/task/run','sha256':'c'*64}
+        run.return_value=SimpleNamespace(returncode=0,stdout=json.dumps(dict(self.report,checkpoint_progress_checked=True,checkpoint_sha256='c'*64)),stderr='')
+        check(self.remote,self.deployment,self.plan,checkpoint=checkpoint)
+        self.assertEqual(json.loads(run.call_args.kwargs['input'])['checkpoint'],checkpoint)
+        run.return_value.stdout=json.dumps(self.report)
+        with self.assertRaisesRegex(ValueError,'checkpoint progress receipt'):
+            check(self.remote,self.deployment,self.plan,checkpoint=checkpoint)
+        run.return_value.stdout=json.dumps(dict(self.report,checkpoint_progress_checked=True,checkpoint_sha256='d'*64))
+        with self.assertRaises(ValueError):check(self.remote,self.deployment,self.plan,checkpoint=checkpoint)
     def setUp(self):
         self.plan={'recipe':dict(fixture_recipe('.'),fixture=False,coco_root='/workspace/data',weights='/workspace/model.pth'),
                    'contract':{},'source_hashes':{'coco_train.py':'a'*64}}

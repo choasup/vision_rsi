@@ -188,6 +188,7 @@ class ResumeCoordinatorTests(unittest.TestCase):
         self.assertTrue(second['reused']);self.assertEqual(first['run_id'],second['run_id'])
         self.assertNotEqual(first['run_id'],self.original)
         self.assertEqual(first['details']['output_run_id'],self.original)
+        self.assertEqual(preflight.call_args.kwargs['checkpoint'],{'directory':first['details']['output_directory'],'sha256':'a'*64})
         argv=first['details']['spec']['argv']
         self.assertIn('--resume',argv);self.assertEqual(argv[-2:],['--checkpoint-sha256','a'*64])
         self.assertEqual(len(self.store.list('session')),2)
