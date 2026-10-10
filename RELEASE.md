@@ -584,3 +584,9 @@
 - 本地齐备仅返回local_evidence_ready_for_test，不声称实际推理、远端可用、整Agent上线或RSI效果。无注册能力、其它会话/旧合同、伪validated元数据和篡改产物不通过。已加入未来安装回归清单，但安装包未重建。
 - 20项release_status/acceptance/serving_acceptance/cli_help/training_shell测试通过（0.809秒），含完整合成收据通过本地审计但runtime/RSI标记仍false、伪validated缺产物拒绝、manifest改动拒绝、会话DB不变/缺失registry不创建。合成报告不代表真实模型通过。
 - 实际CLI核查my-vision-task/v5：blocked，缺资源预算、未完成预算澄清、该任务无注册能力。未调用LLM/SSH/GPU，完整上线目标未完成。
+
+## Persistent research planning limits (2026-10-11)
+
+Source controller now freezes research.max_planning_requests per ledger (integer 1..1000, default 6), includes remaining attempts in the saved request context, and rejects configuration changes to existing limits. Legacy request ledgers retain 6. Invalid responses and known-not-dispatched attempts still count. Pending action recovery and cached responses do not consume another planning request. This is separate from API call admission and is not a billing or GPU budget.
+
+Validation: 30 tests passed across test_planning_budget, test_controller, test_task_research and test_not_dispatched (11.217 seconds). No real API calls or remote/GPU execution were performed. The dev4 wheel has not been rebuilt for this change. Real COCO AP>=60 acceptance and general RSI efficiency evidence remain outstanding.

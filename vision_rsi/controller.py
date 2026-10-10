@@ -273,6 +273,19 @@ def execute(tool, config, repository,arguments=None):
     return {'limitation': 'LLM synthesis is an unverified research interpretation; no experiment executed.'}
 
 
+def planning_limit(config, events):
+    """Resolve an immutable per-ledger attempt limit, including legacy ledgers."""
+    supplied = config.get('research', {}).get('max_planning_requests')
+    if 'max_planning_requests' in config.get('research', {}) and (type(supplied) is not int or not 1 <= supplied <= 1000):
+        raise ValueError('max_planning_requests must be an integer 1..1000')
+    budgets = [e for e in events if e['payload'].get('record_type') == 'planning_budget']
+    legacy = any(e['payload'].get('record_type') == 'planning_request' for e in events)
+    frozen = budgets[0]['payload']['max_planning_requests'] if budgets else (6 if legacy else None)
+    if frozen is not None and supplied is not None and supplied != frozen:
+        raise ValueError('Planning limit is frozen; use a new research root for a different limit')
+    return frozen if frozen is not None else (supplied if supplied is not None else 6)
+
+
 def research_step(config, directory, steps=1, repository='.'):
     if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 3:
         raise ValueError('steps must be 1..3')
@@ -282,6 +295,7 @@ def research_step(config, directory, steps=1, repository='.'):
     lock = ledger.directory / 'controller.lock'
     from .campaign import lease
     with lease(lock,owner='Research controller'):
+        limit = planning_limit(config, ledger.events())
         for _ in range(steps):
             events = ledger.events()
             controls = [e['kind'] for e in events if e['kind'] in ('paused', 'resumed')]
@@ -312,7 +326,7 @@ def research_step(config, directory, steps=1, repository='.'):
                 consumed = {e['payload'].get('planning_response') for e in events if e['kind'] == 'action' or e['payload'].get('record_type') == 'planning_rejected'}
                 response = next((e for e in responses.values() if e['key'] not in consumed), None)
                 if response is None:
-                    if len(requests) >= 6:
+                    if len(requests) >= limit:
                         break
                     key = 'plan-' + uuid.uuid4().hex[:12]
                     client_config=dict(config['llm'], **({'thinking': 'disabled'} if config['llm'].get('model') == 'deepseek-flash' else {}))
@@ -321,6 +335,9 @@ def research_step(config, directory, steps=1, repository='.'):
                     history = [{'key': e['key'], 'kind': e['kind'], 'summary': e['payload']['summary'],
                                 'observation': observation_context(e['payload'].get('observation', ''))} for e in events[-16:]]
                     prompt = {'objective': events[0]['payload'], 'history': history,
+                              'planning_budget':{'limit':limit,'attempts_used':len(requests),
+                                                 'attempts_remaining_after_this_request':limit-len(requests)-1,
+                                                 'billing_budget_enforced':False},
                               'tools': {k: v for k, v in {'check_candidate':'Run staged candidate in existing remote CPU-only sandbox on bounded development cases; no GPU, no adoption.','stage_candidate':'Create an isolated Git code proposal, without execution or adoption. Requires inspected clean current base_revision.','inspect_repository': 'Read tracked source excerpts without modifying code.', 'read_source':'Read up to 100 lines from an observed tracked source hash; arguments: path,start_line,max_lines,expected_sha256. Only source allowlist; no arbitrary files.', 'remote_environment': 'Inspect SSH GPU/Python/disk environment; no training.', 'synthesize': 'State evidence-grounded findings, limitations and next steps. No tool execution.'}.items() if k in available},
                               'schema': {'tool': 'one tool name', 'summary': 'Chinese decision summary', 'question': 'research question', 'expected_evidence': 'falsifiable expected observation or synthesis', 'refs': ['existing history event keys'],
                                          'arguments':'REQUIRED for parameterized tools: put selected shape from tool_argument_shapes directly here. Never return candidate_arguments/synthesis_arguments/check_arguments keys.',
@@ -353,6 +370,10 @@ def research_step(config, directory, steps=1, repository='.'):
                         if len(json.dumps(snapshot,sort_keys=True,ensure_ascii=False))<=90000:break
                         if not history:raise ValueError('Research objective exceeds request snapshot limit')
                         history.pop(0)
+                    if not any(e['payload'].get('record_type') == 'planning_budget' for e in events):
+                        ledger.append('research-planning-budget', 'evidence', {
+                            'summary':'研究规划次数上限已冻结；恢复继续累计。',
+                            'record_type':'planning_budget', 'max_planning_requests':limit})
                     ledger.append(key,'evidence',{'summary':'已保存完整研究请求上下文；若无响应记录则停止重试。',
                         'record_type':'planning_request','model':config['llm']['model'],
                         'request_snapshot':snapshot,'request_snapshot_sha256':digest(snapshot)})
