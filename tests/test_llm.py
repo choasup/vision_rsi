@@ -6,6 +6,17 @@ from vision_rsi.llm import OpenAICompatibleClient
 
 
 class LLMTests(unittest.TestCase):
+    @patch.dict('os.environ', {'TEST_LLM_KEY': 'fixture-secret'})
+    @patch('vision_rsi.llm.urlopen')
+    def test_configuration_preflight_has_no_network_side_effect(self,opened):
+        self.assertIsNone(self.client.validate_config())
+        for changed in ({'base_url':'http://example.invalid'},{'base_url':'https://'},
+                        {'base_url':'https://user:fixture@example.invalid'},
+                        {'base_url':'https://example.invalid:bad'},{'model':''}):
+            with self.subTest(config=changed),self.assertRaises(ValueError):
+                OpenAICompatibleClient(dict(self.client.config,**changed)).validate_config()
+        opened.assert_not_called()
+
     def setUp(self):
         self.client = OpenAICompatibleClient({'base_url': 'https://example.invalid',
             'model': 'fixture', 'api_key_env': 'TEST_LLM_KEY'})

@@ -55,7 +55,7 @@
   },
   "budget": {
     "gpu_hours": 10,
-    "llm_calls": 20
+    "adapter_repair_calls": 20
   },
   "assumptions": [
     "Example task only; no training adapter available."

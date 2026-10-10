@@ -478,3 +478,14 @@ Training 需求理解会在内部对已收到的接口格式错误最多修正�
 同一 request-id 会复用已记录的 API 响应及固定 ID 的复测结果；不确定的 API/远程执行不自动重试。控制源码或反馈变化会拒绝复用旧请求。修复只针对开发接口错误，不自动修正任务要求、不注册 Test 能力、不采用 Agent，也不能替代保留集效果及研究效率验证。
 
 修复复测还会比较原来已符合契约的开发样本输出；若被改掉，返回 `repair_regression_failed`，即使新输出仍能通过 schema 也不算修复通过。报告记录有效旧输出检查数；这不保证未见样本的行为保持不变。
+
+
+### 修复谱系调用配额
+
+新修复调用需任务契约中明确的 `budget.adapter_repair_calls`（0..10000 的整数）。父子候选共享首次冻结的同一谱系配额；修改预算不会隐式重置。调用前以 SQLite 原子预留，结果不明也占一次，重复请求不重复计数。开发示例中的阶段配额不是正式训练或全项目费用授权。
+
+```powershell
+.\vision-rsi.cmd candidate adapter-budget --report FAILED_CHECK.adapter.json --module vision_rsi.adapter_candidate --function predict
+```
+
+此命令不调用 API/SSH，可将旧请求记录补记到账本，显示已响应、未结算、账面剩余及预算门槛。历史 `budget.llm_calls` 仅供审计，不能当作新的修复额度；若契约声明了全局 `llm_calls`，在跨阶段消耗未对齐前会拒绝新修复调用。当前阶段账本不覆盖需求澄清、策略研究与 GPU 训练，不能据此声称全 Agent 统一预算已经完成。缺失历史证据会阻止准入，不会当成零消耗。

@@ -15,8 +15,10 @@ def proposal():
 
 
 class CandidateTests(unittest.TestCase):
-    def failed_adapter(self,remote):
+    def failed_adapter(self,remote,call_limit=20):
         contract=json.loads(Path('examples/interface-contract.json').read_text())
+        contract['budget'].pop('llm_calls',None)
+        contract['budget']['adapter_repair_calls']=call_limit
         changed=proposal();changed['edits'][0].update(path='vision_rsi/adapter_fixture.py',content='def predict(sample):\n    start=-1 if sample["sample_id"].endswith("-invalid") else 0\n    return {"defects": [{"label":"fixture", "start_seconds":start}]}\n')
         parent=self.store.create(changed,{'fixture':True})
         remote.side_effect=lambda endpoint,request: {'status':'executed_unverified','source_hashes':request['source_hashes'],
@@ -28,7 +30,7 @@ class CandidateTests(unittest.TestCase):
     @patch('vision_rsi.remote.check_candidate')
     def test_adapter_repair_retains_lineage_and_replays_without_api_or_runtime(self,remote,client):
         from vision_rsi.adapter_repair import repair
-        failed=self.failed_adapter(remote)
+        failed=self.failed_adapter(remote,call_limit=1)
         def respond(messages,**kwargs):
             prompt=json.loads(messages[-1]['content'])
             value={'hypothesis':'Repair invalid temporal bound','expected_improvement':'Development schema conformity',
@@ -44,6 +46,78 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(result['parent_candidate_id'],failed['candidate_id']);self.assertFalse(result['quality_verified']);self.assertFalse(result['adopted'])
         self.assertEqual(result['valid_parent_outputs_checked'],1);self.assertEqual(result['behavior_regressions'],[])
         client.return_value.complete.assert_called_once();self.assertEqual(remote.call_count,2)
+        from vision_rsi.repair_budget import reconcile
+        self.assertEqual(result['repair_budget']['remaining_calls'],0)
+        with self.store.db:
+            self.store.db.execute('DROP TABLE repair_calls');self.store.db.execute('DROP TABLE repair_budgets')
+        budget=reconcile(self.store,result['candidate_id'],failed['contract'])
+        self.assertEqual(budget['root_candidate_id'],failed['candidate_id'])
+        self.assertEqual(budget['occupied_calls'],1);self.assertEqual(budget['remaining_calls'],0)
+        client.return_value.complete.assert_called_once();self.assertEqual(remote.call_count,2)
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    @patch('vision_rsi.remote.check_candidate')
+    def test_repair_budget_retains_unknown_calls_and_refuses_new_id_or_increase(self,remote,client):
+        from vision_rsi.adapter_repair import repair
+        from vision_rsi.repair_budget import reconcile
+        failed=self.failed_adapter(remote,call_limit=1)
+        config={'remote':{},'llm':{'model':'fixture','base_url':'https://fixture.invalid'}}
+        client.return_value.complete.side_effect=TimeoutError('API result unknown')
+        with self.assertRaises(TimeoutError):repair(self.store,'quota-first',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+        with self.assertRaisesRegex(ValueError,'budget exhausted'):repair(self.store,'quota-second',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+        budget=reconcile(self.store,failed['candidate_id'],failed['contract'])
+        self.assertEqual(budget['unsettled_calls'],1);self.assertEqual(budget['remaining_calls'],0)
+        changed=json.loads(json.dumps(failed['contract']));changed['budget']['adapter_repair_calls']=2
+        with self.assertRaisesRegex(ValueError,'no implicit reset'):reconcile(self.store,failed['candidate_id'],changed)
+        client.return_value.complete.assert_called_once()
+        self.assertIsNone(self.store.db.execute('SELECT id FROM requests WHERE id=?',('quota-second',)).fetchone())
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_global_llm_limit_is_not_reinterpreted_as_fresh_repair_quota(self,remote):
+        from vision_rsi.repair_budget import reconcile,admit_contract
+        failed=self.failed_adapter(remote)
+        global_contract=json.loads(json.dumps(failed['contract']));global_contract['budget']['llm_calls']=20
+        with self.assertRaisesRegex(ValueError,'Global LLM call budget'):admit_contract(global_contract)
+        legacy=json.loads(json.dumps(global_contract));legacy['budget'].pop('adapter_repair_calls')
+        budget=reconcile(self.store,failed['candidate_id'],legacy)
+        self.assertFalse(budget['new_calls_authorized']);self.assertFalse(budget['global_llm_budget_verified'])
+        with self.assertRaisesRegex(ValueError,'audit-only'):admit_contract(legacy)
+
+    @patch.dict('os.environ',{'MISSING_REPAIR_TEST_KEY':''})
+    @patch('vision_rsi.llm.urlopen')
+    @patch('vision_rsi.remote.check_candidate')
+    def test_missing_key_does_not_consume_repair_call_reservation(self,remote,opened):
+        from vision_rsi.adapter_repair import repair
+        from vision_rsi.repair_budget import reconcile
+        failed=self.failed_adapter(remote,call_limit=1)
+        config={'remote':{},'llm':{'model':'fixture','base_url':'https://fixture.invalid','api_key_env':'MISSING_REPAIR_TEST_KEY'}}
+        with self.assertRaisesRegex(ValueError,'API key'):repair(self.store,'missing-local-key',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
+        self.assertIsNone(self.store.db.execute('SELECT id FROM requests WHERE id=?',('missing-local-key',)).fetchone())
+        budget=reconcile(self.store,failed['candidate_id'],failed['contract'])
+        self.assertEqual(budget['occupied_calls'],0);self.assertEqual(budget['remaining_calls'],1)
+        opened.assert_not_called()
+
+    @patch('vision_rsi.remote.check_candidate')
+    def test_repair_budget_concurrent_reservations_admit_only_one_call(self,remote):
+        from concurrent.futures import ThreadPoolExecutor
+        from vision_rsi.repair_budget import reconcile
+        from vision_rsi.runner import digest
+        failed=self.failed_adapter(remote,call_limit=1)
+        original=json.loads(Path(failed['adapter_report_path']).read_text())
+        identity={'kind':'adapter_contract_repair_v1','parent_candidate_id':failed['candidate_id'],
+                  'parent_report_sha256':digest(original),'module':'vision_rsi.adapter_fixture','function':'predict'}
+        def reserve(request_id):
+            store=Candidates(self.store.root,self.repo)
+            try:
+                try:reconcile(store,failed['candidate_id'],failed['contract'],request_id,identity);return 'admitted'
+                except ValueError as error:
+                    if 'budget exhausted' not in str(error):raise
+                    return 'exhausted'
+            finally:store.close()
+        with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(reserve,['concurrent-a','concurrent-b']))
+        self.assertCountEqual(results,['admitted','exhausted'])
+        budget=reconcile(self.store,failed['candidate_id'],failed['contract'])
+        self.assertEqual(budget['occupied_calls'],1);self.assertEqual(budget['unsettled_calls'],1)
 
     @patch('vision_rsi.llm.OpenAICompatibleClient')
     @patch('vision_rsi.remote.check_candidate')

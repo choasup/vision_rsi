@@ -375,3 +375,12 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 
 - Actual DeepSeek Flash repair at source4e96e1f consumed reported1,126 prompt /733 completion /1,859 total tokens. Child1f1370d70900926188509e7775311fae162cab41f75703052f3443e5da40364d passed original H20 CPU isolated development cases; same request replay reused candidate/runtime receipt unchanged. Evidence runs/adapter-repair-integration/{summary,result}.json. Manual source inspection shows fixture timestamp normalization, not a visual model; broader unseen behavior remains unverified.
 - Added known-valid-output preservation gate: schema-conforming repairs that alter prior valid development outputs now return repair_regression_failed. Actual saved parent/child responses re-reviewed with this gate:1 known-valid output unchanged, no regressions; no new API or remote call. Evidence behavior-review.json. Quality/adoption remain false; no GPU training.
+
+
+## Repair lineage call budget admission (2026-10-10)
+
+- Added explicit adapter_repair_calls stage quota, shared across verified parent/child lineage. Request journal insertion and quota occupancy reserve in one SQLite immediate transaction; unknown outcomes retain occupancy, changed contract/quota cannot reset/increase it. Known API records backfilled without API calls; missing historical evidence blocks reconciliation.
+- Legacy global llm_calls is audit-only and is never reinterpreted as a fresh per-lineage allowance. Any declared global LLM cap blocks new repair calls until cross-stage accounting is implemented. This is deliberately not a claim of unified Agent budgeting. Example development contract now uses the explicit stage field.
+- Tests cover last-slot concurrent admission, unknown API outcomes blocking new request IDs, frozen quota increase rejection, child lineage/restart retention and reconstruction after absent local stage tables. Actual previous Flash response reconciled to1 occupied/1 responded/0 unsettled; legacy audit reports new_calls_authorized=false and global_llm_budget_verified=false. No API/SSH call during audit. Evidence runs/adapter-repair-integration/budget-audit.json.
+
+- Local LLM configuration is now preflighted before call reservation: missing environment key, invalid HTTPS endpoint/port or empty model ID cannot consume a repair slot. New missing-key regression confirms no API request or reservation; API transport/config tests pass. Full171-test suite passed before this preflight addition; final targeted21 candidate and3 LLM tests passed afterward.

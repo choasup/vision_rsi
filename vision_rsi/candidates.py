@@ -259,7 +259,7 @@ class Candidates:
 def main(argv):
     import argparse
     parser=argparse.ArgumentParser(prog='vision-rsi candidate')
-    parser.add_argument('action',choices=['create','propose','list','show','check','strategy-check','adapter-check','adapter-repair'])
+    parser.add_argument('action',choices=['create','propose','list','show','check','strategy-check','adapter-check','adapter-repair','adapter-budget'])
     parser.add_argument('--store',default='runs/research-candidates');parser.add_argument('--repository',default='.')
     parser.add_argument('--proposal');parser.add_argument('--evidence');parser.add_argument('--request-id');parser.add_argument('--candidate-id')
     parser.add_argument('--session-id');parser.add_argument('--sessions',default='runs/training-sessions')
@@ -280,6 +280,12 @@ def main(argv):
             if not session['versions']:raise ValueError('Define the task contract first')
             config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
             result=store.propose(args.request_id,session['versions'][-1]['contract'],json.loads(Path(args.evidence).read_text(encoding='utf-8-sig')),config['llm'])
+        elif args.action=='adapter-budget':
+            if not all((args.report,args.module,args.function)):parser.error('adapter-budget requires --report, --module and --function')
+            from .adapter_repair import failure_context
+            from .repair_budget import reconcile
+            report,parent,_,_=failure_context(store,args.report,args.module,args.function)
+            result=reconcile(store,parent['candidate_id'],report['contract'])
         elif args.action=='adapter-repair':
             if not all((args.report,args.request_id,args.module,args.function)):parser.error('adapter-repair requires --report, --request-id, --module and --function')
             from .adapter_repair import repair
@@ -299,6 +305,8 @@ def main(argv):
             result=store.verify(json.loads((store.root/args.candidate_id/'candidate.json').read_text(encoding='utf-8')))
         else:result=[json.loads(path.read_text(encoding='utf-8')) for path in sorted(store.root.glob('*/candidate.json'))]
         if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
+        elif args.action=='adapter-budget':
+            print('修复调用预算: '+str(result['llm_calls_limit'])+'\n已占用: '+str(result['occupied_calls'])+'\n结果不明: '+str(result['unsettled_calls'])+'\n账面剩余: '+str(result['remaining_calls'])+'\n新调用预算门槛: '+('可准入' if result['new_calls_authorized'] else '未通过')+'\n范围: 仅此适配器修复谱系；全Agent统一预算未验证')
         elif args.action=='adapter-repair':
             print('修复候选: '+result['candidate_id']+'\n接口复测: '+result['status']+'\n报告: '+result['repair_report_path']+'\n已采用: 否；尚未进行独立效果验收')
         elif args.action in ('check','strategy-check','adapter-check'):

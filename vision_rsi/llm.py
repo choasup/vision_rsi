@@ -3,19 +3,29 @@ import json
 import os
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 
 
 class OpenAICompatibleClient:
     def __init__(self, config):
         self.config = config
 
-    def complete(self, messages, max_tokens=128):
-        key = os.environ.get(self.config['api_key_env'])
-        if not key:
+    def validate_config(self):
+        env_name=self.config.get('api_key_env')
+        if not isinstance(env_name,str) or not env_name or not os.environ.get(env_name):
             raise ValueError('API key environment variable is missing')
-        base = self.config['base_url'].rstrip('/')
-        if not base.startswith('https://'):
+        base=self.config.get('base_url')
+        if not isinstance(base,str):raise ValueError('LLM base_url must use HTTPS')
+        parts=urlsplit(base)
+        if parts.scheme!='https' or not parts.hostname or parts.username is not None or parts.password is not None:
             raise ValueError('LLM base_url must use HTTPS')
+        parts.port  # Validate port syntax before reserving any caller budget.
+        if not isinstance(self.config.get('model'),str) or not self.config['model'].strip():raise ValueError('LLM model ID is missing')
+
+    def complete(self, messages, max_tokens=128):
+        self.validate_config()
+        key = os.environ[self.config['api_key_env']]
+        base = self.config['base_url'].rstrip('/')
         payload = {'model': self.config['model'], 'messages': messages,
                    'max_tokens': max_tokens, 'stream': False}
         if 'thinking' in self.config:
