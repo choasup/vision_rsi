@@ -294,3 +294,10 @@
 - 实际部署当前冻结源代码，微型COCO结构train/val各1张图、80类定义，文件哈希核验通过；Torch真实序列化合成checkpoint，先epoch0/cursor0/step1拒绝，再step0通过，CPU回执绑定各自选定SHA。错误checkpoint另存invalid-checkpoint.pt，原拒绝证据保留。
 - 实际冻结bundle afd26853b8d0c93c8d686c9bd0bed1aebaa523f4e2c4f7fd23a05a9dfceaaa5d；证据runs/resource-bootstrap/cpu-progress-probe-2e59e72fb3144a5ba55152a2055de886/{preregistered.json,resources.json,deployment.json,invalid-result.json,valid-result.json,evidence.json}。
 - CUDA_VISIBLE_DEVICES为空，仅SSH CPU文件/序列化/冻结包预检，不调用LLM、不运行GPU或训练。checkpoint的model/optimizer及CUDA RNG是明确结构fixture，不能据此证明实际检测器状态有效、GPU运行时身份或8卡数值恢复；完整上线门槛仍未完成。
+
+## CPU checkpoint随机状态校验（2026-10-10）
+
+- 新增validate_checkpoint_rng并接入CPU预检及GPU训练恢复：各rank RNG需非空一维CPU uint8张量；CPU状态实际尝试torch.set_rng_state后，在finally中还原检查进程原状态。预检不调用CUDA随机状态接口。
+- 28项COCO/CPU预检/训练账本相关测试通过（.974秒），含模拟CPU状态不兼容时仍恢复调用方状态及非张量前置拒绝。
+- 冻结新代码真实远端CPU探针通过：错误进度拒绝、float类型CPU RNG拒绝、有效CPU状态/正确进度通过。原失败checkpoint和invalid-rng-checkpoint另存，证据runs/resource-bootstrap/cpu-progress-probe-a4920bcc543c4e20bc748aa1474e92ed/；冻结bundle1ef7f7329c20755eacec447c1ba0b7082f754b859276006f79d9cb8ce41a3d41。
+- CUDA禁用，无模型训练或GPU计算。CUDA字段仅结构检查，合成model/optimizer仍不是有效检测器状态；未证明CUDA RNG兼容、完整8卡数值恢复或COCO质量。安装包尚未重建，GPU授权及完整上线门槛仍未完成。

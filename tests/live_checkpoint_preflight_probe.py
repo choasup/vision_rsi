@@ -40,7 +40,10 @@ if request['action']=='setup':
  torch.save(checkpoint,folder/'checkpoint.pt');torch.save(checkpoint,folder/'invalid-checkpoint.pt')
 else:
  checkpoint=torch.load(folder/'checkpoint.pt',map_location='cpu',weights_only=True)
- checkpoint['step']=0;torch.save(checkpoint,folder/'checkpoint.pt')
+ checkpoint['step']=0
+ checkpoint['rank_rng'][0]['cpu']=torch.zeros(4) if request['action']=='bad-rng' else torch.get_rng_state()
+ torch.save(checkpoint,folder/'checkpoint.pt')
+ if request['action']=='bad-rng':torch.save(checkpoint,folder/'invalid-rng-checkpoint.pt')
  info={'directory':str(folder)}
 info['checkpoint_sha256']=sha(folder/'checkpoint.pt')
 print(json.dumps(info))
@@ -56,7 +59,7 @@ def main():
     name='cpu-progress-probe-'+uuid.uuid4().hex
     folder=Path('runs/resource-bootstrap')/name;folder.mkdir(parents=True)
     atomic_json(folder/'preregistered.json',{'fixture':True,'remote_fixture_name':name,
-        'cases':['inconsistent step rejected','corrected zero-step structure accepted'],
+        'cases':['inconsistent step rejected','invalid CPU RNG tensor rejected','corrected zero-step structure accepted'],
         'gpu_disabled':True,'source_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'scope':'Serialized synthetic checkpoint progress only; not valid detector/optimizer/CUDA RNG or numerical training evidence.'})
     def action(mode):
@@ -78,11 +81,17 @@ def main():
         rejection={'error_type':type(error).__name__,'inconsistent_progress_rejected':'inconsistent with frozen dataset' in str(error)}
     atomic_json(folder/'invalid-result.json',rejection)
     assert rejection and rejection['inconsistent_progress_rejected'],'Unexpected rejection result; fixture evidence retained'
+    bad_rng=action('bad-rng');rng_rejection=None
+    try:check(remote,deployment,plan,checkpoint={'directory':bad_rng['directory'],'sha256':bad_rng['checkpoint_sha256']})
+    except RuntimeError as error:
+        rng_rejection={'error_type':type(error).__name__,'invalid_rng_rejected':'requires nonempty CPU byte tensors' in str(error)}
+    atomic_json(folder/'invalid-rng-result.json',rng_rejection)
+    assert rng_rejection and rng_rejection['invalid_rng_rejected'],'Unexpected RNG rejection result; evidence retained'
     corrected=action('correct')
     report=check(remote,deployment,plan,checkpoint={'directory':corrected['directory'],'sha256':corrected['checkpoint_sha256']})
     atomic_json(folder/'valid-result.json',report)
     evidence={'fixture':True,'passed':True,'directory':str(folder.resolve()),'deployment':deployment['bundle_id'],
-              'invalid_rejected':True,'valid_progress_checked':report['checkpoint_progress_checked'],
+              'invalid_rejected':True,'invalid_cpu_rng_rejected':True,'valid_progress_checked':report['checkpoint_progress_checked'],
               'train_images':report['train_images'],'validation_images':report['validation_images'],
               'gpu_used':False,'training_started':False,'model_quality_verified':False,
               'scope':'Actual frozen-bundle remote CPU preflight on synthetic Torch checkpoint; not model weights/optimizer/CUDA RNG validity or 8-GPU numerical resume.'}

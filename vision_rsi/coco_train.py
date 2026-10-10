@@ -151,6 +151,21 @@ def validate_checkpoint_progress(checkpoint,train_images,recipe):
         raise ValueError('Checkpoint requires RNG states for every rank')
 
 
+def validate_checkpoint_rng(checkpoint,world,torch):
+    """Check CPU restorability and CUDA-state structure without CUDA calls."""
+    states=checkpoint.get('rank_rng')
+    if not isinstance(states,list) or len(states)!=world:raise ValueError('Missing per-rank checkpoint RNG states')
+    for state in states:
+        if not isinstance(state,dict):raise ValueError('Invalid per-rank checkpoint RNG state')
+        for key in ('cpu','cuda'):
+            value=state.get(key)
+            if not isinstance(value,torch.Tensor) or value.dtype!=torch.uint8 or value.ndim!=1 or value.numel()==0 or value.device.type!='cpu':
+                raise ValueError('Checkpoint RNG requires nonempty CPU byte tensors: '+key)
+        original=torch.get_rng_state()
+        try:torch.set_rng_state(state['cpu'])
+        finally:torch.set_rng_state(original)
+
+
 def run(recipe,output,resume=False):
     # Pinned torchvision ROIAlign has a deterministic Python fallback. Disable
     # lazy compilation so first-use compilation cannot consume an unbounded
@@ -194,6 +209,7 @@ def run(recipe,output,resume=False):
         checkpoint=torch.load(checkpoint_path,map_location='cpu',weights_only=True)
         if not isinstance(checkpoint,dict) or checkpoint.get('identity_hash')!=identity_hash: raise ValueError('Checkpoint data/recipe/code/runtime identity differs')
         validate_checkpoint_progress(checkpoint,len(train),recipe)
+        validate_checkpoint_rng(checkpoint,world,torch)
         model.load_state_dict(checkpoint['model']);optimizer.load_state_dict(checkpoint['optimizer'])
         epoch_start=checkpoint['epoch'];cursor_start=checkpoint['cursor'];step=checkpoint['step'];restore_rng=checkpoint['rank_rng'][rank]
     wrapped=DistributedDataParallel(model,device_ids=[local]) if world>1 else model

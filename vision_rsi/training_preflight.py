@@ -35,7 +35,7 @@ from vision_rsi.coco_train import preflight
 train,val=preflight(request['recipe'])
 checkpoint_report={}
 if request.get('checkpoint'):
- from vision_rsi.coco_train import validate_checkpoint_progress
+ from vision_rsi.coco_train import validate_checkpoint_progress,validate_checkpoint_rng
  from vision_rsi.coco_eval import file_sha
  import torch
  selected=request['checkpoint']
@@ -45,6 +45,7 @@ if request.get('checkpoint'):
  if file_sha(path)!=selected['sha256']:raise ValueError('Checkpoint changed before CPU progress inspection')
  checkpoint=torch.load(path,map_location='cpu',weights_only=True)
  validate_checkpoint_progress(checkpoint,len(train),request['recipe'])
+ validate_checkpoint_rng(checkpoint,request['recipe']['world_size'],torch)
  if file_sha(path)!=selected['sha256']:raise ValueError('Checkpoint changed during CPU progress inspection')
  checkpoint_report={'checkpoint_progress_checked':True,'checkpoint_sha256':selected['sha256']}
 print(json.dumps({'status':'resources_verified','bundle_id':request['deployment']['bundle_id'],

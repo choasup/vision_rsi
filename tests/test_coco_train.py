@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
-from vision_rsi.coco_train import CocoImages, validate_recipe,validate_checkpoint_progress,shared_image_identity
+from vision_rsi.coco_train import CocoImages, validate_recipe,validate_checkpoint_progress,shared_image_identity,validate_checkpoint_rng
 from vision_rsi.detector import COCO_IDS
 
 
@@ -17,6 +17,23 @@ def fixture_recipe(root):
 
 
 class CocoTrainingValidationTests(unittest.TestCase):
+    def test_rng_inspection_restores_caller_state_even_when_saved_cpu_state_is_invalid(self):
+        class Tensor:
+            dtype='uint8';ndim=1;device=SimpleNamespace(type='cpu')
+            def numel(self):return 1
+        original=Tensor();saved=Tensor();calls=[]
+        def set_state(value):
+            calls.append(value)
+            if value is saved:raise RuntimeError('Synthetic incompatible CPU RNG payload')
+        torch=SimpleNamespace(Tensor=Tensor,uint8='uint8',get_rng_state=lambda:original,set_rng_state=set_state)
+        with self.assertRaisesRegex(RuntimeError,'incompatible'):
+            validate_checkpoint_rng({'rank_rng':[{'cpu':saved,'cuda':Tensor()}]},1,torch)
+        self.assertIs(calls[-1],original)
+        calls.clear()
+        with self.assertRaisesRegex(ValueError,'byte tensors'):
+            validate_checkpoint_rng({'rank_rng':[{'cpu':'not a tensor','cuda':Tensor()}]},1,torch)
+        self.assertEqual(calls,[])
+
     @patch('vision_rsi.coco_train.file_sha',return_value='a'*64)
     def test_shared_image_identity_matches_single_rank_without_duplicate_reads(self,hash_file):
         datasets=[SimpleNamespace(root=Path('train2017'),images=[{'id':1,'file_name':'one.jpg'}]),

@@ -730,3 +730,5 @@ COCO checkpoint恢复现在核对epoch/cursor/step与冻结数据集、Distribut
 新控制程序的resume会在CPU资源预检中绑定选定checkpoint哈希，使用map_location=cpu/weights_only加载并检查恢复进度，读取前后都核对哈希；回执必须明确checkpoint_progress_checked=true且摘要一致，才能提交GPU作业。固定baseline的CPU检查文件大小上限为2GiB。缺少新进度校验器的旧冻结训练包会被新控制程序拒绝恢复，不自动改写旧代码；旧冻结程序自身的行为不变。CPU检查只证明这些进度条件，不是运行时身份或数值等价验证。
 
 显式远端CPU checkpoint开发探针：`python tests/live_checkpoint_preflight_probe.py --live-remote`。它创建独立且明确标记的1图train/1图val fixture，部署冻结代码，对真实Torch序列化的合成checkpoint验证错误进度拒绝/正确进度通过；CUDA禁用，不启动训练。合成model/optimizer/CUDA RNG字段不代表有效检测器或数值恢复，原失败checkpoint文件保留用于核查。
+
+checkpoint CPU预检进一步检查每rank CPU/CUDA RNG字段必须是非空的一维CPU uint8张量，并实际尝试恢复CPU RNG，随后在finally中还原检查进程原状态。CUDA RNG仅检查张量结构，不在预检里初始化GPU或声称它一定能被CUDA恢复。真实GPU恢复时仍执行CUDA自身状态校验。
