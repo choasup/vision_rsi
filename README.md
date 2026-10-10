@@ -22,22 +22,16 @@
 
 通过 `training release-status --session-id SESSION --sessions SESSIONS_DIR --registry REGISTRY_DIR --json` 查询当前任务交付证据。该查询不修复或补跑验收，区分本地可 Test 与整体上线；可复查的实际 CPU Demo 见 [DEMO.md](DEMO.md)。
 
-此功能在当前源码，既有 dev8 离线包不包含本轮晋升入口。最新已验证安装包与说明见 [INSTALL.md](INSTALL.md)。
+这些功能已包含在 dev9 离线包中。最新已验证安装包与说明见 [INSTALL.md](INSTALL.md)。
 
 
 当前源码的通用研究控制器支持 `evaluate_contract`：候选代码通过隔离 CPU 执行后，按冻结合同计算开发集指标，将结果写入研究账本供后续迭代使用。目前此工具仅实现 `event_micro_f1` 协议，尚未提供通用视觉模型后端，也不自动发布推理能力。
 
-启用方式：在研究配置中设置 `research.allow_candidate_checks: true`，并同时绑定 `research.task_contract` 和 `research.validation_dataset`。两项均为 `{"path":"绝对文件路径","sha256":"文件原始字节的 SHA256"}`。开发集文件包含 `purpose: "development_validation"`、1 至 16 个 `samples` 和 ID 完全对应的 `ground_truth`；隐藏测试不可用于该入口。控制器只允许评测当前研究账本已生成并引用的候选，模型不能替换数据、阈值或评测协议。修改文件后需显式更新绑定；旧哈希会拒绝执行。此功能尚未包含在 dev6 离线安装包中。
+启用方式：在研究配置中设置 `research.allow_candidate_checks: true`，并同时绑定 `research.task_contract` 和 `research.validation_dataset`。两项均为 `{"path":"绝对文件路径","sha256":"文件原始字节的 SHA256"}`。开发集文件包含 `purpose: "development_validation"`、1 至 16 个 `samples` 和 ID 完全对应的 `ground_truth`；隐藏测试不可用于该入口。控制器只允许评测当前研究账本已生成并引用的候选，模型不能替换数据、阈值或评测协议。修改文件后需显式更新绑定；旧哈希会拒绝执行。此功能已包含在 dev9 离线包中。
 
-最新本地可安装开发包为 `0.1.0.dev6`，位于 `runs/release-dev6/wheelhouse/vision_rsi_agent-0.1.0.dev6-py3-none-any.whl`。源码全量 420 项测试、安装器单独 1 项测试与独立安装环境 225 项回归通过；这些验证覆盖软件交付，不代表 COCO AP≥60 或 RSI 效率已验收。本机已验证的独立安装入口：
+最新本地可安装开发包为 `0.1.0.dev9`，包含上述固定版本晋升、一体化交付与只读发布状态查询。Windows x64/Python 3.12 离线 ZIP：`runs/release-dev9/vision-rsi-agent-0.1.0.dev9-windows-py312.zip`。解压到新目录，运行 `py -3.12 install.py`，然后运行 `vision-rsi.cmd --help`；不需要修改 PowerShell 执行策略。安装细节见 [INSTALL.md](INSTALL.md)。
 
-```powershell
-& '.\runs\release-dev6\offline bundle\vision-rsi.cmd' --help
-```
-
-安装环境从仓库外运行时，请显式传入配置、会话、研究目录和仓库的绝对路径。安装验证证据保存在 `runs/release-dev6/installed-evidence.json`，不包含密钥。
-
-离线安装 ZIP：`runs/release-dev6/vision-rsi-agent-0.1.0.dev6-windows-py312.zip`。解压到新的目录，用 **Windows x64 Python 3.12** 执行 `python install.py`；完成后执行 `vision-rsi.cmd --help`。安装不联网，先校验文件哈希，再创建独立 venv；已有 venv 时拒绝覆盖。ZIP 不含 Python 解释器、API Key、SSH 配置、数据集或模型权重，配置和环境变量需要另行提供。文件哈希用于本地完整性检查，不是发行者身份签名。复现打包可用 `tools/package_bundle.py --help`。
+安装后的独立环境通过 333 项回归，验证安装文件与源码一致，并从仓库外运行 CLI。证据位于 `runs/release-dev9/installed/installed-evidence.json`。这证明本机软件安装与已覆盖行为，不证明第二台机器兼容、真实模型达标或整个 Agent 已上线。包不含 Python、密钥、数据、权重或运行产物。安装环境中运行研究时仍需显式指定配置、会话、研究目录和 Git 仓库。
 
 Windows 源码启动器按以下顺序选择 Python：`VISION_RSI_PYTHON` 指定的可执行文件、项目 `.venv\Scripts\python.exe`、本机 Codex 运行时、PATH 中的 `python`。可显式指定自己安装的 Python 环境：
 
@@ -48,7 +42,7 @@ $env:VISION_RSI_PYTHON = 'C:\path\to\python.exe'
 
 显式路径无效时会报错退出，不会悄悄切换环境。`.cmd` 入口不要求开启 PowerShell 脚本执行策略；Python 与所需依赖仍须安装，源码启动器会读取项目源码。
 
-首次创建工作配置（新增源码命令，既有 dev6 包尚不包含）：
+首次创建工作配置（源码及 dev9 包支持）：
 
 ```powershell
 .\vision-rsi.cmd workspace-init --directory F:\my-vision-workspace
@@ -56,7 +50,7 @@ $env:VISION_RSI_PYTHON = 'C:\path\to\python.exe'
 
 该命令不调用 API/SSH，只排他创建 `config.local.json`，拒绝覆盖已有文件；不复制环境中的密钥，不填写远端地址，不授权训练。输出包含下一步命令及该工作区配置/会话的绝对路径。通过源码启动器操作新工作区时，请使用这些显式路径，避免其项目默认目录；通过安装包模块运行时默认路径属于当前目录。真实任务 GPU 预算仍需在 training 阶段明确提供。
 
-当前源码的 LLM 客户端与 doctor 优先读取当前进程的 Key 环境变量；Windows 下缺失时再只读查询同名用户环境变量，兼容已经在系统用户设置中填写、但尚未进入当前进程的 Key。不写入配置或报告，不复制到进程环境，doctor 只显示是否存在与来源。此修复尚未包含在既有 dev6 包中。
+当前源码的 LLM 客户端与 doctor 优先读取当前进程的 Key 环境变量；Windows 下缺失时再只读查询同名用户环境变量，兼容已经在系统用户设置中填写、但尚未进入当前进程的 Key。不写入配置或报告，不复制到进程环境，doctor 只显示是否存在与来源。此修复已包含在 dev9 包中。
 
 通用候选的开发指标评测（新增源码入口，当前支持固定 `event_micro_f1` 协议）：
 
@@ -1028,7 +1022,7 @@ CPU 运行器会在候选执行前后记录并核对指定环境组件：沙箱 
 开发指标身份和研究记忆也包含已记录的环境指纹。不同指纹、或未记录环境的旧记录会分组处理，不直接混排为同一组研究效果。未记录环境不等于环境相同，也不会因此获得发布资格。
 ## 按任务代号试运行已验收候选（源码版本）
 
-通用候选完成 `register-candidate`、`accept-candidate` 和 `candidate-serving-check` 后，可执行新输入。当前入口是候选试运行，不会自动晋升为正式 `test` 能力。需要记录了冻结用户态环境的服务检查；旧的无环境记录不自动满足条件。此入口尚未包含在 dev7 安装包。
+通用候选完成 `register-candidate`、`accept-candidate` 和 `candidate-serving-check` 后，可执行新输入。当前入口是候选试运行，不会自动晋升为正式 `test` 能力。需要记录了冻结用户态环境的服务检查；旧的无环境记录不自动满足条件。此入口已包含在 dev9 安装包。
 
 ```powershell
 .\vision-rsi.cmd training candidate-infer --task-id TASK --session-id SESSION --version VERSION --request-id trial-001 --sample sample.json
@@ -1042,7 +1036,7 @@ CPU 运行器会在候选执行前后记录并核对指定环境组件：沙箱 
 
 `study compare` 现在要求各臂的授权 GPU 上限与预注册一致，核算已结算、没有保留用量且不超限；缺失或不一致时不产生完整比较、均值增益或正向增益判定。显式设置 `llm_call_limit_per_arm` 的研究还需独立 API 账本：执行前初始化固定上限，恢复不刷新配额；比较时只读检查准入规则与上限，逐条关联实验响应的 usage_record_id、请求内容哈希、模型、时间及 Token 数。跨臂或跨配对复用同一账本文件（包括硬链接别名）、未归属请求和不确定结果均不能通过。
 
-每对结果包含 `registered_budget_review`；顶层 `llm_budget_design.independent_arm_call_caps_verified` 仅在完整证据下为真。没有预注册 API 上限的旧研究仍只比较授权 GPU 上限，不宣称已验证 API 配额。以上检查不等于 CPU、总墙钟时间、Token、费用或整个项目历史资源相同，也不证明任务独立性、研究效率提升或允许自动采纳策略。此功能尚未包含在 dev7 安装包。
+每对结果包含 `registered_budget_review`；顶层 `llm_budget_design.independent_arm_call_caps_verified` 仅在完整证据下为真。没有预注册 API 上限的旧研究仍只比较授权 GPU 上限，不宣称已验证 API 配额。以上检查不等于 CPU、总墙钟时间、Token、费用或整个项目历史资源相同，也不证明任务独立性、研究效率提升或允许自动采纳策略。此功能已包含在 dev9 安装包。
 ## 将已有真实基线交给研究规划器（源码版本）
 
 可在 `research.baseline_evidence` 显式配置本地收集的 CPU COCO 基线收据及原始指标文件：
@@ -1061,7 +1055,7 @@ CPU 运行器会在候选执行前后记录并核对指定环境组件：沙箱 
 
 读取要求完整5000图、80类和既定 COCO bbox 协议，原始指标字节哈希必须匹配生产者状态；重新排版的 JSON 不能代替原文件。当前合同决定目标，不能继承生产者报告中更低的旧阈值。AP、目标、差距和尺度指标作为结构化观察保留，可供后续综合分析引用。
 
-这是本地已收集证据的读取，不重新计算原始预测、证明模型上限或自动批准能力。基线所用原始输入历史尚未纳入通用媒体执行收据覆盖，带此类导入的账本不能通过现有 `--from-research` 历史覆盖验收。不要通过遗漏导入记录规避该限制。当前功能尚未包含在 dev7 安装包。
+这是本地已收集证据的读取，不重新计算原始预测、证明模型上限或自动批准能力。基线所用原始输入历史尚未纳入通用媒体执行收据覆盖，带此类导入的账本不能通过现有 `--from-research` 历史覆盖验收。不要通过遗漏导入记录规避该限制。当前功能已包含在 dev9 安装包。
 ## Training 与批量 Test 使用相同样本格式（源码版本）
 
 正式批量 `test --manifest` 现在可直接读取 Training 定义的契约样本，每行一条：
@@ -1077,4 +1071,4 @@ CPU 运行器会在候选执行前后记录并核对指定环境组件：沙箱 
 
 字段名和输入类型须匹配该固定版本的合同。媒体相对路径以 JSONL 文件目录为基准；程序在结果目录保存不可静默替换的样本快照，不改写输入文件。`--resume` 继续复用已保存成功结果，先核查全部已记录输入的媒体内容与输出完整性，再决定是否执行剩余项。媒体或快照变化会停止恢复。
 
-旧的 `{"sample_id":"image-001","input":"sample.json"}` 格式仍可使用，两个格式也可在同一清单中混用；一行同时提供 `inputs` 与 `input` 会失败。多图联合/视频仍是一个契约样本，不自动拆分；需要对应的已验证后端。当前 COCO 后端仅支持单图，输入多图或视频会明确失败，不表示新增了学习型多图/视频能力。测试入口仍要求已注册且已通过服务验收的能力。新格式尚未包含在 dev7 安装包。
+旧的 `{"sample_id":"image-001","input":"sample.json"}` 格式仍可使用，两个格式也可在同一清单中混用；一行同时提供 `inputs` 与 `input` 会失败。多图联合/视频仍是一个契约样本，不自动拆分；需要对应的已验证后端。当前 COCO 后端仅支持单图，输入多图或视频会明确失败，不表示新增了学习型多图/视频能力。测试入口仍要求已注册且已通过服务验收的能力。新格式已包含在 dev9 安装包。

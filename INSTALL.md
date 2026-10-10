@@ -1,10 +1,10 @@
 # Windows 开发版安装
 
-当前版本为 `0.1.0.dev8`。这是本机验证的开发交付包，真实模型效果、COCO AP60 和完整上线验收尚未完成。
+当前版本为 `0.1.0.dev9`。这是本机验证的开发交付包，真实模型效果、COCO AP60 和完整上线验收尚未完成。
 
 需要 Windows x64 和 Python 3.12。离线包包含 Agent wheel 与锁定版本的控制端依赖，不包含 Python、API Key、数据集或模型权重。
 
-1. 解压 `runs/release-dev8/vision-rsi-agent-0.1.0.dev8-windows-py312.zip` 到一个新目录。
+1. 解压 `runs/release-dev9/vision-rsi-agent-0.1.0.dev9-windows-py312.zip` 到一个新目录。
 2. 进入解压后的 `vision-rsi-agent` 目录，执行：
 
    ```powershell
