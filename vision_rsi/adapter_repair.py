@@ -56,6 +56,21 @@ def repair(store,request_id,report_path,module,function,config):
         return _repair(store,request_id,report_path,module,function,config)
 
 
+def preserved_outputs(contract,parent_response,child_response):
+    """Detect regressions on known-valid development outputs, not unseen quality."""
+    from .contracts import validate_schema
+    old=parent_response.get('observation',{}).get('results',[])
+    new=child_response.get('observation',{}).get('results',[])
+    checked=0;failures=[]
+    if not isinstance(old,list) or not isinstance(new,list):return checked,failures
+    for index,value in enumerate(old):
+        try:validate_schema(contract['output_schema'],value)
+        except (ValueError,TypeError,KeyError):continue
+        checked+=1
+        if index>=len(new) or value!=new[index]:failures.append({'sample_index':index,'error':'Repair changed an already contract-valid development output'})
+    return checked,failures
+
+
 def _repair(store,request_id,report_path,module,function,config):
     from .llm import OpenAICompatibleClient
     if not isinstance(request_id,str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}',request_id):raise ValueError('Invalid repair request ID')
@@ -102,8 +117,11 @@ def _repair(store,request_id,report_path,module,function,config):
     child=store.create(proposal,dict(identity,request_id=request_id,response_sha256=digest(response)),base)
     checked=store.check_adapter(child['candidate_id'],config['remote'],child_module,function,report['contract'],report['development_samples'],
                                 check_id=digest(identity)[:32])
+    valid_count,regressions=preserved_outputs(report['contract'],report['response'],checked.get('response',{}))
     result=dict(checked,parent_candidate_id=parent['candidate_id'],parent_report_sha256=report_sha,request_id=request_id,
                 child_module=child_module,api_response_sha256=digest(response),quality_verified=False,adopted=False,
+                valid_parent_outputs_checked=valid_count,behavior_regressions=regressions,
                 limitation='One development code-repair step; no real visual model quality, RSI efficiency or adoption demonstrated.')
+    if regressions:result['status']='repair_regression_failed'
     path=Path(checked['adapter_report_path']).with_suffix('.repair.json');atomic_json(path,result)
     return dict(result,repair_report_path=str(path))

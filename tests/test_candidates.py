@@ -17,11 +17,12 @@ def proposal():
 class CandidateTests(unittest.TestCase):
     def failed_adapter(self,remote):
         contract=json.loads(Path('examples/interface-contract.json').read_text())
-        changed=proposal();changed['edits'][0].update(path='vision_rsi/adapter_fixture.py',content='def predict(sample):\n    return {"defects": [{"label":"fixture", "start_seconds":-1}]}\n')
+        changed=proposal();changed['edits'][0].update(path='vision_rsi/adapter_fixture.py',content='def predict(sample):\n    start=-1 if sample["sample_id"].endswith("-invalid") else 0\n    return {"defects": [{"label":"fixture", "start_seconds":start}]}\n')
         parent=self.store.create(changed,{'fixture':True})
         remote.side_effect=lambda endpoint,request: {'status':'executed_unverified','source_hashes':request['source_hashes'],
-                    'observation':{'results':[{'defects':[{'label':'fixture','start_seconds':-1 if request['module']=='vision_rsi.adapter_fixture' else 0}]}]}}
-        return self.store.check_adapter(parent['candidate_id'],{},'vision_rsi.adapter_fixture','predict',contract,[contract['example_input']])
+                    'observation':{'results':[{'defects':[{'label':'fixture','start_seconds':-1 if request['module']=='vision_rsi.adapter_fixture' and case['sample']['sample_id'].endswith('-invalid') else 0}]} for case in request['cases']]}}
+        samples=[dict(contract['example_input'],sample_id='development-valid'),dict(contract['example_input'],sample_id='development-invalid')]
+        return self.store.check_adapter(parent['candidate_id'],{},'vision_rsi.adapter_fixture','predict',contract,samples)
 
     @patch('vision_rsi.llm.OpenAICompatibleClient')
     @patch('vision_rsi.remote.check_candidate')
@@ -41,6 +42,7 @@ class CandidateTests(unittest.TestCase):
         again=repair(self.store,'repair-one',failed['adapter_report_path'],'vision_rsi.adapter_fixture','predict',config)
         self.assertEqual(result['candidate_id'],again['candidate_id']);self.assertEqual(result['status'],'adapter_contract_passed')
         self.assertEqual(result['parent_candidate_id'],failed['candidate_id']);self.assertFalse(result['quality_verified']);self.assertFalse(result['adopted'])
+        self.assertEqual(result['valid_parent_outputs_checked'],1);self.assertEqual(result['behavior_regressions'],[])
         client.return_value.complete.assert_called_once();self.assertEqual(remote.call_count,2)
 
     @patch('vision_rsi.llm.OpenAICompatibleClient')
@@ -66,6 +68,14 @@ class CandidateTests(unittest.TestCase):
             expected=TimeoutError if index==0 else RuntimeError
             with self.assertRaises(expected):self.store.check(record['candidate_id'],{},'vision_rsi.strategy_candidate','choose',[{'rows':[]}],check_id='a'*32)
         remote.assert_called_once()
+
+    def test_schema_valid_empty_repair_is_not_allowed_to_drop_valid_parent_outputs(self):
+        from vision_rsi.adapter_repair import preserved_outputs
+        contract=json.loads(Path('examples/interface-contract.json').read_text())
+        before={'observation':{'results':[{'defects':[{'label':'fixture','start_seconds':0}]},{'defects':[{'label':'fixture','start_seconds':-1}]}]}}
+        after={'observation':{'results':[{'defects':[]},{'defects':[]}]}}
+        count,failures=preserved_outputs(contract,before,after)
+        self.assertEqual(count,1);self.assertEqual(failures[0]['sample_index'],0)
 
     @patch('vision_rsi.remote.check_candidate')
     def test_adapter_gate_checks_each_output_without_accepting_quality_claims(self,remote):
