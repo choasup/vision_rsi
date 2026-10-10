@@ -13,6 +13,8 @@ MUTABLE={'learning_rate','weight_decay','epochs','batch_size_per_gpu','min_size'
 
 
 def compile_plan(parent,record,proposal,remaining,root,research_brief=None):
+    from .training_plan import require_supported_budget
+    require_supported_budget(parent['contract'])
     if research_brief is not None and (not isinstance(research_brief,str) or not 1<=len(research_brief)<=6000):raise ValueError('Invalid strategy research brief')
     if not isinstance(proposal,dict):raise ValueError('Experiment proposal must be an object')
     for key in ('hypothesis','reasoning','expected_result','failure_criteria'):
@@ -46,6 +48,8 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None):
     if record['status']!='completed' or record['actual_gpu_hours'] is None:raise ValueError('Collect and settle a completed experiment before proposing the next')
     parent=json.loads(Path(record['details']['plan_path']).read_text(encoding='utf-8'))
     if digest(parent)!=record['plan_id']:raise ValueError('Frozen parent Training plan changed')
+    from .training_plan import require_supported_budget
+    require_supported_budget(parent['contract'])
     receipt=json.loads(Path(record['details']['receipt_path']).read_text(encoding='utf-8'))
     if receipt['run_id']!=record['run_id']:raise ValueError('Parent receipt belongs to another run')
     verdict=review(parent,receipt)

@@ -13,6 +13,16 @@ def plan(identity='one'):
 
 
 class TrainingRunsTests(unittest.TestCase):
+    @patch('vision_rsi.training_runs.deploy_training')
+    @patch('vision_rsi.training_runs.job_request')
+    def test_old_ready_plan_cannot_bypass_unenforced_resource_caps(self,request,deploy):
+        for key in ('llm_calls','llm_tokens','wall_seconds','cpu_seconds','custom_cap'):
+            candidate=plan(key);candidate['contract']['budget'][key]=1
+            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'cannot enforce budget.'+key):
+                submit(candidate,REMOTE,self.store)
+        request.assert_not_called();deploy.assert_not_called()
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM runs').fetchone()[0],0)
+
     @patch('vision_rsi.training_runs.job_request')
     def test_logs_reconcile_terminal_status_and_campaign_progress(self,request):
         from vision_rsi.campaign import project
@@ -132,6 +142,27 @@ class CollectionCoordinatorTests(unittest.TestCase):
             finally:store.close()
 
 class ResumeCoordinatorTests(unittest.TestCase):
+    @patch('vision_rsi.training_runs.job_request')
+    @patch('vision_rsi.remote.collect_training')
+    @patch('vision_rsi.training_runs.resource_preflight')
+    def test_legacy_plan_caps_block_resume_before_checkpoint_or_gpu(self,preflight,checkpoint,request):
+        import json
+        from pathlib import Path
+        from vision_rsi.runner import digest
+        from vision_rsi.training_runs import resume
+        # Represent a frozen legacy plan accepted before budget-field admission existed.
+        path=Path(self.plan['plan_path']);base=json.loads(path.read_text())
+        base['contract']['budget']['wall_seconds']=0
+        path.write_text(json.dumps(base))
+        with self.store.db:
+            self.store.db.execute('UPDATE runs SET plan=? WHERE id=?',(digest(base),self.original))
+        request.return_value={'status':'cancelled','gpu_hours':.001}
+        with self.assertRaisesRegex(ValueError,'cannot enforce budget.wall_seconds'):
+            resume(self.original,REMOTE,self.store)
+        self.assertEqual([call.args[1] for call in request.call_args_list],['status'])
+        checkpoint.assert_not_called();preflight.assert_not_called()
+        self.assertEqual(len(self.store.list('session')),1)
+
     def setUp(self):
         import json
         from pathlib import Path

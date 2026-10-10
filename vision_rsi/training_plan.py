@@ -13,10 +13,25 @@ DEFAULT_RECIPE={'detector':'torchvision_fasterrcnn_resnet50_fpn_v2','epochs':1,'
                 'learning_rate':.001,'weight_decay':.0001,'fixture':False}
 
 
+def budget_blockers(contract):
+    """Never silently execute against a cap this Training path cannot enforce."""
+    budget=contract.get('budget')
+    if budget is None:return []
+    if not isinstance(budget,dict):return ['Training budget must be an object']
+    return ['Training cannot enforce budget.'+str(key)+' across stages; execution blocked'
+            for key in sorted(budget,key=str) if key!='gpu_hours']
+
+
+def require_supported_budget(contract):
+    blockers=budget_blockers(contract)
+    if blockers:raise ValueError('; '.join(blockers))
+
+
 def prepare(session,config,root):
     if not session['versions']: raise ValueError('Define the task interface before preparing training')
     latest=session['versions'][-1];contract=latest['contract']
     blockers=list(issues(contract))
+    blockers.extend(budget_blockers(contract))
     blockers.extend('待确认需求变更: '+change['path'] for change in latest.get('review_required',[]))
     inputs=contract.get('inputs') or {}
     if len(inputs)!=1 or any(not isinstance(x,dict) or x.get('type')!='image' or x.get('required') is not True for x in inputs.values()):

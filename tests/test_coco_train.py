@@ -68,6 +68,12 @@ class TrainingPlanTests(unittest.TestCase):
             self.assertFalse(result['recipe']['fixture'])
             self.assertEqual(result['status'],'ready_to_submit')
             self.assertLess(result['scheduler']['timeout_seconds'],3600)
+            for key in ('llm_calls','llm_tokens','wall_seconds','cpu_seconds','energy_kwh'):
+                contract['budget']={'gpu_hours':1,key:0}
+                result=prepare(session,{'training':recipe},folder)
+                self.assertEqual(result['status'],'blocked')
+                self.assertTrue(any('budget.'+key in reason for reason in result['blockers']))
+                self.assertEqual(result['contract']['budget'][key],0)
             contract['budget']={}
             result=prepare(session,{'training':recipe,'budget_gpu_hours':999},folder)
             self.assertEqual(result['status'],'blocked')

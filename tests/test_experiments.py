@@ -47,6 +47,19 @@ class ExperimentTests(unittest.TestCase):
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM requests').fetchone()[0],0)
             http.assert_not_called()
 
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_unenforced_task_caps_block_method_api_and_compilation(self,client):
+        parent=copy.deepcopy(self.parent)
+        parent['contract']['budget']['llm_calls']=0
+        with self.assertRaisesRegex(ValueError,'cannot enforce budget.llm_calls'):
+            compile_plan(parent,self.record,proposal(),.5,self.root/'blocked-plans')
+        Path(self.record['details']['plan_path']).write_text(json.dumps(parent))
+        record=dict(self.record,plan_id=digest(parent))
+        with self.assertRaisesRegex(ValueError,'cannot enforce budget.llm_calls'):
+            propose_next(record,self.runs,self.llm,self.root/'blocked-research','blocked-caps')
+        client.assert_not_called()
+        self.assertFalse((self.root/'blocked-research').exists())
+
     def test_method_change_keeps_data_model_threshold_sources_and_budget_frozen(self):
         original=copy.deepcopy(self.parent)
         plan=compile_plan(self.parent,self.record,proposal(),.003,self.root/'plans')

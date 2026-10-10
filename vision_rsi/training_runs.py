@@ -50,6 +50,8 @@ class TrainingRuns:
         return self.get(run_id)
     def reserve(self,plan,remote,attempt=None,cap_to_remaining=False,active_output=None):
         if plan['status']!='ready_to_submit': raise ValueError('Training plan is blocked')
+        from .training_plan import require_supported_budget
+        require_supported_budget(plan['contract'])
         scheduler=dict(plan['scheduler']);total=plan['contract']['budget']['gpu_hours']
         identity={'session':plan['session_id'],'plan':plan['plan_id'],'remote':remote_identity(remote)}
         if attempt is not None: identity['attempt']=attempt
@@ -173,6 +175,8 @@ def resume(run_id,remote,store):
         raise ValueError('Frozen development bundle lacks checkpoint-hash resume support; no code upgrade performed')
     base=json.loads(Path(original['plan_path']).read_text(encoding='utf-8'))
     if digest(base)!=parent['plan_id']: raise ValueError('Frozen Training plan changed')
+    from .training_plan import require_supported_budget
+    require_supported_budget(base['contract'])
     output=original['output_directory'];origin=original.get('output_run_id',run_id)
     checkpoint=collect_training(remote,run_id,output,origin,action='checkpoint')
     progress_status=checkpoint['progress'].get('status')

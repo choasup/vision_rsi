@@ -608,3 +608,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Twenty transport/usage tests, eleven requirements/schema tests and five standalone task tests passed. Candidate/repair source-identity regressions are running. Real task GPU budget remains null, no training submitted.
 
 - Candidate/repair regressions completed:22 tests passed in59.784s, log runs/resource-bootstrap/tests-shared-usage-candidates.log. No duplicate API requests or task budget changes were introduced by these fixture checks.
+
+
+## Reject unsupported declared Training resource caps (2026-10-10)
+
+- Found that Training execution only enforces GPU hours while arbitrary numeric budget fields survive interface validation. Added budget-field admission to prepare, direct reserve, checkpoint resume, method API proposal and method-plan compilation: any declared field other than gpu_hours blocks this path instead of being silently ignored. Original requirements and caps are retained, including explicit zero caps. This does not implement the missing shared LLM/token/CPU/wall-time budget system or global enforcement in every Agent API entry.
+- Regression probes cover llm_calls,llm_tokens,wall_seconds,cpu_seconds and unknown caps: no deployment/API/GPU work or reservation occurs; legacy ready plans cannot bypass reserve, legacy resume may reconcile status but cannot collect checkpoint or preflight. Existing observation/collection/cancellation remain available. Five recipe/plan,17 Training ledger/resume,8 method-planning and11 campaign tests passed (41 total).
+- Original real task prepare still stops only on missing real GPU budget; AP60 unchanged and no GPU submission occurred. No user budget was invented, removed or weakened to make execution pass.
