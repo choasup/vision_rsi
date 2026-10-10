@@ -78,6 +78,26 @@ class TrainingPlanTests(unittest.TestCase):
             result=prepare(session,{'training':recipe,'budget_gpu_hours':999},folder)
             self.assertEqual(result['status'],'blocked')
             self.assertIsNone(result['scheduler']['gpu_hours_budget'])
+            import copy
+            original=copy.deepcopy(contract)
+            for field,bad_values in (('budget',('not an object',[1],1,True)),
+                                     ('inputs',(['image'],'image',1,True)),
+                                     ('acceptance',(['AP'],'AP',1,True))):
+                for malformed in bad_values:
+                    broken=copy.deepcopy(original);broken[field]=malformed
+                    broken_session=dict(session,versions=[{'version':1,'contract':broken}])
+                    result=prepare(broken_session,{'training':recipe},folder)
+                    self.assertEqual(result['status'],'blocked')
+                    self.assertEqual(result['contract'],broken)
+                    self.assertTrue(result['blockers'])
+                    self.assertFalse(result['training_performed'])
+                    if field=='budget':self.assertIsNone(result['scheduler']['gpu_hours_budget'])
+                    self.assertEqual(result['plan_id'],prepare(broken_session,{'training':recipe},folder)['plan_id'])
+            with self.assertRaisesRegex(ValueError,'contract must be an object'):
+                prepare(dict(session,versions=[{'version':1,'contract':[]}]),{},folder)
+            with self.assertRaisesRegex(ValueError,'remote config must be an object'):
+                prepare(session,{'remote':['bad']},folder)
+
 
 class CheckpointHashTests(unittest.TestCase):
     def test_changed_checkpoint_rejected_before_training_initialization(self):

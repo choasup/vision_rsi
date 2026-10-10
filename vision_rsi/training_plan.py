@@ -30,14 +30,19 @@ def require_supported_budget(contract):
 def prepare(session,config,root):
     if not session['versions']: raise ValueError('Define the task interface before preparing training')
     latest=session['versions'][-1];contract=latest['contract']
+    if not isinstance(contract,dict):raise ValueError('Training contract must be an object; repair task requirements first')
+    remote=config.get('remote') or {}
+    if not isinstance(remote,dict):raise ValueError('remote config must be an object')
     blockers=list(issues(contract))
     if session.get('pending_request'):blockers.append('需求请求尚未处理；先完成澄清或恢复，不能按旧要求执行。')
     blockers.extend(budget_blockers(contract))
     blockers.extend('待确认需求变更: '+change['path'] for change in latest.get('review_required',[]))
-    inputs=contract.get('inputs') or {}
+    inputs=contract.get('inputs')
+    inputs=inputs if isinstance(inputs,dict) else {}
     if len(inputs)!=1 or any(not isinstance(x,dict) or x.get('type')!='image' or x.get('required') is not True for x in inputs.values()):
         blockers.append('当前 COCO baseline 适配器仅实现一个必需 image 输入；其他任务保留接口，不假装已实现。')
-    acceptance=contract.get('acceptance') or {}
+    acceptance=contract.get('acceptance')
+    acceptance=acceptance if isinstance(acceptance,dict) else {}
     if acceptance.get('metric') not in ('AP','box_AP','bbox_AP') or acceptance.get('direction')!='maximize' or 'coco' not in str(acceptance.get('evaluation_protocol','')).lower():
         blockers.append('此适配器要求 COCO bbox AP 标准协议；未自动转换其他任务指标。')
     try:
@@ -49,7 +54,7 @@ def prepare(session,config,root):
     training=config.get('training') or {}
     if not isinstance(training,dict): raise ValueError('training config must be an object')
     recipe=dict(DEFAULT_RECIPE,**training)
-    recipe['coco_root']=config.get('remote',{}).get('coco_root') or training.get('coco_root','')
+    recipe['coco_root']=remote.get('coco_root') or training.get('coco_root','')
     recipe['acceptance_threshold']=acceptance.get('threshold')
     recipe['fixture']=False  # User tasks can never silently become fixture runs.
     recipe.pop('timeout_seconds',None)
@@ -57,7 +62,8 @@ def prepare(session,config,root):
     except (ValueError,KeyError) as error: blockers.append('训练执行配置待补充: '+str(error))
     world=recipe.get('world_size')
     valid_world=isinstance(world,int) and not isinstance(world,bool) and 1<=world<=8
-    budget=(contract.get('budget') or {}).get('gpu_hours')
+    declared_budget=contract.get('budget')
+    budget=declared_budget.get('gpu_hours') if isinstance(declared_budget,dict) else None
     if isinstance(budget,bool) or not isinstance(budget,(int,float)) or not math.isfinite(budget) or budget<=0:
         blockers.append('需要任务 budget.gpu_hours 的真实训练预算，mock预算不能用于执行。')
         timeout=None
