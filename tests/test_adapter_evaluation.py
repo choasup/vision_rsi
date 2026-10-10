@@ -94,6 +94,8 @@ class AdapterEvaluationTests(unittest.TestCase):
         self.assertEqual(metrics[0]['metric_report']['error_analysis']['worst_labels'][0]['fn'],1)
         self.assertEqual(metrics[0]['metric_report']['error_analysis']['worst_samples'][0]['fn'],1)
         self.assertFalse(metrics[0]['production_acceptance_verified'])
+        self.assertEqual(prompt['candidate_metric_memory']['evaluation_count'],1)
+        self.assertEqual(prompt['candidate_metric_memory']['groups'][0]['best']['event_micro_f1'],0)
 
     @patch('vision_rsi.remote.check_candidate')
     def test_configured_dataset_hash_mismatch_refuses_remote(self,remote):

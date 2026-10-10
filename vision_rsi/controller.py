@@ -458,7 +458,8 @@ def research_step(config, directory, steps=1, repository='.'):
                     client.validate_config()
                     history = [{'key': e['key'], 'kind': e['kind'], 'summary': e['payload']['summary'],
                                 'observation': observation_context(e['payload'].get('observation', ''))} for e in events[-16:]]
-                    prompt = {'objective': events[0]['payload'], 'history': history,
+                    from .research_memory import metric_memory
+                    prompt = {'objective': events[0]['payload'], 'history': history,'candidate_metric_memory':metric_memory(events),
                               'planning_budget':{'limit':limit,'attempts_used':len(requests),
                                                  'attempts_remaining_after_this_request':limit-len(requests)-1,
                                                  'billing_budget_enforced':False},
