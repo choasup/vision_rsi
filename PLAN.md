@@ -591,3 +591,10 @@ API Key 在本机设置 DEEPSEEK_API_KEY，无需分享。DeepSeek Flash 最小�
 - Real DeepSeek Flash call via new subprocess transport returned OK:35 prompt/14 completion/49 total tokens. No GPU training occurred. Full-suite regression is being run for the transport architecture change; global LLM/token/wall-time budget reconciliation and release acceptance still incomplete.
 
 - Full transport-architecture regression completed:242 tests passed in90.672s, log runs/resource-bootstrap/tests-llm-deadline-full.log. Final current source (including own-worker watchdog) also passed captured actual DeepSeek Flash CLI smoke,35 prompt/16 completion/51 total tokens; raw response metadata and before/after source hashes saved in llm-total-deadline-live.json. This supersedes the preceding pre-watchdog smoke for current-source evidence.
+
+
+## Installed disposable transport release smoke (2026-10-10)
+
+- Built current c9ac118 agent wheel d9a320232681b6f89fe2769414ddcc0da62565ad6d659c48b0cfc1bb57fcc42a, explicitly checking llm.py and _llm_worker.py bytes inside the wheel. Created a fresh Python3.12 venv and installed hashed media/COCO dependencies offline, then the agent wheel with --no-deps; pip check passed. Build tools remain locally installed rather than fully locked.
+- Copied transport regression source to a new external temp cwd and executed using installed venv Python:14 tests passed in2.566s, including actual child execution, parent deadline, own-child deadline and cross-origin redirect isolation. Verified module/worker paths inside fresh site-packages and exact source SHAs; module Training CLI help passed outside repository. Evidence runs/release-deadline-20261010/installed-runtime.json and installed-transport-tests.log. Uses python -m, without claiming generated console exe works under this machine's application control.
+- This proves the new transport is packaged and works in a fresh same-host environment, not a new Windows host, full task release, real training, AP60 or generalized RSI improvement. Original GPU budget remains unset.
