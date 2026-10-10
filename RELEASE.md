@@ -328,3 +328,10 @@
 - 新增experiment-request --store --request-id，默认摘要、--messages展开原始消息与回复，以SQLite mode=ro读取。记录状态/父实验/快照哈希/预算快照及回复哈希；不确定请求可观测但不自动重发，旧记录缺失快照不伪造。
 - 25项观测/实验规划测试通过（.757秒），覆盖查询前后数据库字节不变、未知store不创建目录、未知ID/篡改拒绝、reserved和旧记录、真实子进程CLI。首次测试fixture未关闭SQLite导致Windows清理失败，已显式closing并重跑通过，产品读取端原本即使用closing。
 - 无真实API/SSH/GPU调用，安装包探针已加入此入口与测试但尚未重建运行。命令不证明计费、外部真实性或模型效果；完整上线目标仍未完成。
+## 实际DeepSeek规划快照与观测链路（2026-10-10）
+
+- 扩展显式--live的live_method_feedback_probe.py，预登记快照验证和只读CLI一致性门槛，独立usage账本硬上限1次；合成AP42/预算fixture不改变用户实际训练授权。
+- 真实deepseek-flash单次请求成功，读取mock编译拒绝反馈后输出方案通过冻结约束编译；缓存重放未创建API客户端。provider报告prompt1281/completion309/total1590 tokens，1次responded、无未知Token，额度剩0；不证明实际计费。
+- request_snapshot_sha256=e1c0a1e4de55dd2daa665e45f30c27dd46a19f9d0eaabfd197ee69c577687b33，快照消息确实含synthetic-rejection反馈；独立CLI子进程输出与库查询完全一致，查询前后SQLite字节相同。Windows vision-rsi.cmd摘要入口另实际通过。
+- 证据 runs/method-feedback-live/668aab947b354a02a814081c71570f5b/ 下preregistered.json、evidence.json、observation.json及research请求快照/回复/方案。
+- 仅一次合成开发案例，无SSH/GPU/训练，不证明真实任务效果、跨案例稳定性或同预算RSI效率提升；安装包未包含最新快照/观测实现。完整上线目标仍未完成。

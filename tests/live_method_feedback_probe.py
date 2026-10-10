@@ -5,12 +5,14 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 import uuid
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from test_experiments import ExperimentTests,proposal
 from vision_rsi.experiments import propose_next
+from vision_rsi.experiment_observe import inspect_request
 from vision_rsi.llm_usage import snapshot
 from vision_rsi.runner import atomic_json,digest
 
@@ -45,7 +47,9 @@ def main():
             'seed_proposal':invalid,'seed_is_mock_not_provider_response':True,
             'probe_source_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             'source_hashes':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(__file__).resolve().parents[1].joinpath('vision_rsi').glob('*.py')},
-            'pass_criteria':['seed rejected by compiler','real response compiles under original frozen constraints','cached replay makes no API call'],
+            'pass_criteria':['seed rejected by compiler','real response compiles under original frozen constraints','cached replay makes no API call',
+                             'snapshot hash verifies and includes rejection feedback',
+                             'observation CLI matches read-only library and leaves request database unchanged'],
             'scope':'Development compiler-feedback probe; no measured training quality or research-efficiency claim.'})
         research=folder/'research'
         with patch('vision_rsi.llm.OpenAICompatibleClient') as mock_client:
@@ -53,17 +57,33 @@ def main():
             seed=propose_next(fixture.record,fixture.runs,llm,research,'synthetic-rejection')
         assert seed['status']=='proposal_rejected'
         atomic_json(folder/'seed-result.json',seed)
-        result=None;failure=None;cached=False
+        result=None;failure=None;cached=False;observation=None;observed=False
         try:
             result=propose_next(fixture.record,fixture.runs,llm,research,'real-correction')
             with patch('vision_rsi.llm.OpenAICompatibleClient',side_effect=AssertionError('Replay must not call API')):
                 cached=propose_next(fixture.record,fixture.runs,llm,research,'real-correction')==result
+            database=research/'requests.sqlite3';before=database.read_bytes()
+            observation=inspect_request(research,'real-correction',True)
+            saved=json.loads((research/'real-correction'/'request.json').read_text(encoding='utf-8'))
+            assert observation['snapshot_hash_verified'] and observation['request_snapshot']==saved['snapshot']
+            prompt=json.loads(observation['request_snapshot']['messages'][1]['content'])
+            assert prompt['previous_rejections'][0]['request_id']=='synthetic-rejection'
+            command=subprocess.run([sys.executable,'-X','utf8','-m','vision_rsi','experiment-request',
+                                    '--store',str(research),'--request-id','real-correction','--messages'],
+                                   cwd=Path(__file__).resolve().parents[1],capture_output=True,text=True,encoding='utf-8',timeout=30)
+            assert command.returncode==0
+            assert json.loads(command.stdout)==observation
+            assert database.read_bytes()==before
+            atomic_json(folder/'observation.json',observation)
+            observed=True
         except Exception as error:
             failure=type(error).__name__  # Do not echo provider/config exception text.
         usage=snapshot(str(folder/'usage.sqlite3')) if (folder/'usage.sqlite3').exists() else None
-        evidence={'directory':str(folder),'fixture':True,'passed':bool(result and result.get('status')=='ready_to_submit' and cached),
+        evidence={'directory':str(folder),'fixture':True,'passed':bool(result and result.get('status')=='ready_to_submit' and cached and observed),
                   'seed_rejected':True,'real_result_status':result.get('status') if result else None,
                   'real_result':result,'cached_replay_equal':cached,'failure_type':failure,'usage':usage,
+                  'observation_cli_verified':observed,'request_database_unchanged_by_observation':observed,
+                  'request_snapshot_sha256':observation.get('request_snapshot_sha256') if observation else None,
                   'preregistration_sha256':digest(json.loads((folder/'preregistered.json').read_text(encoding='utf-8'))),
                   'training_performed':False,'remote_called':False,'gpu_used':False,
                   'semantic_retry':False,'scope':'One synthetic case, no independent statistical or task-quality evidence.'}
