@@ -31,3 +31,11 @@
 - 发现并修复安装版从当前目录调用 Git 导致 Training 控制失败的问题：源码版锚定自身仓库，安装版使用明确的 `source-sha256:` 控制包身份。仓库外 `python -m vision_rsi --help` 实测通过。
 - wheel SHA256：`4209af6df2cf8cdfacbf9a2b083d94fcbc72665f5fd0b4fd8175915678ca46d8`。本机证据保存在 `runs/release-current-c8bd6b9/`，未纳入 Git。
 - 此为当前代码在本机新虚拟环境的安装/fixture回归，未验证新Windows机器、真实训练、AP>=60或RSI效率，不构成上线通过。
+
+## Serving 真实进程中断验证（2026-10-10）
+
+- 在远端独立 fixture 目录执行当前 `serving.py`，使用无模型的合成 CPU 适配器和三个假样本，未使用 GPU、未计算 COCO AP、未注册能力。
+- 两次实际 SIGKILL 及同一评测恢复：首次未产出样本时保留完整 60 秒预留；恢复后完成一个样本，累计约 60.016 秒；再次中断后累计保留 120 秒上限，再调用返回 budget_exhausted。
+- 请求扩大到 121 秒被拒绝，状态未改写。调用记录为 val-1 两次（首次中断未保存，恢复重算），val-2 一次（第二次中断）；已保存 val-1 后没有再次计算，缓存文件字节保持一致。
+- 可复用 Linux 探针：`tests/serving_fault_probe.py`；真实记录：`runs/resource-bootstrap/serving-crash-probe.json`。控制器有 50 秒总期限并终止、回收自身创建的子进程，保留 fixture 目录供审计。
+- 此项仅证明当前分段 serving 的进程中断预算与缓存行为；不证明真实模型效果、GPU 断点数值一致性、网络断线恢复或全部故障已覆盖。

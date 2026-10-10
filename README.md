@@ -608,3 +608,5 @@ Image integrity verification identifies static JPEG/PNG from decoded content rat
 新建 GPU 训练实验将 Python/平台、torch/torchvision/pycocotools/Pillow/NumPy 版本、PyTorch 构建摘要、CUDA/cuDNN/NCCL、驱动版本、设备类型及确定性设置写入实验身份并纳入 checkpoint 校验。恢复时身份变化即拒绝继续；此指纹不代替依赖安装锁或数值复现验收，也不追溯改写旧实验。指纹采集只在已准入的训练作业内执行，驱动查询限时 10 秒；无法采集不按空环境继续。NCCL 可选版本后缀按 [PyTorch 2.6 源码](https://github.com/pytorch/pytorch/blob/v2.6.0/torch/cuda/nccl.py) 保留。
 
 CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依赖安装版本及模块构建版本、PyTorch 构建摘要、线程数、确定性与矩阵精度设置）。每个分段评测和后续推理都重新计算并匹配该摘要；评测报告必须携带同一摘要才能晋级。旧的无摘要候选/后端需重新注册并完成完整 serving 验收，不自动继承通过状态。这不保证任意输入效果，也不代替模型 AP 验收。远端 CPU 指纹采集已实测通过，CUDA 未初始化；本机记录位于 `runs/resource-bootstrap/cpu-serving-runtime-live.json`。
+
+维护验证：`tests/serving_fault_probe.py` 为 Linux-only 真实进程故障探针，通过标准输入读取 workspace、serving_source（当前 serving.py 的 base64）及 category_ids。它在独立 fixture 目录验证 SIGKILL 后保留预留、缓存复用和预算不可扩大，不加载模型或计算效果指标。当前远端执行记录见 `runs/resource-bootstrap/serving-crash-probe.json`，详见 RELEASE.md 的验证范围。
