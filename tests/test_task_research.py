@@ -77,6 +77,7 @@ class TaskResearchTests(unittest.TestCase):
             self.assertNotIn('synthesize',prompt['available_tools'])
             self.assertEqual(prompt['schema']['tool'],prompt['available_tools'])
             self.assertIn('NOT successful tool evidence',prompt['instruction'])
+            self.assertIn('arrays of STRINGS',prompt['response_contract']['synthesis_rule'])
 
     def task(self,folder):
         store=Sessions(Path(folder)/'sessions')

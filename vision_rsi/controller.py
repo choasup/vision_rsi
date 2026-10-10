@@ -354,6 +354,21 @@ def research_step(config, directory, steps=1, repository='.'):
                     if config.get('research',{}).get('task_contract'):
                         contract,contract_hash=frozen_contract(config)
                         prompt['frozen_task_contract']={'sha256':contract_hash,'contract':contract}
+                    prompt['response_contract']={
+                        'required_keys':['tool','summary','question','expected_evidence','refs'],
+                        'optional_keys':['arguments'],
+                        'rule':'Return the action object itself, not the schema or response_format wrapper. Do not add type, schema, tool_argument_shapes or argument summary fields.',
+                        'synthesis_rule':'arguments must have EXACTLY findings,limitations,next_steps. limitations and next_steps are arrays of STRINGS, never objects or executable actions. Prefer <=3 entries per list and <=250 characters per statement/string. A finding has EXACTLY statement,refs. Cite only successful tool evidence supporting that particular statement, not unrelated readiness/contract fields.'}
+                    if 'synthesize' in available:
+                        eligible=[e['key'] for e in events if e['kind']=='result' and e['payload'].get('status')=='completed'
+                                  and isinstance(e['payload'].get('observation'),dict)
+                                  and not e['payload']['observation'].get('interpretation_only',False)]
+                        prompt['response_contract']['synthesis_shape_example']={
+                            'tool':'synthesize','summary':'Brief interpretation','question':'What does the observed result establish?',
+                            'expected_evidence':'Evidence-limited report','refs':eligible[-1:],
+                            'arguments':{'findings':[{'statement':'Replace this with a statement supported by the cited result.','refs':eligible[-1:]}],
+                                         'limitations':['Observed source does not establish runtime quality.'],
+                                         'next_steps':['Propose a concrete next investigation in plain text; do not execute it here.']}}
                     if '_task_readiness_context' in config:
                         prompt['task_readiness']=config['_task_readiness_context']
                         prompt['instruction']+=' Task readiness is a read-only local snapshot, not live remote state or quality proof. Missing GPU budget is not authorization. Unsettled runs must be resolved before proposing another execution; suggested actions are not executed.'
