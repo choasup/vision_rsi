@@ -177,6 +177,16 @@ def frozen_validation(config):
     return binding
 
 
+def supports_metric_evaluation(config):
+    from .event_eval import PROTOCOL
+    if not config.get('research',{}).get('task_contract') or not config.get('research',{}).get('validation_dataset'):
+        return False
+    contract,_=frozen_contract(config)
+    acceptance=contract.get('acceptance',{}) if isinstance(contract,dict) else {}
+    return (isinstance(acceptance,dict) and acceptance.get('evaluation_protocol')==PROTOCOL
+            and acceptance.get('metric')=='event_micro_f1' and acceptance.get('direction')=='maximize')
+
+
 def bind_validation(ledger,config):
     """Freeze development data before any planner sees an evaluation option."""
     records=[e for e in ledger.events() if e['payload'].get('record_type')=='validation_binding']
@@ -416,7 +426,7 @@ def research_step(config, directory, steps=1, repository='.'):
                 if config.get('research',{}).get('allow_candidate_checks') is not True or 'stage_candidate' not in completed_tools:
                     available-= {'check_candidate','check_contract','evaluate_contract'}
                 if not config.get('research',{}).get('task_contract'):available.discard('check_contract')
-                if not config.get('research',{}).get('task_contract') or not config.get('research',{}).get('validation_dataset'):
+                if not supports_metric_evaluation(config):
                     available.discard('evaluate_contract')
                 if config.get('research',{}).get('allow_candidate_writes') is not True or 'inspect_repository' not in completed_tools:
                     available.discard('stage_candidate')

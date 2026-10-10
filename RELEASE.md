@@ -722,3 +722,9 @@ Validation: expanded controller integration executes evaluation and a second pla
 The controller freezes configured development dataset path/hash and contract hash as validation_binding evidence under the controller lease, before planning or pending-action execution. Subsequent steps verify original file bytes and binding; removing the configuration, swapping data or updating its configured hash in the same ledger refuses execution. A new dataset requires a separate research root. This fixes comparability across research rounds; it does not establish dataset provenance, independent holdout quality or production acceptance.
 
 Validation: 29 adapter/controller/task research tests passed in 25.358 seconds. New test verifies idempotent binding, removal refusal, changed bytes refusal and changed-hash refusal. No real API, SSH or GPU calls this turn. General candidate production delivery and actual visual quality remain incomplete.
+
+## Protocol-aware research tool selection (2026-10-11)
+
+Only offer evaluate_contract when the frozen acceptance explicitly names event_micro_f1, maximize and vision-rsi/event_micro_f1/v1, with development data configured. A COCO box_AP task no longer sees an incompatible event metric action. Backend validation remains in force for direct invocation and recovered actions. This does not implement a COCO generic candidate evaluator or expand supported model backends.
+
+Validation: 30 adapter/controller/task-research tests passed in 26.224 seconds. New detection-contract integration verifies the event action is absent from the actual planner prompt and rejects a planner that nevertheless requests it, without creating the action or calling the remote transport. Existing event evaluation and subsequent structured metric feedback continue to pass. No actual API, SSH or GPU execution this turn; dev6 distribution unchanged.

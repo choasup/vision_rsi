@@ -11,6 +11,33 @@ from test_event_eval import event
 
 
 class AdapterEvaluationTests(unittest.TestCase):
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    @patch('vision_rsi.remote.check_candidate')
+    def test_detection_contract_does_not_offer_event_metric_tool(self,remote,client):
+        from vision_rsi.controller import research_step
+        from vision_rsi.ledger import Ledger
+        contract=json.loads(self.contract.read_text())
+        contract['acceptance']={'metric':'box_AP','direction':'maximize','threshold':60,
+                                'evaluation_protocol':'coco_bbox'}
+        self.contract.write_text(json.dumps(contract),encoding='utf-8')
+        ledger=Ledger(self.root/'detection-ledger')
+        ledger.append('objective','objective',{'summary':'detection task'})
+        ledger.append('stage','action',{'summary':'staged','executor':'research-v1','tool':'stage_candidate'})
+        ledger.append('stage:result','result',{'summary':'candidate','action':'stage','status':'completed',
+                      'observation':{'candidate_id':self.candidate}})
+        config={'llm':{'model':'fixture'},'research':{'allow_candidate_checks':True,
+            'task_contract':{'path':str(self.contract),'sha256':hashlib.sha256(self.contract.read_bytes()).hexdigest()},
+            'validation_dataset':{'path':str(self.dataset),'sha256':hashlib.sha256(self.dataset.read_bytes()).hexdigest()}}}
+        client.return_value.complete.return_value={'content':json.dumps({'tool':'evaluate_contract','summary':'invalid protocol',
+            'question':'q','expected_evidence':'metric','refs':['stage:result'],
+            'arguments':{'candidate_id':self.candidate,'module':'vision_rsi.adapter_fixture','function':'predict'}})}
+        research_step(config,ledger.directory,steps=1)
+        prompt=json.loads(client.return_value.complete.call_args.args[0][0]['content'])
+        self.assertNotIn('evaluate_contract',prompt['available_tools'])
+        self.assertNotIn('evaluate_contract',prompt['tools'])
+        remote.assert_not_called()
+        self.assertFalse(any(e['kind']=='action' and e['payload'].get('tool')=='evaluate_contract' for e in ledger.events()))
+
     def test_validation_binding_cannot_change_or_disappear_between_steps(self):
         from vision_rsi.controller import bind_validation
         from vision_rsi.ledger import Ledger
