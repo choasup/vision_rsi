@@ -161,3 +161,11 @@
 - 原始started意图逐字段保持，累计占用1、剩余0、无完成历史追加、无免费重试；新进程能取得已释放的进程锁。证据：`runs/resource-bootstrap/budget-fault-e5693915d94346f3a90b87abd28e60b5/evidence.json`。
 - 初始探针fixture缺少contract version而失败；修正探针输入后复验通过，没有将初次失败作为成功证据。31项预算/watch/campaign相关测试通过（5.192秒）。
 - 本次没有API、SSH、GPU或真实训练调用；这不证明断电持久性、远端训练中断恢复或统一费用记账，实际任务GPU预算与AP60验收仍未完成。
+
+## 当前源码离线安装复验（2026-10-10）
+
+- 将产品源码25cf2b8构建为新wheel，SHA-256 `68840b8e19f7581a7728be2267d7ceb231d840ac524a70724627d878251be94a`，位于`runs/release-budget-video/wheelhouse/vision_rsi_agent-0.1.0.dev1-py3-none-any.whl`。不替换先前安装包或冻结任务包。
+- 创建新venv，使用既有本地wheelhouse及Windows3.12依赖哈希清单离线安装；Agent无依赖安装，pip check通过。构建工具仍使用本机环境，未声称可复现构建锁已完成。
+- 新增可复用`tests/installed_release_probe.py`，在仓库外临时目录导入site-packages、逐一核对Python/HTML文件集合及SHA，验证3个模块CLI帮助入口和120项相关回归（11.416秒）。包含近期控制预算、版本审计、记忆、视频、深路径/SQLite、可执行任务包及未发送API恢复逻辑。
+- 初次120项运行中12项因测试按cwd读取示例契约而失败，原日志/evidence保留于`runs/release-budget-video/`；修正两份测试的fixture路径后120项全部通过，成功证据另存`runs/release-budget-video/verified/{installed-evidence.json,installed-tests.log}`。产品源码和wheel未因此改动。
+- 已安装控制包identity为`source-sha256:127946a1957f0417fcea70d6d082194c1d28b863f220aadd99c35abc425662e4`。测试运行没有API/SSH/GPU调用，不替代真实COCO AP60、8GPU恢复、跨任务模型能力、统一成本预算或新机器验收；目标仍未完成。

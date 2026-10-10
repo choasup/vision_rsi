@@ -17,7 +17,7 @@ class NotDispatchedTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name);self.store=Sessions(self.root/'sessions')
         self.session=self.store.create('fixture','Keep the actual requirements')['session_id']
-        self.valid=json.loads(Path('examples/interface-contract.json').read_text())
+        self.valid=json.loads((Path(__file__).resolve().parents[1]/'examples/interface-contract.json').read_text(encoding='utf-8'))
         self.config={'model':'fixture','base_url':'https://example.invalid','api_key_env':'TEST_LLM_KEY',
                      'usage_ledger':str(self.root/'usage.sqlite3')}
 

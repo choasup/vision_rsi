@@ -47,7 +47,7 @@ class ExecutableHarnessTests(unittest.TestCase):
         self.storage={key:str(self.root/key) for key in ('sessions','runs','campaigns','registry','plans')}
         self.store=Sessions(self.storage['sessions'])
         session=self.store.create('inspection','Joint images and video inspection')
-        contract=json.loads(Path('examples/interface-contract.json').read_text())
+        contract=json.loads((Path(__file__).resolve().parents[1]/'examples/interface-contract.json').read_text(encoding='utf-8'))
         self.session=self.store.define(session['session_id'],contract)
         self.config={'remote':{'ssh_host':'fixture','workspace':'/workspace','coco_root':''},
                      'llm':{'model':'fixture','base_url':'https://fixture.invalid','api_key_env':'UNUSED','api_key':'MUST_NOT_EXPORT',

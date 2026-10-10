@@ -674,3 +674,13 @@ CPU Test 后端在注册探测时固定运行环境摘要（Python/平台、依�
 已在本机通过288字符计划路径的真实CLI准备/读回/跨进程预算探针，以及更深实验目录的SQLite/响应/计划缓存复跑测试。这里没有承诺所有Shell、外部工具、网络共享或全部存储路径均支持长路径；UNC目前只验证命名转换，未访问真实网络共享。
 
 本地故障复验（无需API/SSH/GPU）：`python tests/controller_budget_fault_probe.py`。探针使用独立fixture目录，在工具返回后真实退出进程，验证预算占用与待处理意图跨进程保留；结果保存在忽略提交的`runs/resource-bootstrap/budget-fault-*/evidence.json`。它不执行真实训练，也不代表断电或远端GPU恢复已通过。
+
+最近一次安装复验覆盖当前控制包的累计预算、严格版本审计、研究记忆、中文视频时间网格及Windows深路径修复：新venv离线安装、`pip check`、仓库外3个模块CLI入口及120项相关回归通过。安装解释器位于 `runs/release-budget-video/venv/Scripts/python.exe`；可用 `python -m vision_rsi` 运行。它是本机开发安装包，真实任务质量与完整上线门槛仍见 RELEASE.md。
+
+可重复使用安装验证器（必须用待验证环境的Python）：
+
+```powershell
+& .\runs\release-budget-video\venv\Scripts\python.exe -X utf8 .\tests\installed_release_probe.py --output .\runs\installed-recheck --wheel .\runs\release-budget-video\wheelhouse\vision_rsi_agent-0.1.0.dev1-py3-none-any.whl
+```
+
+验证器依赖仓库内测试与示例数据，但从仓库外目录导入安装包并核对文件集合/哈希；不能把它视为无需仓库的最终用户验收或新机器测试。
