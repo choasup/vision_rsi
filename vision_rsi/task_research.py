@@ -36,6 +36,29 @@ def status(session, root='runs/task-research'):
             'events':len(events),'read_only':True}
 
 
+def control(session, action, root='runs/task-research'):
+    """Persist scheduling intent, without cancelling in-flight work or resetting quotas."""
+    if action not in ('pause','resume'):raise ValueError('Unknown research control')
+    current=status(session,root)
+    folder=Path(current['directory'])
+    # Separate short lock: a pause can be recorded while a bounded tool/API call runs.
+    with lease(folder/'research-control.lock',owner='Research scheduling control'):
+        current=status(session,root)
+        ledger=Ledger(folder)
+        controls=[e for e in ledger.events() if e['kind'] in ('paused','resumed')]
+        paused=bool(controls and controls[-1]['kind']=='paused')
+        desired=action=='pause'
+        changed=paused!=desired
+        if changed:
+            key='research-control-'+str(len(controls)+1)
+            ledger.append(key,'paused' if desired else 'resumed',{
+                'summary':'通用研究已暂停；不取消已在执行的调用。' if desired else '通用研究已恢复；保留原额度与未决记录。',
+                'origin':'explicit_cli_control'})
+        result=status(session,root)
+        return dict(result,read_only=False,control_changed=changed,dashboard=dashboard(ledger),
+                    in_flight_work_cancelled=False)
+
+
 def prepare(session,root='runs/task-research'):
     if session.get('pending_request') or not session.get('versions'):
         raise ValueError('Resolve task requirements before starting research')

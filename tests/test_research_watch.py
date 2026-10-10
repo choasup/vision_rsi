@@ -35,6 +35,13 @@ class ResearchWatchTests(unittest.TestCase):
             self.assertEqual(result['watch']['stop_reason'],'planning_limit_exhausted')
             self.assertEqual(result['watch']['completed_steps'],0)
             self.assertEqual(len(ledger.events()),count)
+            for action,expected in (('research-pause','paused'),('research-resume','planning_limit_exhausted')):
+                controlled=list(command);controlled[controlled.index('research-watch')]=action
+                output=subprocess.run(controlled,capture_output=True,text=True,encoding='utf-8',timeout=30)
+                self.assertEqual(output.returncode,0,output.stderr)
+                record=json.loads(output.stdout)
+                self.assertEqual(record['research_status']['state'],expected)
+                self.assertEqual(record['research_status']['planning_attempts_used'],1)
 
     def state(self,folder,events=1,state='manual_step_available'):
         return {'directory':folder,'events':events,'research_status':{'state':state}}

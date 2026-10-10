@@ -43,7 +43,9 @@ def watch(advance, inspect, turns=6, duration=3600, on_update=None):
     except Exception as failure:
         reason='needs_attention';error=type(failure).__name__
     # Re-read canonical records after interrupted/failed calls; no replay.
-    try:state=inspect()
+    try:
+        state=inspect()
+        if state['research_status']['state']=='paused':reason='paused'
     except Exception as failure:
         reason='state_unavailable';error=type(failure).__name__
     report={'started_at':started_at,'stop_reason':reason,'completed_steps':completed,'turn_limit':turns,

@@ -157,7 +157,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -202,14 +202,16 @@ def main(argv):
             for blocker in result['blockers']:print('- '+blocker)
             print('仅核查本地产物；未调用推理、远端或API，不代表整个Agent已上线。')
         return
-    if args.action in ('research-init','research-step','research-status','research-watch'):
-        from .task_research import prepare,advance,status
+    if args.action in ('research-init','research-step','research-status','research-watch','research-pause','research-resume'):
+        from .task_research import prepare,advance,status,control
         import sqlite3
         if not args.session_id:parser.error('research requires --session-id')
         try:
             session=Sessions(args.sessions,read_only=True).show(args.session_id)
             if args.action=='research-init':result=prepare(session,args.research_root)
             elif args.action=='research-status':result=status(session,args.research_root)
+            elif args.action in ('research-pause','research-resume'):
+                result=control(session,args.action.removeprefix('research-'),args.research_root)
             elif args.action=='research-watch':
                 from .research_watch import watch
                 from .task_readiness import inspect
@@ -234,11 +236,11 @@ def main(argv):
                     result=advance(session,config,args.research_root,args.steps,args.repository,task_context=context)
         except (ValueError,OSError,KeyError,TypeError,RuntimeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
         if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
-        elif args.action=='research-status':
+        elif args.action in ('research-status','research-pause','research-resume'):
             state=result['research_status']
             print('研究状态: '+state['state'])
             print('规划尝试: '+str(state['planning_attempts_used'])+' / '+str(state['planning_limit'])+'；剩余 '+str(state['planning_attempts_remaining']))
-            print('仅查询本地记录；未验证进程存活或任务达标。')
+            print('本地调度记录；未验证进程存活或任务达标，不取消已在执行的调用。')
         elif args.action=='research-watch':
             print('研究监督已停止: '+result['watch']['stop_reason'])
             print('本轮完成步数: '+str(result['watch']['completed_steps']))

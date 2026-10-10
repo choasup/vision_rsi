@@ -849,3 +849,12 @@ python -m vision_rsi training release-status --session-id SESSION --json
 ```
 
 每轮执行一个研究步骤，并重新核对任务版本、接口及训练就绪状态。次数上限、时长到期、暂停、请求状态不确定、规划校验失败、工具失败或无进展都会停止；不自动重试 API 或工具调用。中断后记录仍保留，可查询状态再显式继续。时长限制阻止到期后启动新步骤，正在执行的有界调用可能稍后结束。停止报告保存在该任务研究目录的 `research-watch-runs`；此入口不等同于已有的固定检测训练 `training watch`，不会自动采用候选或绕过训练预算。
+
+通用研究的持久暂停/恢复（当前源码入口；既有 dev5 wheel 尚不含这两个新增命令）：
+
+```powershell
+.\vision-rsi.cmd training research-pause --session-id SESSION_ID
+.\vision-rsi.cmd training research-resume --session-id SESSION_ID
+```
+
+暂停可在另一终端提交，阻止后续规划与工具调度，不取消已开始的调用。若规划响应在暂停后返回，保留响应，恢复后复用而不重复调用模型。恢复只改变调度意图，不自动启动进程、不清除未决请求、不重置规划/API/GPU 额度；再执行 `research-watch` 才会继续。重复暂停或恢复不会重复追加控制事件。

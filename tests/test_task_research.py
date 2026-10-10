@@ -9,6 +9,35 @@ from vision_rsi.task_research import prepare,advance
 
 
 class TaskResearchTests(unittest.TestCase):
+    @patch('vision_rsi.controller.execute',return_value={'observed':True})
+    @patch('vision_rsi.controller.OpenAICompatibleClient')
+    def test_pause_during_planning_preserves_response_and_resume_uses_no_new_api(self,client,execute):
+        from vision_rsi.task_research import control,status
+        with tempfile.TemporaryDirectory() as folder:
+            _,session=self.task(folder)
+            root=Path(folder)/'research'
+            prepare(session,root)
+            config={'llm':{'model':'fixture'},'research':{'max_planning_requests':1}}
+            def planning(*args,**kwargs):
+                control(session,'pause',root)
+                return {'content':json.dumps({'tool':'inspect_repository','summary':'inspect',
+                    'question':'q','expected_evidence':'e','refs':['objective']})}
+            client.return_value.complete.side_effect=planning
+            with self.assertRaises(ValueError):advance(session,config,root,steps=1)
+            execute.assert_not_called()
+            paused=status(session,root)
+            self.assertEqual(paused['research_status']['state'],'paused')
+            self.assertEqual(paused['research_status']['planning_attempts_used'],1)
+            repeated=control(session,'pause',root)
+            self.assertFalse(repeated['control_changed'])
+            self.assertEqual(repeated['events'],paused['events'])
+            resumed=control(session,'resume',root)
+            self.assertEqual(resumed['research_status']['state'],'cached_response_available')
+            advance(session,config,root,steps=1)
+            self.assertEqual(client.return_value.complete.call_count,1)
+            self.assertEqual(execute.call_count,1)
+            self.assertEqual(status(session,root)['research_status']['state'],'planning_limit_exhausted')
+
     def test_status_is_read_only_and_missing_ledger_is_not_created(self):
         from vision_rsi.task_research import status
         import sqlite3
