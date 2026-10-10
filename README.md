@@ -506,3 +506,5 @@ After download receipts report a completed archive, use `python -m vision_rsi.re
 Run `vision-rsi resources --config config.local.json --root /absolute/remote/assets/coco2017 --records runs/resources`. On Windows use `./vision-rsi.cmd` instead of `vision-rsi`. Each invocation submits at most one CPU-only download step (240s download window,270s worker limit). Repeating while queued/running observes the same job. A confirmed completed partial step permits the next attempt; lost/failed/uncertain submission never silently creates another job. Retain the records directory. Download completion does not imply extraction, dataset readiness or model quality.
 
 The current development download is already tracked under `runs/resource-bootstrap/cli-records`; use that directory to observe/continue it rather than creating another record set for the same resources.
+
+For a complete extracted validation dataset, `python -m vision_rsi.resource_verify --root COCO_ROOT` checks all5,000 referenced JPEGs with Pillow, decodes pixels, verifies dimensions and records deterministic image-content and annotation SHA-256 fingerprints. It does not execute a model or compute AP.

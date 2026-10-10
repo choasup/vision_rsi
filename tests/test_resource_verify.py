@@ -1,0 +1,30 @@
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+from PIL import Image
+from vision_rsi.detector import COCO_IDS
+from vision_rsi.resource_verify import verify_images
+
+
+class VerifyTests(unittest.TestCase):
+    def test_actual_pixels_dimensions_and_fingerprint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'annotations').mkdir();(root/'val2017').mkdir()
+            path=root/'val2017/a.jpg'
+            Image.new('RGB',(10,12),(100,50,0)).save(path)
+            data={'categories':[{'id':i} for i in COCO_IDS],
+                  'images':[{'id':1,'file_name':'a.jpg','width':10,'height':12}],
+                  'annotations':[]}
+            annotation=root/'annotations/instances_val2017.json';annotation.write_text(json.dumps(data))
+            first=verify_images(root,'val',1)
+            self.assertTrue(first['pixel_decode_verified']);self.assertFalse(first['coco_evaluated'])
+            self.assertEqual(first,verify_images(root,'val',1))
+            Image.new('RGB',(10,12),(0,50,100)).save(path)
+            self.assertNotEqual(first['image_manifest_sha256'],verify_images(root,'val',1)['image_manifest_sha256'])
+            data['images'][0]['height']=13;annotation.write_text(json.dumps(data))
+            with self.assertRaises(ValueError):verify_images(root,'val',1)
+            data['images'][0]['height']=12;annotation.write_text(json.dumps(data))
+            path.write_bytes(b'not-a-jpeg')
+            with self.assertRaises(OSError):verify_images(root,'val',1)
