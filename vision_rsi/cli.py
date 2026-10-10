@@ -3,7 +3,10 @@ import sys
 
 
 def main():
-    if len(sys.argv)>1 and sys.argv[1]=='baseline-audit':
+    if len(sys.argv)>1 and sys.argv[1]=='baseline-status':
+        from .baseline_observe import main as baseline_status_main
+        baseline_status_main(sys.argv[2:])
+    elif len(sys.argv)>1 and sys.argv[1]=='baseline-audit':
         from .baseline_audit import main as audit_main
         audit_main(sys.argv[2:])
     elif len(sys.argv)>1 and sys.argv[1]=='resources-train':
