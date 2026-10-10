@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from vision_rsi.coco_train import CocoImages, validate_recipe
+from vision_rsi.coco_train import CocoImages, validate_recipe,validate_checkpoint_progress
 from vision_rsi.detector import COCO_IDS
 
 
@@ -15,6 +15,17 @@ def fixture_recipe(root):
 
 
 class CocoTrainingValidationTests(unittest.TestCase):
+    def test_checkpoint_progress_matches_padded_eight_rank_batches_and_epoch_boundaries(self):
+        recipe=dict(fixture_recipe('.'),world_size=8,epochs=3,batch_size_per_gpu=2)
+        rng=[{'cpu':'opaque-test-state','cuda':'opaque-test-state'} for _ in range(8)]
+        for epoch,cursor,step in ((0,0,0),(0,2,2),(1,1,3),(2,2,6),(3,0,6)):
+            validate_checkpoint_progress({'epoch':epoch,'cursor':cursor,'step':step,'rank_rng':rng},17,recipe)
+        original={'epoch':1,'cursor':1,'step':3,'rank_rng':rng}
+        for changes in ({'cursor':True},{'epoch':-1},{'step':4},{'cursor':3},{'epoch':3,'cursor':1,'step':7},
+                        {'rank_rng':rng[:-1]},{'rank_rng':[{}]*8}):
+            with self.subTest(changes=changes),self.assertRaises(ValueError):
+                validate_checkpoint_progress(dict(original,**changes),17,recipe)
+
     def test_remote_linux_paths_are_independent_of_windows_host(self):
         recipe=dict(fixture_recipe('.'),coco_root='/home/research/coco',weights='/home/research/weights/model.pth')
         validate_recipe(recipe,path_flavor='posix')

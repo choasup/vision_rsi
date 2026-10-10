@@ -264,3 +264,10 @@
 - 复查训练/验证目录文件计数118287/5000，以及train标注469785474字节、val标注19987840字节、预训练权重175221657字节；三个文件SHA与当前本地配置完全一致。没有据计数推断所有图片内容未变，本轮未重哈希图片集。
 - 原始只读结果`runs/resource-bootstrap/remote-readonly-20261010-current.json`，本地比对证据`remote-readonly-20261010-verified.json`；原始结果SHA-256为49f4917e62c30dcb9cd061993468cd8ec8dd1051f573cc9e268faf3783406733。
 - 本次网络调用仅执行依赖元数据/编译模块导入、文件计数/hash及nvidia-smi查询，没有训练、GPU计算、API调用或作业启动。GPU小时授权仍未提供，不能用空闲GPU状态替代授权；真实训练质量、数值恢复及完整上线门槛仍未完成。
+
+## checkpoint恢复进度一致性（2026-10-10）
+
+- 新增确定性validate_checkpoint_progress，在checkpoint身份核对后、加载恢复模型/优化器状态前检查epoch/cursor/step整数类型、范围、总步数关系及每rank CPU/CUDA RNG字段存在性。全epoch完成游标0，以及epoch末cursor等于批数均支持。
+- 批数按DistributedSampler默认补齐、DataLoader不丢末批计算。25项COCO训练配置/运行时/训练账本测试通过（1.131秒），覆盖17图/8rank/批2的非整除样例、epoch边界、布尔/负数/超界/不一致step和缺rank状态。初次命令包含不存在test_resume模块，去除后相关测试通过，未据失败命令声称全过。
+- 真实SSH CPU PyTorch 2.6复验：17图8rank各2批、118287图8rank各7393批、17图1rank9批，与新校验器一致。证据`runs/resource-bootstrap/checkpoint-progress-cpu-torch.json`，校验函数源SHA2950ec985246623bb93b52110697a46e0e3dadc1232b967747cd8a481f53276f。
+- 远端只执行CPU采样器/loader长度及结构校验，没有模型训练或GPU计算。RNG值使用opaque结构fixture，不能证明张量有效、模型数值一致或8卡实际断点恢复；GPU训练预算仍缺，完整上线门槛未完成。安装包尚未重建。

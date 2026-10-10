@@ -112,6 +112,24 @@ def preflight(recipe):
     return train,val
 
 
+def validate_checkpoint_progress(checkpoint,train_images,recipe):
+    """Match the padded DistributedSampler and non-dropping per-rank batches."""
+    if not isinstance(checkpoint,dict):raise ValueError('Invalid checkpoint object')
+    world=recipe['world_size'];batch=recipe['batch_size_per_gpu'];epochs=recipe['epochs']
+    if any(type(value) is not int or value<=0 for value in (train_images,world,batch,epochs)):
+        raise ValueError('Invalid checkpoint progress dimensions')
+    samples=(train_images+world-1)//world
+    batches=(samples+batch-1)//batch
+    epoch=checkpoint.get('epoch');cursor=checkpoint.get('cursor');step=checkpoint.get('step')
+    if any(type(value) is not int for value in (epoch,cursor,step)):
+        raise ValueError('Checkpoint progress requires integer epoch/cursor/step')
+    if not 0<=epoch<=epochs or not 0<=cursor<=batches or epoch==epochs and cursor!=0 or step!=epoch*batches+cursor:
+        raise ValueError('Checkpoint epoch/cursor/step are inconsistent with frozen dataset and recipe')
+    states=checkpoint.get('rank_rng')
+    if not isinstance(states,list) or len(states)!=world or any(not isinstance(state,dict) or not {'cpu','cuda'}<=set(state) or state['cpu'] is None or state['cuda'] is None for state in states):
+        raise ValueError('Checkpoint requires RNG states for every rank')
+
+
 def run(recipe,output,resume=False):
     # Pinned torchvision ROIAlign has a deterministic Python fallback. Disable
     # lazy compilation so first-use compilation cannot consume an unbounded
@@ -154,7 +172,8 @@ def run(recipe,output,resume=False):
     epoch_start=0;cursor_start=0;step=0;restore_rng=None
     if resume:
         checkpoint=torch.load(checkpoint_path,map_location='cpu',weights_only=True)
-        if checkpoint['identity_hash']!=identity_hash: raise ValueError('Checkpoint data/recipe/code/runtime identity differs')
+        if not isinstance(checkpoint,dict) or checkpoint.get('identity_hash')!=identity_hash: raise ValueError('Checkpoint data/recipe/code/runtime identity differs')
+        validate_checkpoint_progress(checkpoint,len(train),recipe)
         model.load_state_dict(checkpoint['model']);optimizer.load_state_dict(checkpoint['optimizer'])
         epoch_start=checkpoint['epoch'];cursor_start=checkpoint['cursor'];step=checkpoint['step'];restore_rng=checkpoint['rank_rng'][rank]
     wrapped=DistributedDataParallel(model,device_ids=[local]) if world>1 else model
