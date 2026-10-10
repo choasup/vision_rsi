@@ -921,3 +921,7 @@ python -m vision_rsi training release-status --session-id SESSION --json
 ```
 
 `sample.json` 可以是一个符合合同的样本对象，或 1 至 16 个样本组成的数组。入口将包中源码送往 CPU 沙箱，核对源码身份、隔离限制、输出数量及输出 schema。相同包、输入、端点和执行程序复用结果；结果不确定时保留预留记录并拒绝自动重发。它只传合同样本 JSON，不自动读取 URI 指向的图片/视频，也没有新增视觉模型后端；开发包执行不等于 `test` 模式已验收能力。
+
+需要候选代码实际接收本地媒体字节时，导出包增加 `--media-input`，入口定义为 `predict(sample, media)`。`media` 使用已校验的 `vision_sample_transport_v1`，保留多图顺序、视频策略、每份资产字节与哈希；`candidate-run` 从输入 JSON 所在目录解析相对路径。仅允许可读本地文件。内容变化会改变执行身份，不会复用旧结果。
+
+此开发沙箱入口每样本媒体内容上限 512 KiB，整批 JSON 请求上限 1 MiB，超限拒绝且不缩图/截断。传输不进行图像解码、视频采样或视觉模型推理；候选需明确实现处理逻辑，现有已验收 COCO 服务入口保持独立。
