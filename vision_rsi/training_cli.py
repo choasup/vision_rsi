@@ -36,7 +36,10 @@ def summary(result):
 def execution_summary(result):
     labels={'blocked':'执行条件待补充','ready_to_submit':'训练计划已准备','submitted':'远端作业已提交',
             'submission_uncertain':'提交响应不确定，请查询原作业','completed':'远端进程已结束；需检查评测结果',
-            'running':'远端作业运行中','cancelled':'已取消','timed_out':'已超时','failed':'执行失败'}
+            'running':'远端作业运行中','cancelled':'已取消','timed_out':'已超时','failed':'执行失败',
+            'waiting':'已提交；等待远端作业','needs_research':'已分析结果；需要下一轮研究',
+            'awaiting_serving_validation':'训练证据通过；需要推理后端验收','action_uncertain':'动作结果不确定；保留原作业与预留',
+            'policy_stopped':'策略本次未选择动作','processing_result':'正在处理训练结果','ready':'训练计划已准备','new':'尚未推进'}
     lines=['状态: '+labels.get(result.get('status'),str(result.get('status')))]
     for key,label in [('task_id','任务'),('session_id','会话'),('run_id','运行'),('version','能力版本'),('plan_path','计划文件')]:
         if result.get(key): lines.append(label+': '+str(result[key]))
@@ -59,7 +62,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['start','reply','show','list','build','prepare','advance','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -73,6 +76,10 @@ def main(argv):
     parser.add_argument('--wall-seconds-budget',type=float)
     parser.add_argument('--chunk-size',type=int,default=10)
     parser.add_argument('--run-id');parser.add_argument('--run-store',default='runs/training-runs')
+    parser.add_argument('--campaign-store',default='runs/campaigns')
+    parser.add_argument('--steps',type=int,default=3)
+    parser.add_argument('--candidate-id');parser.add_argument('--candidate-module')
+    parser.add_argument('--candidate-store',default='runs/research-candidates')
     args=parser.parse_args(argv)
     if args.interactive and args.action not in ('start','show','reply','define'):
         parser.error('--interactive is supported for start/show/reply/define')
@@ -81,6 +88,21 @@ def main(argv):
         config=json.loads(Path(args.config).read_text(encoding='utf-8'))
         return store.clarify(session,config['llm'],message)
     try:
+        if args.action in ('advance','agent-status','agent-pause','agent-resume'):
+            from .campaign import advance
+            if bool(args.candidate_id)!=bool(args.candidate_module):parser.error('Experimental policy requires both --candidate-id and --candidate-module')
+            policy={'candidate_id':args.candidate_id,'module':args.candidate_module,'store':str(Path(args.candidate_store).resolve())} if args.candidate_id else None
+            config=json.loads(Path(args.config).read_text(encoding='utf-8'))
+            result=advance(store.show(args.session_id),config,args.campaign_store,args.run_store,args.steps,policy,
+                           {'agent-status':'show','agent-pause':'pause','agent-resume':'resume'}.get(args.action))
+            if args.json:print(json.dumps(result,ensure_ascii=False,indent=2))
+            else:
+                print(execution_summary(result))
+                print('控制记录: '+result['state_path'])
+                if result.get('paused'):print('控制器已暂停；已提交远端作业仍按原预算运行，取消作业请用training cancel。')
+                if result.get('analysis'):print('结果分析: '+json.dumps(result['analysis'],ensure_ascii=False))
+                if policy:print('使用实验候选策略；不代表策略已通过效率验收或被采用。')
+            return
         if args.action=='serving-evaluate':
             if not args.task_id or not args.version or args.wall_seconds_budget is None:
                 parser.error('serving-evaluate requires --task-id, --version and --wall-seconds-budget')

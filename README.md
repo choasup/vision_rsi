@@ -1,5 +1,18 @@
 # Vision RSI Agent
 
+已有Training会话可直接推进控制流程：
+
+```powershell
+.\vision-rsi.cmd training advance --session-id SESSION_ID --steps 3
+.\vision-rsi.cmd training agent-status --session-id SESSION_ID
+.\vision-rsi.cmd training agent-pause --session-id SESSION_ID
+.\vision-rsi.cmd training agent-resume --session-id SESSION_ID
+```
+
+advance每次最多执行1..10个控制动作，持久化准备计划、提交、查询、收据收集和结果分析；远端仍在运行时返回等待，下次调用恢复同一个作业。动作选择使用控制步数，GPU预算独立由Training调度账本预留/结算，二者不混用。agent-pause只暂停继续决策，已经提交的远端作业仍按原超时/预算运行；需停止作业时使用training cancel。模型未达标时保留分析并返回needs_research，当前不会自动修改方法并无限重训。
+
+实验研究策略可通过advance额外参数`--candidate-id CANDIDATE_SHA256 --candidate-module vision_rsi.strategy_NAME`接入动作选择。候选在隔离环境返回动作ID，固定程序重新检查合法性后执行固定Training工具；候选不能调用任意shell或改动验收。这是显式实验策略运行，不表示该策略已通过独立效率评估或被采用。
+
 研究候选入口：`vision-rsi candidate`。它将策略/harness源码改动保存到独立Git仓库，保留原任务契约和证据指纹，不改动当前工作区。创建候选只做语法检查；显式check使用远端CPU隔离执行，均不自动采用，不能作为RSI效果提升证据。
 
 ```powershell
