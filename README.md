@@ -1076,3 +1076,13 @@ CPU 运行器会在候选执行前后记录并核对指定环境组件：沙箱 
 最终 `study compare` 与运行研究使用同一冻结控制源码/Git版本检查；版本不一致时拒绝输出提升结论，应回到该研究冻结的检出目录核验。结果包含 `comparison_control_identity`，仍不代表任务独立性、完整资源公平性或策略已采用。此检查为 dev9 之后的源码更新。
 
 交付流程状态可用 `training delivery-status --session-id SESSION --version ORIGINAL_CANDIDATE_VERSION --sessions SESSIONS_DIR --registry REGISTRY_DIR` 只读查看，无需服务配置。Ctrl+C 会保存中断阶段，不自动重发不确定调用；硬终止进程来不及保存时，记录中的“运行中”不代表进程存活。是否通过当前版本的交付验收需查询 `release-status`。此中断处理和状态命令是 dev9 之后的源码更新。
+
+## 从开发研究结果选择候选（dev9 之后的源码入口）
+
+```powershell
+.\vision-rsi.cmd training select-candidate --session-id SESSION --sessions SESSIONS_DIR --research-root RESEARCH_DIR --registry REGISTRY_DIR
+```
+
+需要研究已暂停、无未完成动作，且使用冻结的媒体 bundle 开发评测。程序只读取所覆盖开发评测及冻结开发集，核对实际媒体内容并从执行输出重新计算事件 F1；按分数降序、bundle ID、动作 ID 固定排序。没有达到原合同阈值时不选择，继续开发；达到时注册为待独立验收版本，返回 `version`，供 `deliver-candidate` 使用，不需要手填 bundle 路径。当前适配指标仅事件 F1，不适用于直接选择 COCO AP 检测器。
+
+选型记录固定到研究历史，不使用独立验收反馈。首次选型必须早于当前注册表内的任务独立验收预留；已有选型只允许相同证据恢复。当前只核对选定研究账本，不证明其他目录、注册表或人工开发历史的完整性，不能通过换目录规避验收独立性。源码候选和开发数据需保留。此步骤不调用 LLM、远端或 GPU，不声称已经通过正式质量和服务验收。
