@@ -20,6 +20,15 @@ def proposal():
 
 
 class ExperimentTests(unittest.TestCase):
+    def test_longer_schedule_must_fit_measured_parent_runtime(self):
+        longer=proposal();longer['recipe_changes']={'epochs':self.parent['recipe']['epochs']*12}
+        with self.assertRaisesRegex(ValueError,'runtime scaled by epochs'):
+            compile_plan(self.parent,self.record,longer,.5,self.root/'too-long')
+        self.assertFalse((self.root/'too-long').exists())
+        parent=copy.deepcopy(self.parent);parent['scheduler']['timeout_seconds']=500
+        plan=compile_plan(parent,self.record,longer,.5,self.root/'fits')
+        self.assertEqual(plan['recipe']['epochs'],longer['recipe_changes']['epochs'])
+
     @patch('vision_rsi.llm.OpenAICompatibleClient')
     def test_exact_request_snapshot_persisted_before_call_and_replayed(self,client):
         folder=self.root/'request-snapshot'

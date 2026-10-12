@@ -65,6 +65,15 @@ def compile_plan(parent,record,proposal,remaining,root,research_brief=None):
     if isinstance(remaining,bool) or not isinstance(remaining,(int,float)) or not math.isfinite(remaining) or remaining<=0:raise ValueError('No remaining GPU budget')
     timeout=min(parent['scheduler']['timeout_seconds'],math.floor(remaining*3600/recipe['world_size'])-5)
     if timeout<1:raise ValueError('Insufficient GPU budget including termination allowance')
+    measured=record.get('actual_gpu_hours')
+    if (recipe['epochs']>parent['recipe']['epochs'] and not parent['recipe'].get('fixture',False)
+            and isinstance(measured,(int,float)) and not isinstance(measured,bool)
+            and math.isfinite(measured) and measured>0):
+        # Completed parent wall time includes evaluation; scaling it is a
+        # conservative admission estimate, never a guarantee of runtime.
+        estimated_seconds=measured*3600/parent['recipe']['world_size']*recipe['epochs']/parent['recipe']['epochs']
+        if estimated_seconds>timeout:
+            raise ValueError('Measured parent runtime scaled by epochs exceeds scheduler timeout; propose a shorter schedule or explicitly configure a larger window')
     plan=dict(parent)
     plan.update(recipe=recipe,scheduler=dict(parent['scheduler'],timeout_seconds=timeout),
                 parent_deployment=record['details']['deployment']['directory'],
