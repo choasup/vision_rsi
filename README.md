@@ -1,5 +1,7 @@
 # Vision RSI Agent
 
+首次试用请阅读 [中文使用说明](USER_GUIDE.md)：包含自然语言 training、训练观测与取消、验收后单输入/批量 Test，以及当前能力限制。
+
 源码版交互 training 会话现在可使用 `/research` 推进一步通用研究，`/research-watch` 按启动参数的轮数/时限持续研究，`/research-status` 观测，`/research-pause` 和 `/research-resume` 控制继续决策；这些操作保留当前 session、research-root 和 repository。它们与 COCO campaign 的 `/run`、`/watch`、`/pause`、`/resume` 分开。
 
 通用事件候选完成开发研究后，先 `/research-pause`，再 `/deliver "F:\data\independent-acceptance.json" 30`，使用冻结开发结果选型并进行独立验收、服务检查和有限范围晋升；30 是显式最大延迟秒数，请按任务要求填写。`/select` 可单独冻结选型，`/delivery 原候选版本` 查看交付记录，`/release` 只读核对发布证据。缺参或未知命令不会发给模型。选型冻结后不能继续在同一研究目录搜索；该交付链目前仅支持已实现的通用事件 F1/有界 CPU 后端，不用于 COCO AP 训练。新命令尚未包含在 dev9 离线包中。
