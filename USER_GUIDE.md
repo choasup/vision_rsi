@@ -174,6 +174,15 @@ GPU 预算必须由你明确设置，不能从示例自动推定。8 卡运行 1
 
 ## 8. 通用研究入口与当前边界
 
+源码版新增后端代码生成与协议烟测入口（尚未接通 GPU 训练）：
+
+```powershell
+.\vision-rsi.cmd training harness-generate --session-id SESSION_ID --request-id backend-001 --repository . --output runs/task-harnesses --config config.local.json
+.\vision-rsi.cmd training harness-smoke --bundle runs/task-harnesses/requests/backend-001/candidate.json --repository . --config config.local.json
+```
+
+生成调用LLM并创建独立Git候选，需先提交主仓库源码变更。烟测仅在成功生成 `candidate.json` 后执行，复用远端CPU隔离程序；固定检查ID防止重复执行不确定请求。`backend_protocol_smoke_passed` 不允许直接GPU训练，不证明阶段训练代码、依赖、数据或模型质量已验证。当前GPU执行连接仍待实现。生成拒绝会保存原因，不能通过改写历史响应绕过；API结果不确定时不自动重试。
+
 交互中的 `/research`、`/research-watch` 属于通用任务研究；`/run`、`/watch` 属于 COCO 训练控制流程，不应混用。通用研究要求绑定合同、开发验证集和研究配置，并非定义任意任务后就能直接训练。
 
 当前通用候选一体化交付 `/deliver "独立验收集路径" 最大延迟秒数` 仅覆盖已实现的事件 F1/有界 CPU bundle。需要先 `/research-pause`；不能用于发布 COCO AP 模型，也不能代表通用视频模型已达标。详细开发接口见 README。

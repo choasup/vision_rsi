@@ -54,7 +54,8 @@ def generate(session,config,root,repository,request_id):
             'smoke(request) must run without data files, torch, network, subprocess, filesystem, GPU or credentials; '
             'validate interface and return {stages:[load_data,train,predict,evaluate],training_performed:false}. '
             'Stage implementations must be substantive; no constant fake model predictions or invented metrics. '
-            'Import ML libraries inside stage functions only. No decorators, function defaults or module-level calls/assignments. '
+            'At module level only json, math, typing, collections imports are allowed; defer os, pathlib, torch and all other imports into stage functions. '
+            'No decorators, annotations, function defaults or module-level calls/assignments. '
             'Never download assets, install dependencies, launch subprocesses, change acceptance or infer missing dataset paths/classes/budget. '
             'Missing stage resources must raise explicit errors. This is an untrusted development candidate, not production approval. '
             'Candidate evaluate is diagnostic; final metrics must be recomputed by the host evaluator.'},
@@ -81,7 +82,13 @@ def generate(session,config,root,repository,request_id):
         atomic_json(folder/'response.json',response)
         content=response['content'].strip()
         if content.startswith('```'):content=content.split('\n',1)[1].rsplit('```',1)[0]
-        proposal=json.loads(content);module=validate_backend(proposal)
+        proposal=json.loads(content)
+        try:module=validate_backend(proposal)
+        except (ValueError,TypeError,KeyError,SyntaxError) as error:
+            result={'status':'backend_candidate_rejected','reason':str(error),'request_id':request_id,
+                    'training_performed':False,'gpu_dispatch_ready':False,'quality_verified':False}
+            atomic_json(folder/'rejection.json',result)
+            return result
         record=candidates.create(proposal,{'harness_plan_id':requirements['plan_id'],'request_id':request_id,
                                           'response_sha256':digest(response)},base)
         result={'status':'backend_candidate_created','candidate_id':record['candidate_id'],'module':module,
