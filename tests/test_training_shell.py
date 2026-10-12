@@ -7,11 +7,58 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from vision_rsi.contracts import Sessions
+from vision_rsi.contracts import Sessions, GPU_BUDGET_QUESTION
 from vision_rsi.training_cli import interactive_action, main, execution_summary, conversation_summary, review_action
 
 
 class TrainingShellTests(unittest.TestCase):
+    def test_budget_is_deferred_without_losing_execution_blocker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store=Sessions(tmp);result=store.create('catdog','猫狗识别')
+            contract=json.loads(Path('examples/interface-contract.json').read_text())
+            contract['budget']=None;contract['open_questions']=[GPU_BUDGET_QUESTION]
+            result=store.define(result['session_id'],contract)
+            text=conversation_summary(result)
+            self.assertNotIn('接下来请回答：'+GPU_BUDGET_QUESTION,text)
+            self.assertIn('GPU 预算可等准备训练时再设置',text)
+            self.assertIn('自动训练尚未支持此任务',text)
+            self.assertIn('缺少资源预算',store.show(result['session_id'])['versions'][-1]['issues'])
+            self.assertIsNone(store.show(result['session_id'])['versions'][-1]['contract']['budget'])
+
+    def test_task_question_precedes_gpu_budget_and_advice_has_legacy_fallback(self):
+        result={'versions':[{'contract':{'goal':'猫狗识别','open_questions':[
+                    GPU_BUDGET_QUESTION,'判断整张图的类别，还是标出每只动物的位置？']},'issues':['missing']}],
+                'turns':[{'role':'user','content':'给我建议'}]}
+        text=conversation_summary(result)
+        self.assertIn('建议先完成需求定义',text)
+        self.assertIn('接下来请回答：判断整张图',text)
+        self.assertNotIn('接下来请回答：'+GPU_BUDGET_QUESTION,text)
+        self.assertEqual(len(result['versions'][0]['contract']['open_questions']),2)
+
+    def test_advice_is_displayed_persisted_and_does_not_authorize_a_budget(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);store=Sessions(root/'sessions')
+            contract=json.loads(Path('examples/interface-contract.json').read_text())
+            contract['budget']=None;contract['open_questions']=[GPU_BUDGET_QUESTION]
+            created=store.create('catdog','猫狗识别')
+            store.define(created['session_id'],contract)
+            response=dict(contract,assistant_message='建议先只整理需求；训练设备确定后再估算用量，现在无需填写预算。')
+            config=root/'config.json';config.write_text('{"llm":{}}')
+            output=io.StringIO()
+            with patch('vision_rsi.contracts.OpenAICompatibleClient') as client, \
+                    patch('builtins.input',side_effect=['给我建议','给我建议','/quit']), \
+                    contextlib.redirect_stdout(output):
+                client.return_value.complete.return_value={'content':json.dumps(response)}
+                main(['show','--session-id',created['session_id'],'--sessions',str(store.root),
+                      '--config',str(config),'--interactive'])
+            saved=Sessions(store.root).show(created['session_id'])
+            self.assertEqual(saved['versions'][-1]['contract'],contract)
+            self.assertEqual(saved['versions'][-1]['assistant_message'],response['assistant_message'])
+            self.assertNotIn('review_required',saved['versions'][-1])
+            self.assertNotIn('assistant_message',saved['versions'][-1]['contract'])
+            self.assertIn(response['assistant_message'],output.getvalue())
+            self.assertNotIn('接下来请回答：'+GPU_BUDGET_QUESTION,output.getvalue())
+
     def test_review_shows_new_goal_and_natural_confirmation_persists_exact_draft(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);store=Sessions(root/'sessions')

@@ -7,7 +7,7 @@ import sys
 import shlex
 from pathlib import Path
 
-from .contracts import Sessions, validate_sample, validate_schema, validate_manifest
+from .contracts import Sessions, GPU_BUDGET_QUESTION, validate_sample, validate_schema, validate_manifest
 
 
 def interactive_action(message,session,args):
@@ -95,6 +95,16 @@ def conversation_summary(result):
     reviewing=bool(latest.get('review_required'))
     contract=latest.get('proposed_contract',latest['contract']) if reviewing else latest['contract']
     lines=['我理解你想做：'+str(contract.get('goal','正在整理你的需求'))]
+    if latest.get('assistant_message'):
+        lines.append('建议与说明：'+latest['assistant_message'])
+    else:
+        last_message=next((turn['content'] for turn in reversed(result.get('turns',[]))
+                           if turn.get('role')=='user'),'')
+        if (any(word in last_message for word in ('建议','不知道','不确定'))
+                and GPU_BUDGET_QUESTION in (contract.get('open_questions') or [])):
+            lines.append('建议先完成需求定义，不启动训练，也不用现在猜 GPU 预算。'
+                         '准备好数据和训练设备后，先估算一次小规模试验的用量，再由你确认上限。'
+                         'GPU 小时 = 使用的 GPU 卡数 × 运行小时数。')
     if reviewing:
         labels={'goal':'任务目标','inputs':'输入内容','output_schema':'输出内容',
                 'acceptance':'验收要求','acceptance.metric':'验收指标',
@@ -111,15 +121,22 @@ def conversation_summary(result):
         lines.append('以上是待确认的新需求，尚未生效。是否正确？')
         lines.append('输入“是”确认，输入“否”保留原需求，或直接说要修改什么。')
         return '\n'.join(lines)
-    questions=contract.get('open_questions') or []
+    # Keep authorization gaps in the ledger and execution checks, but do not
+    # make a novice choose GPU hours before defining the task.
+    questions=[question for question in contract.get('open_questions') or []
+               if question!=GPU_BUDGET_QUESTION]
+    task_issues=[issue for issue in latest.get('issues',[])
+                 if issue not in ('缺少资源预算','待澄清: '+GPU_BUDGET_QUESTION)]
     if questions:
         lines.append('接下来请回答：'+str(questions[0]))
         lines.append('不确定时可以直接说“不知道，请给我建议”。')
-    elif latest.get('issues'):
+    elif task_issues and result.get('status')!='task_defined':
         lines.append('任务接口还需整理。请补充你期望的输入、输出或效果；不用填写技术字段。')
     else:
         from .task_adapters import training_adapter
         lines.append('需求已保存，无需重复说明。')
+        if GPU_BUDGET_QUESTION in (contract.get('open_questions') or []):
+            lines.append('GPU 预算可等准备训练时再设置；现在不会启动训练。')
         if training_adapter(contract)['implementation_supported']:
             lines.append('下一步：输入 /prepare 检查训练资源；这一步不会启动训练。')
         else:

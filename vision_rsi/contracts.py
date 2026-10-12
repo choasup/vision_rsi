@@ -299,7 +299,7 @@ class Sessions:
             request_id=uuid.uuid4().hex
             context={'turns':turns,'versions':versions}
             db.execute('INSERT INTO clarification_requests VALUES (?,?,?,?,?)',(request_id,session,json.dumps(context,ensure_ascii=False),'pending','[]'))
-        prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask only one critical question per turn in plain language, with a concrete example or suggested choices when helpful. Keep other missing facts recorded for later turns; do not invent answers or thresholds. Record secondary implementation choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output. Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum,minItems,maxItems. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
+        prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask only one critical question per turn in plain language, with a concrete example or suggested choices when helpful. Keep other missing facts recorded for later turns; do not invent answers or thresholds. Record secondary implementation choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output, and assistant_message (a short plain-language reply). Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum,minItems,maxItems. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
         prompt['change_policy']='Preserve established goal wording, input/output interface, acceptance values and budget exactly unless the user explicitly requests a change. Put implementation choices in assumptions. Do not paraphrase unchanged goal/protocol descriptions. Structural changes are reviewed separately before execution.'
         prompt['available_evaluation_defaults']={'video_events':{
             'use_only_if_matching_user_task':True,'metric':'event_micro_f1','direction':'maximize',
@@ -310,6 +310,7 @@ class Sessions:
             'selection_policy':'Use only when the user accepts this metric semantics. Never replace an explicit metric or protocol. If event matching is unspecified, explain this proposed protocol and record its IoU choice as an assumption; preserve established acceptance exactly. Never invent the F1 target.',
             'implementation_scope':'Standalone evaluator only; no video model training or inference adapter implemented.'}}
         prompt['missing_gpu_budget_question']='When GPU execution budget is missing, use exactly this open_questions entry: '+GPU_BUDGET_QUESTION+'. Do not mix memory, model size, latency or optimizer choices into that question; these are implementation defaults unless explicitly constrained.'
+        prompt['conversation_rules']='Include an assistant_message string alongside the contract fields: a short reply in the user language addressing their latest message. When the user asks for advice or says they do not know, explain concrete options and a recommended next step instead of repeating the same question. Advice is not user authorization: never invent or set a budget or acceptance threshold from a request for advice. GPU budget is needed only before execution; keep the exact missing budget question in open_questions but put task-semantic questions first, and do not ask for GPU hours during initial requirements clarification. For ambiguous recognition tasks such as cat/dog recognition, ask whether the user wants a class for the whole image or boxes around individual animals before selecting classification or detection. Never infer detection solely because a COCO adapter exists. Explain unsupported execution honestly; advice must not claim training ran or authorize training.'
         prompt['format_rules']='output_schema MUST have type=object and nonempty properties; place detection lists inside a detections property, never at the root. assumptions and open_questions MUST be lists of strings, never dictionaries. Video processing sampling, temporal, audio MUST each be nonempty strings; use audio="ignore" for no audio, never false. Missing budget is null, never invented. Examples must satisfy the exact interface. Batch means multiple samples, not image_list. Do not ask for batch size limits, model confidence filters, optimizer or architectural choices unless explicitly constrained by the user; record implementation defaults in assumptions. The inputs section describes INFERENCE-time per-sample inputs only. Training/validation/held-out datasets, annotation files, budgets, weights and evaluation protocols are training resources, NEVER required inference input fields unless the user explicitly requests them as per-sample inputs. Select conventional box coordinates as an assumption, never ask about JSON field names or coordinate syntax. Ask only unresolved task semantics (such as defect class taxonomy or event matching needed to define a metric), not internal representation choices. Resolve schema formatting internally; never ask the user to write JSON schemas.'
         from .detector import COCO_IDS
         prompt['available_adapter_defaults']={'coco_detection':{'use_only_if_matching_user_task':True,'inputs':{'image':{'type':'image','required':True}},'acceptance_metric':'box_AP','metric_units':'0..100','output':'object with detections array; each item has category_id (integer), bbox (4 numbers, COCO xywh pixels), score (0..1)','category_ids':list(COCO_IDS),'note':'80 COCO categories use sparse IDs in 1..90, NOT contiguous 1..80. These are optional implementation defaults, never override an explicit user interface. No claim of training, quality or other task adapter availability.'}}
@@ -344,6 +345,7 @@ class Sessions:
                 if text.startswith('```'):text=text.split('\n',1)[1].rsplit('```',1)[0]
                 draft=normalize_contract(json.loads(text))
                 json.dumps(draft,allow_nan=False)
+                if isinstance(draft,dict):draft.pop('assistant_message',None)
                 if not attempt and isinstance(draft,dict):first_draft=draft
                 formatting=[error for error in issues(draft) if error.startswith(('需定义 object','输出接口无效:','需记录 assumptions','需记录 open_questions','示例不符合接口:')) or '需明确视频采样、时序与音频处理' in error]
             except (ValueError,TypeError,KeyError,AttributeError):break
@@ -354,7 +356,7 @@ class Sessions:
 
     def _finish_response(self,session,request_id,turns,versions,responses,response_ids,first_draft,recovered=False,correction_not_dispatched=None):
         response=responses[-1]
-        review=[];proposed=None
+        review=[];proposed=None;assistant_message=None
         try:
             if not isinstance(response.get('content'),str):raise ValueError('Model response has no contract text')
             text=response['content'].strip()
@@ -362,6 +364,8 @@ class Sessions:
             contract=normalize_contract(json.loads(text))
             if not isinstance(contract,dict):raise ValueError('Model contract must be an object')
             json.dumps(contract,allow_nan=False)
+            guidance=contract.pop('assistant_message',None)
+            if isinstance(guidance,str) and guidance.strip():assistant_message=guidance.strip()
             if len(responses)>1:
                 if any(contract.get(key)!=first_draft.get(key) for key in ('goal','acceptance','budget')):
                     raise ValueError('Schema correction changed task requirements')
@@ -385,6 +389,7 @@ class Sessions:
                     proposed=contract;contract=previous
                     errors=issues(contract)+['待确认需求变更: '+change['path'] for change in review]
         except (ValueError,TypeError,KeyError,AttributeError) as error:
+            assistant_message=None
             contract=normalize_contract(versions[-1]['contract']) if versions else first_draft or {}
             errors=issues(contract)+['解析失败: '+type(error).__name__+'；已保留上一版需求']
         with self.db() as db:
@@ -394,6 +399,7 @@ class Sessions:
             if not current or not request or request[0]!='pending' or not current[2] or json.loads(current[0])!=turns or json.loads(current[1])!=versions:
                 raise ValueError('Clarification context changed; recorded response was not applied')
             version={'version':len(versions)+1,'origin':'llm_draft','contract':contract,'issues':errors,'usage':response.get('usage',{})}
+            if assistant_message:version['assistant_message']=assistant_message
             version.update(request_id=request_id,response_ids=response_ids,response_usage=[item.get('usage',{}) for item in responses],format_correction_attempted=len(responses)>1)
             if correction_not_dispatched:
                 version['format_correction_not_dispatched']=correction_not_dispatched
@@ -401,7 +407,9 @@ class Sessions:
             if recovered:version.update(recovered_from_pending=True,api_outcome_uncertain=True)
             if review:version.update(review_required=review,proposed_contract=proposed)
             versions.append(version)
-            turns.append({'role':'assistant','content':json.dumps({'contract':contract,'issues':errors},ensure_ascii=False)})
+            reply={'contract':contract,'issues':errors}
+            if assistant_message:reply['assistant_message']=assistant_message
+            turns.append({'role':'assistant','content':json.dumps(reply,ensure_ascii=False)})
             db.execute('UPDATE sessions SET turns=?,versions=?,pending=0 WHERE id=?',(json.dumps(turns,ensure_ascii=False),json.dumps(versions,ensure_ascii=False),session))
             db.execute('UPDATE clarification_requests SET state=? WHERE id=?',('recovered' if recovered else 'completed',request_id))
         return self.show(session)
