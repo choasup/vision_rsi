@@ -12,6 +12,36 @@ from vision_rsi.training_cli import interactive_action, main, execution_summary,
 
 
 class TrainingShellTests(unittest.TestCase):
+    def test_natural_progress_checks_real_prerequisites_without_llm_or_training(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);store=Sessions(root/'sessions')
+            created=store.create('catdog','猫狗分类')
+            contract=json.loads(Path('examples/interface-contract.json').read_text())
+            contract['budget']={'gpu_hours':10}
+            store.define(created['session_id'],contract)
+            before=(store.root/'sessions.sqlite3').read_bytes()
+            config=root/'config.json';config.write_text('{"llm":{},"remote":{}}')
+            output=io.StringIO()
+            with patch('builtins.input',side_effect=['推进','/quit']), \
+                    patch.object(Sessions,'clarify') as clarify,contextlib.redirect_stdout(output):
+                main(['show','--session-id',created['session_id'],'--sessions',str(store.root),
+                      '--run-store',str(root/'runs'),'--config',str(config),'--interactive'])
+            clarify.assert_not_called()
+            self.assertIn('只读本地就绪检查: blocked',output.getvalue())
+            self.assertIn('缺少此任务的训练后端',output.getvalue())
+            self.assertIn('这是代码开发工作',output.getvalue())
+            self.assertEqual(before,(store.root/'sessions.sqlite3').read_bytes())
+            self.assertFalse((root/'runs').exists())
+
+    def test_unsupported_complete_task_does_not_display_model_execution_claim(self):
+        contract=json.loads(Path('examples/interface-contract.json').read_text())
+        result={'versions':[{'contract':contract,'issues':[],
+                'assistant_message':'可以按此推进执行，已经准备好了。'}],
+                'turns':[{'role':'user','content':'是'}]}
+        text=conversation_summary(result)
+        self.assertNotIn('可以按此推进执行',text)
+        self.assertIn('缺少对应的训练后端',text)
+
     def test_budget_is_deferred_without_losing_execution_blocker(self):
         with tempfile.TemporaryDirectory() as tmp:
             store=Sessions(tmp);result=store.create('catdog','猫狗识别')

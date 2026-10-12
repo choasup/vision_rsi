@@ -15,6 +15,12 @@ EVENT_PROTOCOL = 'vision-rsi/event_micro_f1/v1'
 GPU_BUDGET_QUESTION = '首轮真实训练最多允许多少 GPU 小时？'
 
 
+def task_questions(contract):
+    """Questions shown during requirements clarification, in display order."""
+    return [question for question in contract.get('open_questions') or []
+            if question!=GPU_BUDGET_QUESTION]
+
+
 def normalize_contract(value):
     """Accept the common model envelope without discarding the actual contract."""
     for _ in range(5):
@@ -300,6 +306,17 @@ class Sessions:
             context={'turns':turns,'versions':versions}
             db.execute('INSERT INTO clarification_requests VALUES (?,?,?,?,?)',(request_id,session,json.dumps(context,ensure_ascii=False),'pending','[]'))
         prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask only one critical question per turn in plain language, with a concrete example or suggested choices when helpful. Keep other missing facts recorded for later turns; do not invent answers or thresholds. Record secondary implementation choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output, and assistant_message (a short plain-language reply). Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum,minItems,maxItems. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
+        previous=normalize_contract(versions[-1]['contract']) if versions else {}
+        questions=task_questions(previous)
+        prompt['reply_context']={'question_shown_to_user':questions[0] if questions and not versions[-1].get('review_required') else None,
+                                 'user_reply':message,
+                                 'previous_explanation':versions[-1].get('assistant_message') if versions else None,
+                                 'instruction':'Interpret short replies such as 是/否 as answers to question_shown_to_user, not as confirmation of a requirements draft. Incorporate the answer, record the resolved fact in assumptions, and remove a resolved question from open_questions. If the answer does not resolve it, explain exactly what remains ambiguous instead of repeating the same question unchanged.'}
+        from .task_adapters import training_adapter
+        prompt['execution_context']={'training_adapter':training_adapter(previous),
+                                     'execution_checked':False,'training_started':False,
+                                     'pending_requirements_review':bool(versions and versions[-1].get('review_required')),
+                                     'instruction':'This call only clarifies requirements. A task definition or user budget is not evidence that execution is ready. Do not say ready to start, can execute, or training started. Only a program-side readiness/preflight result can establish the next executable action. For an unsupported task, explain the missing backend and do not ask the user to repeatedly confirm it.'}
         prompt['change_policy']='Preserve established goal wording, input/output interface, acceptance values and budget exactly unless the user explicitly requests a change. Put implementation choices in assumptions. Do not paraphrase unchanged goal/protocol descriptions. Structural changes are reviewed separately before execution.'
         prompt['available_evaluation_defaults']={'video_events':{
             'use_only_if_matching_user_task':True,'metric':'event_micro_f1','direction':'maximize',

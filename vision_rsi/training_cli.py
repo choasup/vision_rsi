@@ -7,11 +7,14 @@ import sys
 import shlex
 from pathlib import Path
 
-from .contracts import Sessions, GPU_BUDGET_QUESTION, validate_sample, validate_schema, validate_manifest
+from .contracts import Sessions, GPU_BUDGET_QUESTION, task_questions, validate_sample, validate_schema, validate_manifest
 
 
 def interactive_action(message,session,args):
     """Reuse the durable CLI actions; never send unknown slash commands to LLM."""
+    if message in ('推进','继续推进','下一步','检查资源','准备训练'):
+        print('先检查实际执行条件；本次不调用模型、不启动训练。')
+        message='/readiness'
     actions={'/readiness':'readiness','/prepare':'prepare','/run':'advance','/watch':'watch','/status':'agent-status',
              '/job':'status','/logs':'logs','/pause':'agent-pause','/resume':'agent-resume',
              '/research':'research-step','/research-watch':'research-watch','/research-status':'research-status',
@@ -95,12 +98,16 @@ def conversation_summary(result):
     reviewing=bool(latest.get('review_required'))
     contract=latest.get('proposed_contract',latest['contract']) if reviewing else latest['contract']
     lines=['我理解你想做：'+str(contract.get('goal','正在整理你的需求'))]
-    if latest.get('assistant_message'):
+    from .task_adapters import training_adapter
+    supported=training_adapter(contract)['implementation_supported']
+    task_complete=not task_questions(contract) and (not latest.get('issues') or result.get('status')=='task_defined')
+    last_message=next((turn['content'] for turn in reversed(result.get('turns',[]))
+                       if turn.get('role')=='user'),'')
+    requested_advice=any(word in last_message for word in ('建议','不知道','不确定'))
+    if latest.get('assistant_message') and (reviewing or not task_complete or supported or requested_advice):
         lines.append('建议与说明：'+latest['assistant_message'])
     else:
-        last_message=next((turn['content'] for turn in reversed(result.get('turns',[]))
-                           if turn.get('role')=='user'),'')
-        if (any(word in last_message for word in ('建议','不知道','不确定'))
+        if (requested_advice
                 and GPU_BUDGET_QUESTION in (contract.get('open_questions') or [])):
             lines.append('建议先完成需求定义，不启动训练，也不用现在猜 GPU 预算。'
                          '准备好数据和训练设备后，先估算一次小规模试验的用量，再由你确认上限。'
@@ -123,8 +130,7 @@ def conversation_summary(result):
         return '\n'.join(lines)
     # Keep authorization gaps in the ledger and execution checks, but do not
     # make a novice choose GPU hours before defining the task.
-    questions=[question for question in contract.get('open_questions') or []
-               if question!=GPU_BUDGET_QUESTION]
+    questions=task_questions(contract)
     task_issues=[issue for issue in latest.get('issues',[])
                  if issue not in ('缺少资源预算','待澄清: '+GPU_BUDGET_QUESTION)]
     if questions:
@@ -133,15 +139,14 @@ def conversation_summary(result):
     elif task_issues and result.get('status')!='task_defined':
         lines.append('任务接口还需整理。请补充你期望的输入、输出或效果；不用填写技术字段。')
     else:
-        from .task_adapters import training_adapter
         lines.append('需求已保存，无需重复说明。')
         if GPU_BUDGET_QUESTION in (contract.get('open_questions') or []):
             lines.append('GPU 预算可等准备训练时再设置；现在不会启动训练。')
-        if training_adapter(contract)['implementation_supported']:
+        if supported:
             lines.append('下一步：输入 /prepare 检查训练资源；这一步不会启动训练。')
         else:
-            lines.append('当前可以整理此任务的需求，自动训练尚未支持此任务。')
-            lines.append('你可以继续修改需求，或输入 /quit 保存退出。')
+            lines.append('当前可以整理此任务的需求，自动训练尚未支持此任务。缺少对应的训练后端。')
+            lines.append('输入“推进”可检查实际阻碍；重复确认需求不会补齐后端。/quit 保存退出。')
     return '\n'.join(lines)
 
 
@@ -521,7 +526,12 @@ def main(argv):
             print('任务: '+result['task_id']+'；会话: '+result['session_id'])
             print('GPU小时预算: '+str(result['authorized_gpu_hours'])+'；本地剩余快照: '+str(result['remaining_gpu_hours_snapshot']))
             for blocker in result['blockers']:print('- '+blocker)
+            unsupported=not result['training_adapter']['implementation_supported']
+            if unsupported:
+                print('缺少此任务的训练后端；当前内置训练只支持 COCO 目标检测。')
+                print('下一步需要实现并验证对应后端，这是代码开发工作；继续确认需求或增加预算不能解决。')
             for action in result['suggested_actions']:
+                if unsupported and action['action']=='show':continue
                 print('下一步: '+action['reason'])
                 print('  python -m vision_rsi '+subprocess.list2cmdline(action['argv']))
             print('未调用API/SSH或启动训练；任务效果未检查。ready_for_prepare仅表示可继续准备计划。')

@@ -6,6 +6,30 @@ from pathlib import Path
 from vision_rsi.contracts import Sessions,issues,validate_sample,validate_schema,validate_manifest
 
 class ContractTests(unittest.TestCase):
+    @patch('vision_rsi.contracts.OpenAICompatibleClient')
+    def test_short_answer_includes_the_actual_question_and_execution_capability(self,client):
+        from vision_rsi.contracts import GPU_BUDGET_QUESTION
+        from vision_rsi.training_cli import conversation_summary
+        question='测试集的图片是否每张只包含一只猫或一只狗？'
+        contract=json.loads(json.dumps(self.contract))
+        contract['open_questions']=[GPU_BUDGET_QUESTION,question]
+        with tempfile.TemporaryDirectory() as root:
+            store=Sessions(root);created=store.create('catdog','猫狗分类')
+            shown=store.define(created['session_id'],contract)
+            self.assertIn('接下来请回答：'+question,conversation_summary(shown))
+            answered=json.loads(json.dumps(contract))
+            answered['open_questions']=[GPU_BUDGET_QUESTION]
+            answered['assumptions'].append('用户确认每张测试图片只有一只猫或一只狗。')
+            client.return_value.complete.return_value={'content':json.dumps(answered)}
+            result=store.clarify(created['session_id'],{},'是')
+            prompt=json.loads(client.return_value.complete.call_args.args[0][1]['content'])
+            self.assertEqual(prompt['reply_context']['question_shown_to_user'],question)
+            self.assertEqual(prompt['reply_context']['user_reply'],'是')
+            self.assertFalse(prompt['execution_context']['training_adapter']['implementation_supported'])
+            self.assertFalse(prompt['execution_context']['training_started'])
+            self.assertNotIn(question,result['versions'][-1]['contract']['open_questions'])
+            self.assertEqual(result['versions'][-1]['contract']['assumptions'][-1],answered['assumptions'][-1])
+
     def test_event_protocol_requires_executable_acceptance_fields(self):
         from vision_rsi.event_eval import PROTOCOL
         from vision_rsi.contracts import EVENT_PROTOCOL
