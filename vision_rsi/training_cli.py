@@ -84,6 +84,61 @@ def interactive_action(message,session,args):
     return True
 
 
+def conversation_summary(result):
+    """Show the next decision, keeping the full contract available on demand."""
+    if (result.get('pending_request') or result.get('clarification_not_dispatched')
+            or result.get('unsettled_api_request_ids')):
+        return summary(result)
+    if not result['versions']:
+        return '需求已保存。请继续描述你想完成的任务，例如：输入一张图片，判断是猫还是狗。'
+    latest=result['versions'][-1]
+    reviewing=bool(latest.get('review_required'))
+    contract=latest.get('proposed_contract',latest['contract']) if reviewing else latest['contract']
+    lines=['我理解你想做：'+str(contract.get('goal','正在整理你的需求'))]
+    if reviewing:
+        labels={'goal':'任务目标','inputs':'输入内容','output_schema':'输出内容',
+                'acceptance':'验收要求','acceptance.metric':'验收指标',
+                'acceptance.threshold':'效果目标','acceptance.direction':'指标方向',
+                'acceptance.evaluation_protocol':'评测方法','budget':'资源预算'}
+        for change in latest['review_required']:
+            path=change['path']
+            if path=='goal':continue
+            label=labels.get(path,path)
+            if path in ('inputs','output_schema'):
+                lines.append(label+'有调整，可输入 /contract 查看完整草案。')
+            else:
+                lines.append(label+'：'+str(change['before'])+' → '+str(change['after']))
+        lines.append('以上是待确认的新需求，尚未生效。是否正确？')
+        lines.append('输入“是”确认，输入“否”保留原需求，或直接说要修改什么。')
+        return '\n'.join(lines)
+    questions=contract.get('open_questions') or []
+    if questions:
+        lines.append('接下来请回答：'+str(questions[0]))
+        lines.append('不确定时可以直接说“不知道，请给我建议”。')
+    elif latest.get('issues'):
+        lines.append('任务接口还需整理。请补充你期望的输入、输出或效果；不用填写技术字段。')
+    else:
+        from .task_adapters import training_adapter
+        lines.append('需求已保存，无需重复说明。')
+        if training_adapter(contract)['implementation_supported']:
+            lines.append('下一步：输入 /prepare 检查训练资源；这一步不会启动训练。')
+        else:
+            lines.append('当前可以整理此任务的需求，自动训练尚未支持此任务。')
+            lines.append('你可以继续修改需求，或输入 /quit 保存退出。')
+    return '\n'.join(lines)
+
+
+def review_action(message,result):
+    """Natural confirmations apply only to an explicitly displayed pending draft."""
+    if result.get('pending_request') or not result.get('versions'):
+        return None
+    if not result['versions'][-1].get('review_required'):
+        return None
+    if message in ('是','确认','/accept'):return 'accept'
+    if message in ('否','/reject'):return 'reject'
+    return None
+
+
 def summary(result):
     labels={'clarifying':'需要补充关键信息','task_defined':'任务已明确；执行条件待补充','ready_for_harness':'接口检查通过','requirements_review':'需求变更待核对，原要求保留','requirements_not_dispatched':'需求请求未发送；原要求保留'}
     lines=['任务: '+result['task_id'], '会话: '+result['session_id'], '状态: '+labels.get(result['status'],result['status'])]
@@ -564,7 +619,8 @@ def main(argv):
             return
         if args.action=='start':
             goal=Path(args.requirements).read_text(encoding='utf-8') if args.requirements else args.goal
-            if not goal and args.interactive: goal=input('请描述任务目标、输入输出与效果要求：\n> ')
+            if args.interactive and (not goal or goal.strip().lower()=='describe requirements'):
+                goal=input('你想完成什么任务？例如：输入一张图片，判断是猫还是狗。\n> ').strip()
             result=store.create(args.task_id,goal)
             session=result['session_id']
             print('session_id: '+session,flush=True)
@@ -632,29 +688,36 @@ def main(argv):
                     result={'task_id':result['task_id'],'session_id':session,'contract_version':latest['version'],'contract':contract,'contract_sha256':hashlib.sha256(json.dumps(contract,sort_keys=True,ensure_ascii=False).encode()).hexdigest()}
                     Path(args.output).write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         if args.interactive:
+            print('直接用中文回答即可。不确定可以说“不知道”。/help 查看操作，/quit 保存退出。')
             while True:
-                print(summary(result))
+                print(conversation_summary(result))
                 try:
-                    message=input('描述需求或输入命令（/help 操作，/run 推进，/watch 观测，/quit 保存退出）：\n> ').strip()
+                    message=input('\n> ').strip()
                 except (EOFError, KeyboardInterrupt):
                     print('\n会话已保存。session_id: '+session)
                     break
-                if message=='/quit': break
+                if message=='/quit':
+                    print('会话已保存。session_id: '+session)
+                    break
                 if message=='/contract':
                     current=store.show(session)
                     latest=current['versions'][-1] if current['versions'] else {}
                     contract={'active_contract':latest['contract'],'proposed_contract':latest['proposed_contract'],'draft_version':latest['version']} if latest.get('review_required') else latest.get('contract',{})
                     print(json.dumps(contract,ensure_ascii=False,indent=2))
                     continue
+                action=review_action(message,result)
+                if action:
+                    result=getattr(store,action)(session,result['versions'][-1]['version'])
+                    continue
                 if message in ('/accept','/reject'):
-                    current=store.show(session)
-                    if not current['versions']:print('当前没有需求草案。');continue
-                    result=getattr(store,message[1:])(session,current['versions'][-1]['version'])
+                    print('当前没有待确认的新需求，直接描述你想修改的内容即可。')
                     continue
                 if interactive_action(message,session,args):
                     result=store.show(session)
                     continue
-                if message=='/show': result=store.show(session)
+                if message=='/show':
+                    result=store.show(session)
+                    print(summary(result))
                 elif message: result=clarify(session,message)
         else:
             if not args.json and args.action in ('start','reply','show','budget','define','accept','reject','recover','abandon-request'):print(summary(result))

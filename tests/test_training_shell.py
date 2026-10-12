@@ -8,10 +8,79 @@ import unittest
 from unittest.mock import patch
 
 from vision_rsi.contracts import Sessions
-from vision_rsi.training_cli import interactive_action, main, execution_summary
+from vision_rsi.training_cli import interactive_action, main, execution_summary, conversation_summary, review_action
 
 
 class TrainingShellTests(unittest.TestCase):
+    def test_review_shows_new_goal_and_natural_confirmation_persists_exact_draft(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);store=Sessions(root/'sessions')
+            result=store.create('catdog','做猫狗识别分类')
+            contract=json.loads(Path('examples/interface-contract.json').read_text())
+            contract['goal']='识别图片中的猫和狗'
+            store.define(result['session_id'],contract)
+            proposed=json.loads(json.dumps(contract))
+            proposed['goal']='区分图片中的猫、狗和其他动物'
+            proposed['acceptance']['threshold']=0.6
+            proposed['budget']['gpu_hours']=20
+            with patch('vision_rsi.contracts.OpenAICompatibleClient') as client:
+                client.return_value.complete.return_value={'content':json.dumps(proposed)}
+                pending=store.clarify(result['session_id'],{},'增加其他动物类别')
+            text=conversation_summary(pending)
+            self.assertIn(proposed['goal'],text)
+            self.assertNotIn('我理解你想做：'+contract['goal']+'\n',text)
+            self.assertIn('0.8 → 0.6',text)
+            self.assertIn('资源预算',text)
+            self.assertIn('输入“是”确认',text)
+            self.assertNotIn('Harness',text)
+            config=root/'config.json';config.write_text('{}')
+            with patch('builtins.input',side_effect=['是','/quit']), \
+                    patch.object(Sessions,'clarify') as clarify,contextlib.redirect_stdout(io.StringIO()):
+                main(['show','--session-id',result['session_id'],'--sessions',str(root/'sessions'),
+                      '--config',str(config),'--interactive'])
+            clarify.assert_not_called()
+            accepted=store.show(result['session_id'])
+            self.assertEqual(accepted['versions'][-1]['contract'],proposed)
+            self.assertIsNone(review_action('是',accepted))
+
+    def test_plain_no_rejects_draft_without_llm_or_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);store=Sessions(root/'sessions')
+            result=store.create('inspection','检查缺陷')
+            contract=json.loads(Path('examples/interface-contract.json').read_text())
+            store.define(result['session_id'],contract)
+            proposed=json.loads(json.dumps(contract));proposed['budget']['gpu_hours']=100
+            with patch('vision_rsi.contracts.OpenAICompatibleClient') as client:
+                client.return_value.complete.return_value={'content':json.dumps(proposed)}
+                store.clarify(result['session_id'],{},'继续')
+            with patch('builtins.input',side_effect=['否','/quit']), \
+                    patch.object(Sessions,'clarify') as clarify,contextlib.redirect_stdout(io.StringIO()):
+                main(['show','--session-id',result['session_id'],'--sessions',str(root/'sessions'),'--interactive'])
+            clarify.assert_not_called()
+            self.assertEqual(store.show(result['session_id'])['versions'][-1]['contract'],contract)
+
+    def test_placeholder_goal_is_replaced_before_first_model_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store=Sessions(Path(tmp)/'sessions')
+            config=Path(tmp)/'config.json';config.write_text('{"llm":{}}')
+            def clarify(session,config,message=None):return store.show(session)
+            with patch('builtins.input',side_effect=['做猫狗识别分类','/quit']) as read, \
+                    patch.object(Sessions,'clarify',side_effect=clarify),contextlib.redirect_stdout(io.StringIO()):
+                main(['start','--task-id','catdog','--goal','Describe requirements',
+                      '--sessions',str(store.root),'--config',str(config),'--interactive'])
+            saved=store.show(store.list()[0]['session_id'])
+            self.assertEqual(saved['turns'][0]['content'],'做猫狗识别分类')
+            self.assertIn('你想完成什么任务',read.call_args_list[0].args[0])
+
+    def test_conversation_asks_one_question_and_keeps_all_missing_facts(self):
+        result={'versions':[{'contract':{'goal':'猫狗分类',
+                'open_questions':['你有训练数据吗？','准确率要达到多少？']},'issues':['missing']} ]}
+        text=conversation_summary(result)
+        self.assertIn('你有训练数据吗？',text)
+        self.assertNotIn('准确率要达到多少？',text)
+        self.assertEqual(len(result['versions'][0]['contract']['open_questions']),2)
+        self.assertNotIn('/run',text)
+
     def test_json_watch_progress_uses_module_stderr_without_local_import_shadowing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);config=root/'config.json'
