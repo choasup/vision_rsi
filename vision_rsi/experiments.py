@@ -138,6 +138,9 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None,research_hi
             prompt={'contract':parent['contract'],'frozen_recipe':parent['recipe'],'measured_acceptance':verdict,
                     'previous_methods_in_lineage':[{key:recipe[key] for key in sorted(MUTABLE) if key in recipe} for recipe in ancestry],
                     'remaining_gpu_hours':remaining,'mutable_fields':sorted(MUTABLE),
+                    'scheduler_timeout_seconds':parent['scheduler']['timeout_seconds'],
+                    'parent_actual_gpu_hours':record['actual_gpu_hours'],
+                    'longer_schedule_admission':'Parent elapsed time scaled by epoch ratio must fit the scheduler timeout; this is a conservative estimate, not a performance guarantee.',
                     'schema':{'hypothesis':'falsifiable explanation','reasoning':'cite measured evidence and uncertainty',
                               'recipe_changes':{'learning_rate':'number, only supported fields'},'expected_result':'prediction, not a claim',
                               'failure_criteria':'what would refute this hypothesis'}}
