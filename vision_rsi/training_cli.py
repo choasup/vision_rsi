@@ -16,7 +16,7 @@ def interactive_action(message,session,args):
              '/job':'status','/logs':'logs','/pause':'agent-pause','/resume':'agent-resume',
              '/research':'research-step','/research-watch':'research-watch','/research-status':'research-status',
              '/research-pause':'research-pause','/research-resume':'research-resume',
-             '/select':'select-candidate','/release':'release-status'}
+             '/select':'select-candidate','/release':'release-status','/harness':'harness-plan'}
     extra=[]
     head=message.split()[:1]
     if head in (['/deliver'],['/delivery']):
@@ -42,7 +42,7 @@ def interactive_action(message,session,args):
             return True
         budget_value=parts[1];actions[message]='budget'
     if message=='/help':
-        print('/readiness 只读检查本地任务条件；/budget N 设置初始GPU小时上限；/prepare 检查训练计划；/run 推进有界执行；/watch 持续推进与观察；\n'
+        print('/harness 生成任务执行规格（不训练）；/readiness 只读检查本地任务条件；/budget N 设置初始GPU小时上限；/prepare 检查训练计划；/run 推进有界执行；/watch 持续推进与观察；\n'
               '/status 查看本地控制记录；/job 实时查询远端作业；/logs 读取作业日志；\n'
               '/pause 暂停继续决策；/resume 恢复决策；/show 需求摘要；/contract 完整接口；/quit 保存退出。\n'
               '/research 推进一步通用研究；/research-watch 有界持续研究；/research-status 查看研究记录；\n'
@@ -124,6 +124,9 @@ def summary(result):
         if questions: lines+=['需要你补充:']+['- '+str(q) for q in questions[:2]]
         else: lines.append('接口整理尚有问题，已保留你的描述；无需填写内部 schema 字段。')
     else: lines.append('任务接口已保存。可用 training prepare 检查执行配置。')
+    from .task_adapters import training_adapter
+    if not training_adapter(contract)['implementation_supported']:
+        lines.append('执行后端尚未实现；/harness 生成任务执行规格。/run 当前仅支持 COCO 检测，不能执行此任务。')
     return '\n'.join(lines)
 
 
@@ -187,7 +190,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','candidate-infer','promote-candidate','deliver-candidate','delivery-status','select-candidate','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['harness-plan','start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','candidate-infer','promote-candidate','deliver-candidate','delivery-status','select-candidate','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -224,6 +227,14 @@ def main(argv):
     parser.add_argument('--repository',default='.',help='Git source repository for general research; required explicitly outside the checkout')
     parser.add_argument('--select-development',action='store_true',help='Select from frozen paused development research before delivery; replaces --version')
     args=parser.parse_args(argv)
+    if args.action=='harness-plan':
+        if not args.session_id:parser.error('harness-plan requires --session-id')
+        from .task_harness import plan
+        try:
+            session=Sessions(args.sessions,read_only=True).show(args.session_id)
+            result=plan(session,args.output or 'runs/task-harnesses')
+        except (ValueError,KeyError,TypeError,OSError) as error:parser.exit(1,str(error)+'\n')
+        print(json.dumps(result,ensure_ascii=False,indent=2));return
     if args.action=='select-candidate':
         if not args.session_id:parser.error('select-candidate requires --session-id')
         import sqlite3
