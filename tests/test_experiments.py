@@ -33,6 +33,10 @@ class ExperimentTests(unittest.TestCase):
     def test_exact_request_snapshot_persisted_before_call_and_replayed(self,client):
         folder=self.root/'request-snapshot'
         def complete(messages, max_tokens):
+            planner_context=json.loads(messages[1]['content'])
+            self.assertEqual(planner_context['scheduler_timeout_seconds'],self.parent['scheduler']['timeout_seconds'])
+            self.assertEqual(planner_context['parent_actual_gpu_hours'],self.record['actual_gpu_hours'])
+            self.assertIn('conservative estimate',planner_context['longer_schedule_admission'])
             with closing(sqlite3.connect(folder/'requests.sqlite3')) as db:
                 context,state=db.execute('SELECT context,state FROM requests WHERE id=?',('snapshot',)).fetchone()
             context=json.loads(context)
