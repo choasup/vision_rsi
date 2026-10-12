@@ -12,6 +12,21 @@ from vision_rsi.training_cli import interactive_action, main, execution_summary
 
 
 class TrainingShellTests(unittest.TestCase):
+    def test_json_watch_progress_uses_module_stderr_without_local_import_shadowing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);config=root/'config.json'
+            config.write_text(json.dumps({'remote':{},'llm':{}}))
+            def watcher(*args):
+                args[-1]({'status':'waiting','run_id':'existing-run'})
+                return {'status':'waiting','watch':{'stop_reason':'duration_elapsed'}}
+            output=io.StringIO();errors=io.StringIO()
+            with patch('vision_rsi.watch.watch',side_effect=watcher), \
+                    contextlib.redirect_stdout(output),contextlib.redirect_stderr(errors):
+                main(['watch','--session-id','existing-session','--sessions',str(root/'sessions'),
+                      '--config',str(config),'--json'])
+            self.assertEqual(json.loads(errors.getvalue())['run_id'],'existing-run')
+            self.assertEqual(json.loads(output.getvalue())['status'],'waiting')
+
     def test_campaign_summary_exposes_nested_blockers_and_exact_identity(self):
         result={'status':'blocked','campaign_id':'campaign-a','session_id':'session-a','paused':False,
                 'state_path':'state.json','plan':{'plan_path':'plan.json','blockers':['需要真实GPU预算']}}

@@ -385,7 +385,6 @@ def main(argv):
                     config=json.loads(Path(args.config).read_text(encoding='utf-8'))
                     context=inspect(args.session_id,config,args.sessions,args.run_store,args.config)
                     from contextlib import redirect_stdout, nullcontext
-                    import sys
                     with redirect_stdout(sys.stderr) if args.json else nullcontext():
                         return advance(current,config,args.research_root,1,args.repository,task_context=context,training_runs=args.run_store)
                 result=watch(next_step,lambda:status(session_now(),args.research_root),
@@ -395,7 +394,6 @@ def main(argv):
                 config=json.loads(Path(args.config).read_text(encoding='utf-8'))
                 context=inspect(args.session_id,config,args.sessions,args.run_store,args.config)
                 from contextlib import redirect_stdout, nullcontext
-                import sys
                 with redirect_stdout(sys.stderr) if args.json else nullcontext():
                     result=advance(session,config,args.research_root,args.steps,args.repository,task_context=context,training_runs=args.run_store)
         except (ValueError,OSError,KeyError,TypeError,RuntimeError,sqlite3.Error) as error:parser.exit(1,str(error)+'\n')
