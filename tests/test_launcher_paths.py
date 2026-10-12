@@ -69,6 +69,22 @@ class LauncherPathsTests(unittest.TestCase):
             rows=json.loads(process.stdout)
             self.assertEqual([row['session_id'] for row in rows],[session['session_id']])
 
+    def test_harness_build_from_external_workspace_keeps_artifacts_in_caller_directory(self):
+        from vision_rsi.contracts import Sessions
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);store=Sessions(root/'sessions')
+            session=store.create('external-harness','External workspace fixture')
+            contract=json.loads((Path(__file__).resolve().parents[1]/'examples/interface-contract.json').read_text())
+            store.define(session['session_id'],contract)
+            (root/'config.json').write_text('{"research":{},"llm":{},"remote":{}}')
+            result=self.call(directory,'training','harness-advance','--session-id',session['session_id'],
+                             '--sessions','sessions','--config','config.json','--harness-root','local harness','--json')
+            self.assertEqual(result.returncode,0,result.stderr)
+            report=json.loads(result.stdout)
+            self.assertTrue(Path(report['progress_path']).is_relative_to(root/'local harness'))
+            self.assertEqual(report['interface_check']['status'],'interface_checked')
+            self.assertEqual(report['status'],'awaiting_generation')
+
     def test_explicit_task_paths_resolve_from_caller_without_rewriting_text_or_defaults(self):
         with tempfile.TemporaryDirectory() as directory:
             caller=Path(directory)

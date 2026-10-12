@@ -72,6 +72,10 @@ sh ./vision-rsi.sh training start --task-id mac-trial --interactive --config con
 
 自然语言描述目标、输入、输出和验收要求。用 `/show`、`/contract` 检查理解，`/prepare` 核对资源。确认后才显式启动训练。新任务需要明确初始 GPU 预算，不自动继承现有 COCO 会话的192 GPU小时授权。
 
+需求确认后可以输入“开始吧”：程序会生成任务规格和接口校验程序，实际检查输入输出示例。缺少内置后端时，按提示输入“生成后端”调用 LLM 编写候选代码，输入“测试后端”在配置的 Linux 远端隔离环境检查协议。配置中的 `research.allow_candidate_writes` / `allow_candidate_checks` 已开启时，会自动推进对应步骤。Mac 不会直接执行模型生成的代码。
+
+“继续”复用保存的构建结果，明确失败时最多进行一次候选修复；“查看进度”读取记录。可在启动或恢复交互时指定 `--harness-root ./runs/task-harnesses`，将构建产物保存在当前工作目录。源码启动器自动定位源码仓库；直接使用安装后的 CLI 且不在 checkout 中时，应显式传入 `--repository /源码绝对路径`。通用候选协议检查通过不表示 GPU 调度已接通，真实数据、阶段验证和训练集成仍是独立门槛。
+
 已验收版本的推理方式与 Windows 相同：
 
 ```sh

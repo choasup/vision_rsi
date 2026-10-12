@@ -12,15 +12,24 @@ from .contracts import Sessions, GPU_BUDGET_QUESTION, task_questions, validate_s
 
 def interactive_action(message,session,args):
     """Reuse the durable CLI actions; never send unknown slash commands to LLM."""
-    if message in ('推进','继续推进','下一步','检查资源','准备训练'):
-        print('先检查实际执行条件；本次不调用模型、不启动训练。')
-        message='/readiness'
+    natural=message.rstrip('。！!')
+    if natural in ('开始','开始吧','开始执行','开始做吧','推进','继续推进','继续','下一步','准备训练'):
+        print('开始构建或继续保存的 harness 进度。')
+        message='/harness-next'
+    elif natural=='检查资源':message='/readiness'
+    elif natural=='生成后端':message='/harness-generate'
+    elif natural=='测试后端':message='/harness-check'
+    elif natural in ('查看进度','进度'):message='/harness-status'
     actions={'/readiness':'readiness','/prepare':'prepare','/run':'advance','/watch':'watch','/status':'agent-status',
              '/job':'status','/logs':'logs','/pause':'agent-pause','/resume':'agent-resume',
              '/research':'research-step','/research-watch':'research-watch','/research-status':'research-status',
              '/research-pause':'research-pause','/research-resume':'research-resume',
-             '/select':'select-candidate','/release':'release-status','/harness':'harness-plan'}
+             '/select':'select-candidate','/release':'release-status','/harness':'harness-plan',
+             '/harness-next':'harness-advance','/harness-generate':'harness-advance',
+             '/harness-check':'harness-advance','/harness-status':'harness-status'}
     extra=[]
+    if message=='/harness-generate':extra=['--generate-backend']
+    if message=='/harness-check':extra=['--check-backend']
     head=message.split()[:1]
     if head in (['/deliver'],['/delivery']):
         try:
@@ -45,7 +54,9 @@ def interactive_action(message,session,args):
             return True
         budget_value=parts[1];actions[message]='budget'
     if message=='/help':
-        print('/harness 生成任务执行规格（不训练）；/readiness 只读检查本地任务条件；/budget N 设置初始GPU小时上限；/prepare 检查训练计划；/run 推进有界执行；/watch 持续推进与观察；\n'
+        print('开始吧 / 继续：构建并检查 harness，按已有权限继续后端生成和测试；查看进度：读取保存的步骤。\n'
+              '生成后端：调用 API 编写隔离候选；测试后端：在已配置远端执行隔离协议测试。\n'
+              '/harness 生成任务执行规格（不训练）；/readiness 只读检查本地任务条件；/budget N 设置初始GPU小时上限；/prepare 检查训练计划；/run 推进有界执行；/watch 持续推进与观察；\n'
               '/status 查看本地控制记录；/job 实时查询远端作业；/logs 读取作业日志；\n'
               '/pause 暂停继续决策；/resume 恢复决策；/show 需求摘要；/contract 完整接口；/quit 保存退出。\n'
               '/research 推进一步通用研究；/research-watch 有界持续研究；/research-status 查看研究记录；\n'
@@ -63,6 +74,8 @@ def interactive_action(message,session,args):
     command=[action,'--session-id',session,'--sessions',args.sessions,'--config',args.config,
              '--run-store',args.run_store,'--campaign-store',args.campaign_store,'--registry',args.registry]
     command+=extra
+    if action in ('harness-advance','harness-status'):
+        command+=['--repository',args.repository,'--harness-root',args.harness_root]
     if action.startswith('research-') or action in ('select-candidate','deliver-candidate'):
         command+=['--research-root',args.research_root]
     if action in ('research-step','research-watch'):
@@ -145,8 +158,8 @@ def conversation_summary(result):
         if supported:
             lines.append('下一步：输入 /prepare 检查训练资源；这一步不会启动训练。')
         else:
-            lines.append('当前可以整理此任务的需求，自动训练尚未支持此任务。缺少对应的训练后端。')
-            lines.append('输入“推进”可检查实际阻碍；重复确认需求不会补齐后端。/quit 保存退出。')
+            lines.append('此任务需要构建对应的训练后端。')
+            lines.append('输入“开始吧”构建任务规格和接口检查，再继续生成、测试候选后端；/quit 保存退出。')
     return '\n'.join(lines)
 
 
@@ -270,7 +283,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['harness-generate','harness-smoke','harness-plan','start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','candidate-infer','promote-candidate','deliver-candidate','delivery-status','select-candidate','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['harness-advance','harness-status','harness-generate','harness-smoke','harness-plan','start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','candidate-infer','promote-candidate','deliver-candidate','delivery-status','select-candidate','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -305,8 +318,25 @@ def main(argv):
     parser.add_argument('--research-root',default='runs/task-research',help='Task-bound general research ledger root')
     parser.add_argument('--research-watch-turns',type=int,default=6,help='Maximum foreground general-research steps (1..1000)')
     parser.add_argument('--repository',default='.',help='Git source repository for general research; required explicitly outside the checkout')
+    parser.add_argument('--harness-root',default='runs/task-harnesses',help='Durable task harness construction directory')
+    parser.add_argument('--generate-backend',action='store_true',help='Authorize one backend generation API request')
+    parser.add_argument('--check-backend',action='store_true',help='Authorize the backend isolated protocol check')
     parser.add_argument('--select-development',action='store_true',help='Select from frozen paused development research before delivery; replaces --version')
     args=parser.parse_args(argv)
+    if args.action in ('harness-advance','harness-status'):
+        from .harness_progress import advance as advance_harness,status as harness_status,summary as harness_summary
+        if not args.session_id:parser.error('harness progress requires --session-id')
+        try:
+            session=Sessions(args.sessions,read_only=True).show(args.session_id)
+            if args.action=='harness-status':result=harness_status(session,args.harness_root)
+            else:
+                config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
+                result=advance_harness(session,config,args.harness_root,args.repository,
+                                       args.generate_backend,args.check_backend)
+        except (ValueError,KeyError,TypeError,OSError,RuntimeError,subprocess.SubprocessError) as error:
+            parser.exit(1,str(error)+'\n')
+        print(json.dumps(result,ensure_ascii=False,indent=2) if args.json else harness_summary(result))
+        return
     if args.action in ('harness-generate','harness-smoke'):
         from .harness_candidate import generate,smoke
         config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
@@ -716,8 +746,10 @@ def main(argv):
                     Path(args.output).write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         if args.interactive:
             print('直接用中文回答即可。不确定可以说“不知道”。/help 查看操作，/quit 保存退出。')
+            show_summary=True
             while True:
-                print(conversation_summary(result))
+                if show_summary:print(conversation_summary(result))
+                show_summary=False
                 try:
                     message=input('\n> ').strip()
                 except (EOFError, KeyboardInterrupt):
@@ -735,6 +767,7 @@ def main(argv):
                 action=review_action(message,result)
                 if action:
                     result=getattr(store,action)(session,result['versions'][-1]['version'])
+                    show_summary=True
                     continue
                 if message in ('/accept','/reject'):
                     print('当前没有待确认的新需求，直接描述你想修改的内容即可。')
@@ -745,7 +778,9 @@ def main(argv):
                 if message=='/show':
                     result=store.show(session)
                     print(summary(result))
-                elif message: result=clarify(session,message)
+                elif message:
+                    result=clarify(session,message)
+                    show_summary=True
         else:
             if not args.json and args.action in ('start','reply','show','budget','define','accept','reject','recover','abandon-request'):print(summary(result))
             else:print(execution_summary(result) if args.action in ('prepare','run') and not args.json else json.dumps(result,ensure_ascii=False,indent=2))

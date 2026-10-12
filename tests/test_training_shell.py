@@ -12,7 +12,7 @@ from vision_rsi.training_cli import interactive_action, main, execution_summary,
 
 
 class TrainingShellTests(unittest.TestCase):
-    def test_natural_progress_checks_real_prerequisites_without_llm_or_training(self):
+    def test_natural_start_builds_and_reuses_checked_artifacts_without_llm_or_training(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);store=Sessions(root/'sessions')
             created=store.create('catdog','猫狗分类')
@@ -22,14 +22,16 @@ class TrainingShellTests(unittest.TestCase):
             before=(store.root/'sessions.sqlite3').read_bytes()
             config=root/'config.json';config.write_text('{"llm":{},"remote":{}}')
             output=io.StringIO()
-            with patch('builtins.input',side_effect=['推进','/quit']), \
+            with patch('builtins.input',side_effect=['开始吧','继续','查看进度','/quit']), \
                     patch.object(Sessions,'clarify') as clarify,contextlib.redirect_stdout(output):
                 main(['show','--session-id',created['session_id'],'--sessions',str(store.root),
-                      '--run-store',str(root/'runs'),'--config',str(config),'--interactive'])
+                      '--run-store',str(root/'runs'),'--harness-root',str(root/'harness'),
+                      '--config',str(config),'--interactive'])
             clarify.assert_not_called()
-            self.assertIn('只读本地就绪检查: blocked',output.getvalue())
-            self.assertIn('缺少此任务的训练后端',output.getvalue())
-            self.assertIn('这是代码开发工作',output.getvalue())
+            self.assertIn('已运行输入输出示例检查并通过',output.getvalue())
+            self.assertIn('输入“生成后端”',output.getvalue())
+            self.assertEqual(output.getvalue().count('我理解你想做：'),1)
+            self.assertEqual(len(list((root/'harness').rglob('progress.json'))),1)
             self.assertEqual(before,(store.root/'sessions.sqlite3').read_bytes())
             self.assertFalse((root/'runs').exists())
 
@@ -40,7 +42,7 @@ class TrainingShellTests(unittest.TestCase):
                 'turns':[{'role':'user','content':'是'}]}
         text=conversation_summary(result)
         self.assertNotIn('可以按此推进执行',text)
-        self.assertIn('缺少对应的训练后端',text)
+        self.assertIn('需要构建对应的训练后端',text)
 
     def test_budget_is_deferred_without_losing_execution_blocker(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -51,7 +53,7 @@ class TrainingShellTests(unittest.TestCase):
             text=conversation_summary(result)
             self.assertNotIn('接下来请回答：'+GPU_BUDGET_QUESTION,text)
             self.assertIn('GPU 预算可等准备训练时再设置',text)
-            self.assertIn('自动训练尚未支持此任务',text)
+            self.assertIn('需要构建对应的训练后端',text)
             self.assertIn('缺少资源预算',store.show(result['session_id'])['versions'][-1]['issues'])
             self.assertIsNone(store.show(result['session_id'])['versions'][-1]['contract']['budget'])
 
@@ -196,7 +198,7 @@ class TrainingShellTests(unittest.TestCase):
             campaign_store='campaigns',registry='registry',steps=3,watch_seconds=120,
             poll_seconds=15,research_rounds=2,campaign_id='saved-campaign',candidate_id=None,
             candidate_module=None,candidate_store='candidates',run_id='saved-run',output=None,
-            research_root='task-research',repository='source-repo',research_watch_turns=4)
+            research_root='task-research',repository='source-repo',research_watch_turns=4,harness_root='task-harnesses')
 
     def test_general_research_shell_preserves_repository_and_limits(self):
         args=self.settings()
