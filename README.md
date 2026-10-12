@@ -8,6 +8,8 @@ COCO 目标检测是第一个验证实验。项目面向不同视觉任务，包
 
 [使用说明](USER_GUIDE.md) · [安装说明](INSTALL.md) · [Demo 与证据范围](DEMO.md) · [项目计划](PLAN.md) · [开发接口参考](docs/DEVELOPMENT_REFERENCE.md)
 
+**macOS 用户：**参阅 [Mac 安装与运行](MACOS.md)，使用 `sh ./vision-rsi.sh`。Mac 负责交互和调度，训练继续在 Linux GPU 服务器执行。
+
 ## 两种使用模式
 
 ### Training：从需求到可验证的任务能力
