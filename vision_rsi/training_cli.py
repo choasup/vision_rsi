@@ -127,6 +127,9 @@ def summary(result):
     from .task_adapters import training_adapter
     if not training_adapter(contract)['implementation_supported']:
         lines.append('执行后端尚未实现；/harness 生成任务执行规格。/run 当前仅支持 COCO 检测，不能执行此任务。')
+        from .task_harness import configured_resources
+        resources=configured_resources(contract)
+        lines.append('Harness 执行资源待澄清: '+resources['clarification_questions'][0]['question'])
     return '\n'.join(lines)
 
 

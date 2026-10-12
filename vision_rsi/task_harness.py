@@ -25,10 +25,12 @@ def plan(session,root):
     classification=(acceptance.get('metric')=='accuracy'
                     and {'label','confidence'}<=set(contract['output_schema'].get('properties',{})))
     family='coco_detection' if adapter['implementation_supported'] else 'image_classification' if classification else 'custom_visual'
+    resources=configured_resources(contract)
     requirements={
         'format_version':1,'task_id':session['task_id'],'session_id':session['session_id'],
         'contract_version':latest['version'],'contract':contract,
         'contract_sha256':digest(contract),'task_family':family,
+        'resource_requirements':resources,
         'execution_backend':adapter['adapter_id'],
         'required_stages':list(STAGES),
         'stage_contracts':{
@@ -54,3 +56,25 @@ def plan(session,root):
             raise ValueError('Frozen harness requirements changed')
     else:atomic_json(path,requirements)
     return dict(requirements,plan_id=identity,plan_path=str(path))
+
+
+def configured_resources(contract):
+    """Describe missing execution facts without inventing dataset permission.
+
+    Dataset selection/binding is a later executable step, not satisfied by an
+    example_input URI or a budget already supplied for training.
+    """
+    acceptance=contract.get('acceptance') or {}
+    classes=(contract.get('output_schema') or {}).get('properties',{}).get('label',{}).get('enum')
+    return {'status':'resource_binding_required','class_labels_from_contract':classes,
+            'gpu_budget_from_contract':(contract.get('budget') or {}).get('gpu_hours'),
+            'dataset_bound':False,'example_uri_is_dataset':False,
+            'clarification_questions':[
+                {'id':'dataset_source','question':'训练数据使用你已有的数据，还是允许 Agent 选择公开数据集？已有数据请说明位置；公开数据请说明允许自动下载。',
+                 'reason':'训练和评测需要真实数据来源；示例图片地址不代表数据集已存在或获准下载。'}],
+            'host_owned_followups':['核查数据内容、标签映射和实际可读路径',
+                                    '固定训练/开发/独立验收切分及哈希',
+                                    '固定依赖和预训练权重来源',
+                                    '复核原任务指标、刻度与剩余预算'],
+            'acceptance_metric':acceptance.get('metric'),
+            'scope':'Questions only; no resource inspection, download or user authorization inferred.'}

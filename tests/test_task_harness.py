@@ -20,6 +20,9 @@ class TaskHarnessTests(unittest.TestCase):
             self.assertTrue(first['missing_backend'])
             self.assertEqual(first['contract'],contract)
             self.assertFalse(first['training_performed'])
+            self.assertFalse(first['resource_requirements']['dataset_bound'])
+            self.assertEqual(first['resource_requirements']['class_labels_from_contract'],None)
+            self.assertEqual(first['resource_requirements']['clarification_questions'][0]['id'],'dataset_source')
             session['versions'][0]['contract']['acceptance']['threshold']=90
             self.assertNotEqual(first['plan_id'],plan(session,root)['plan_id'])
         self.assertEqual(original['versions'][0]['contract']['acceptance']['threshold'],80)
