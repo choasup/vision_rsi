@@ -190,7 +190,7 @@ def execution_summary(result):
 
 def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
-    parser.add_argument('action',choices=['harness-plan','start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','candidate-infer','promote-candidate','deliver-candidate','delivery-status','select-candidate','serving-evaluate','runs','diagnose','define','validate','export','run'])
+    parser.add_argument('action',choices=['harness-generate','harness-smoke','harness-plan','start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','candidate-infer','promote-candidate','deliver-candidate','delivery-status','select-candidate','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
@@ -227,6 +227,18 @@ def main(argv):
     parser.add_argument('--repository',default='.',help='Git source repository for general research; required explicitly outside the checkout')
     parser.add_argument('--select-development',action='store_true',help='Select from frozen paused development research before delivery; replaces --version')
     args=parser.parse_args(argv)
+    if args.action in ('harness-generate','harness-smoke'):
+        from .harness_candidate import generate,smoke
+        config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
+        if args.action=='harness-generate':
+            if not args.session_id or not args.request_id:parser.error('harness-generate requires --session-id and --request-id')
+            session=Sessions(args.sessions,read_only=True).show(args.session_id)
+            result=generate(session,config,args.output or 'runs/task-harnesses',args.repository,args.request_id)
+        else:
+            if not args.bundle:parser.error('harness-smoke requires --bundle generated candidate.json')
+            candidate=json.loads(Path(args.bundle).read_text(encoding='utf-8'))
+            result=smoke(candidate,config['remote'],args.repository)
+        print(json.dumps(result,ensure_ascii=False,indent=2));return
     if args.action=='harness-plan':
         if not args.session_id:parser.error('harness-plan requires --session-id')
         from .task_harness import plan
