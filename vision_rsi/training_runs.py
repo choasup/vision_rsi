@@ -84,19 +84,34 @@ class TrainingRuns:
 
 
 def submit(plan,remote,store):
+    return submit_backend(plan,remote,store,prepare_coco_backend)
+
+
+def prepare_coco_backend(plan,remote,run_id):
+    deployment=deploy_training(remote,plan)
+    if not deployment['dependencies_ready']:raise RuntimeError('Remote pycocotools missing; install pinned optional dependency before GPU submission')
+    preflight=resource_preflight(remote,deployment,plan)
+    output=str(PurePosixPath(remote['workspace'])/'training'/plan['task_id']/run_id)
+    argv=[remote.get('python','python3'),'-m','torch.distributed.run','--standalone',
+          '--nproc-per-node='+str(plan['recipe']['world_size']),deployment['entry'],'--recipe',deployment['recipe'],'--output',output]
+    return {'deployment':deployment,'resource_preflight':preflight,'output_directory':output,'argv':argv}
+
+
+def submit_backend(plan,remote,store,prepare_backend):
+    """Shared accounted dispatch; preparation is trusted host code, never an LLM callable.
+
+    A backend prepares frozen artifacts, isolated command and checked resources.
+    The scheduler, reservation and reconciliation protocol remain task-neutral.
+    """
     if plan['status']=='blocked': return plan
     record,created=store.reserve(plan,remote)
     if not created: return dict(record,reused=True)  # Never relaunch an uncertain/active/terminal run.
     run_id=record['run_id'];details=record['details']
     try:
-        deployment=deploy_training(remote,plan)
-        if not deployment['dependencies_ready']: raise RuntimeError('Remote pycocotools missing; install pinned optional dependency before GPU submission')
-        details['deployment']=deployment
-        details['resource_preflight']=resource_preflight(remote,deployment,plan)
-        output=str(PurePosixPath(remote['workspace'])/'training'/plan['task_id']/run_id)
-        argv=[remote.get('python','python3'),'-m','torch.distributed.run','--standalone',
-              '--nproc-per-node='+str(plan['recipe']['world_size']),deployment['entry'],'--recipe',deployment['recipe'],'--output',output]
-        spec=dict(plan['scheduler'],argv=argv,gpu_hours_budget=record['reserved_gpu_hours'])
+        prepared=prepare_backend(plan,remote,run_id)
+        details.update({key:prepared[key] for key in ('deployment','resource_preflight')})
+        output=prepared['output_directory']
+        spec=dict(record['details']['scheduler'],argv=prepared['argv'],gpu_hours_budget=record['reserved_gpu_hours'])
         from .jobs import validate_spec
         validate_spec(spec)
         details.update(spec=spec,output_directory=output,phase='submitting')

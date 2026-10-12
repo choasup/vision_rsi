@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from unittest.mock import patch
-from vision_rsi.training_runs import TrainingRuns,submit,observe
+from vision_rsi.training_runs import TrainingRuns,submit,observe,submit_backend
 
 REMOTE={'ssh_host':'fixture','workspace':'/workspace','ssh_port':22,'python':'python3'}
 
@@ -13,6 +13,21 @@ def plan(identity='one'):
 
 
 class TrainingRunsTests(unittest.TestCase):
+    @patch('vision_rsi.training_runs.job_request',side_effect=TimeoutError('lost response'))
+    def test_generic_backend_uses_shared_budget_and_never_redispatches_uncertain_job(self,request):
+        calls=[]
+        def prepare_backend(task,remote,run_id):
+            calls.append(run_id)
+            return {'deployment':{'backend':'classification'},'resource_preflight':{'status':'resources_verified'},
+                    'output_directory':'/workspace/classification/'+run_id,'argv':['python3','trusted-isolated-driver.py']}
+        with self.assertRaises(TimeoutError):submit_backend(plan('classification'),REMOTE,self.store,prepare_backend)
+        row=self.store.list('session')[0]
+        self.assertEqual(row['status'],'submission_uncertain')
+        self.assertIsNone(row['actual_gpu_hours'])
+        self.assertTrue(submit_backend(plan('classification'),REMOTE,self.store,prepare_backend)['reused'])
+        self.assertEqual(len(calls),1);self.assertEqual(request.call_count,1)
+        self.assertLess(self.store.remaining('session',.03),.03)
+
     @patch('vision_rsi.training_runs.deploy_training')
     @patch('vision_rsi.training_runs.job_request')
     def test_old_ready_plan_cannot_bypass_unenforced_resource_caps(self,request,deploy):
