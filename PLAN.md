@@ -1,5 +1,12 @@
 # Vision RSI Agent 实施计划
 
+## AP≥60 后续路线核查（2026-10-12，尚未切换模型）
+
+- [Torchvision 官方模型页](https://docs.pytorch.org/vision/master/models/generated/torchvision.models.detection.fasterrcnn_resnet50_fpn_v2.html)列出当前固定预训练权重在 COCO val2017 的 box AP46.7，与本项目此前独立复算46.7097吻合。公开单点不是该架构的数学上限，但没有证据保证几轮配方微调就能达到60。当前8卡基线继续运行，不修改已冻结训练。
+- [DINO 官方实现](https://github.com/IDEA-Research/DINO)区分普通5尺度 Swin-L 的 val AP58.5 与更强设置的 val AP63.2/test-dev AP63.3。不得把不同配置、额外预训练数据或 test-dev 数字混作当前任务效果。
+- [Stable-DINO 官方实现](https://github.com/IDEA-Research/Stable-DINO)提供 detrex 集成；其 FocalNet-Huge 路线报告 val2017 AP64.6、test-dev AP64.8且未使用测试时增强。这是候选路线的文献依据，不是本项目已复现结果；当前可用检测适配器仍仅固定 Faster R-CNN。
+- 本轮真实基线收据到位后，先检查 AP 和错误分析，再决定保留配方搜索还是扩展检测器适配器。更强后端必须独立冻结代码版本、依赖、权重来源与哈希、数据/类别映射、预测和官方评测协议；核对额外预训练数据及许可证，复算完整5000张val后才能注册。训练、复现和评测都继续占用同一个192 GPU小时上限，不另开未记账实验，不承诺预算内必达60。
+
 ## 真实 GPU 训练启动（2026-10-12）
 
 - 用户明确授权先使用 8×24 小时，已通过 training budget 写入本任务累计 192 GPU小时上限；不再处于预算缺失状态。运行仍由共享训练账本准入。
