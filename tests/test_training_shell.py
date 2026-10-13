@@ -8,10 +8,25 @@ import unittest
 from unittest.mock import patch
 
 from vision_rsi.contracts import Sessions, GPU_BUDGET_QUESTION
-from vision_rsi.training_cli import interactive_action, main, execution_summary, conversation_summary, review_action
+from vision_rsi.training_cli import interactive_action, main, execution_summary, conversation_summary, review_action, summary
 
 
 class TrainingShellTests(unittest.TestCase):
+    def test_summary_handles_malformed_model_fields_without_mutating_contract(self):
+        from copy import deepcopy
+        from vision_rsi.contracts import issues, definition_status
+        base=json.loads(Path('examples/interface-contract.json').read_text())
+        for field in ('budget','acceptance','inputs','output_schema','assumptions','open_questions','data_source'):
+            for value in (None,10,'unknown',[],True,{}):
+                with self.subTest(field=field,value=value):
+                    contract=deepcopy(base);contract[field]=value
+                    before=deepcopy(contract);errors=issues(contract)
+                    result={'session_id':'a'*32,'task_id':'fixture','versions':[{'contract':contract,'issues':errors}],
+                            'status':definition_status(contract,errors),'turns':[]}
+                    self.assertIsInstance(summary(result),str)
+                    self.assertIsInstance(conversation_summary(result),str)
+                    self.assertEqual(contract,before)
+
     def test_natural_start_reports_missing_api_config_instead_of_permission_loop(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);store=Sessions(root/'sessions')

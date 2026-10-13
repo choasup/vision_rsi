@@ -191,11 +191,15 @@ def summary(result):
     if not result['versions']: return '\n'.join(lines+([] if result.get('pending_request') else ['需求描述已保存；尚未形成接口。']))
     latest=result['versions'][-1];contract=latest['contract']
     lines+=['已理解: '+str(contract.get('goal','正在整理你的需求'))]
-    inputs=contract.get('inputs') or {}
+    inputs=contract.get('inputs')
+    inputs=inputs if isinstance(inputs,dict) else {}
     if inputs: lines.append('输入: '+', '.join(name+' ('+str(field.get('type'))+')' for name,field in inputs.items() if isinstance(field,dict)))
-    props=(contract.get('output_schema') or {}).get('properties') or {}
+    schema=contract.get('output_schema')
+    props=schema.get('properties') if isinstance(schema,dict) else {}
+    props=props if isinstance(props,dict) else {}
     if props: lines.append('输出: '+', '.join(props))
-    acceptance=contract.get('acceptance') or {}
+    acceptance=contract.get('acceptance')
+    acceptance=acceptance if isinstance(acceptance,dict) else {}
     if acceptance.get('threshold') is not None:
         lines.append('效果目标: '+str(acceptance.get('metric'))+' '+('≥' if acceptance.get('direction')=='maximize' else '≤')+' '+str(acceptance['threshold']))
     if latest.get('review_required'):
@@ -209,7 +213,7 @@ def summary(result):
         if not contract.get('budget'): lines.append('执行前待补充: 最多允许多少 GPU 小时（8 卡运行 1 小时 = 8 GPU 小时）。')
         else: lines.append('执行前会核查剩余问题；/contract 可查看完整定义。')
     elif latest['issues']:
-        questions=contract.get('open_questions') or []
+        questions=task_questions(contract)
         if questions: lines+=['需要你补充:']+['- '+str(q) for q in questions[:2]]
         else: lines.append('接口整理尚有问题，已保留你的描述；无需填写内部 schema 字段。')
     else: lines.append('任务接口已保存。可用 training prepare 检查执行配置。')
@@ -218,7 +222,10 @@ def summary(result):
         lines.append('执行后端尚未实现；/harness 生成任务执行规格。/run 当前仅支持 COCO 检测，不能执行此任务。')
         from .task_harness import configured_resources
         resources=configured_resources(contract)
-        lines.append('Harness 执行资源待澄清: '+resources['clarification_questions'][0]['question'])
+        questions=resources['clarification_questions']
+        if questions:lines.append('Harness 执行资源待澄清: '+questions[0]['question'])
+        else:lines.append('数据来源已记录；数据内容与执行后端仍待核查。')
+        if resources.get('budget_issue'):lines.append(resources['budget_issue'])
     return '\n'.join(lines)
 
 

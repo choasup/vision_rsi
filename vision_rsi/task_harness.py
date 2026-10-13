@@ -64,10 +64,14 @@ def configured_resources(contract):
     Dataset selection/binding is a later executable step, not satisfied by an
     example_input URI or a budget already supplied for training.
     """
-    acceptance=contract.get('acceptance') or {}
+    acceptance=contract.get('acceptance')
+    acceptance=acceptance if isinstance(acceptance,dict) else {}
     source=contract.get('data_source')
     source=source if isinstance(source,dict) else {}
-    classes=(contract.get('output_schema') or {}).get('properties',{}).get('label',{}).get('enum')
+    schema=contract.get('output_schema')
+    properties=schema.get('properties') if isinstance(schema,dict) else None
+    label=properties.get('label') if isinstance(properties,dict) else None
+    classes=label.get('enum') if isinstance(label,dict) else None
     budget=contract.get('budget')
     result={'status':'resource_binding_required','class_labels_from_contract':classes,
             'gpu_budget_from_contract':budget.get('gpu_hours') if isinstance(budget,dict) else None,

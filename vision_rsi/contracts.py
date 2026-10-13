@@ -38,8 +38,8 @@ def task_questions(contract):
     """New briefs use four fields; older saved contracts remain readable."""
     if 'data_source' in contract:
         return brief_questions(contract)
-    return [question for question in contract.get('open_questions') or []
-            if question!=GPU_BUDGET_QUESTION]
+    questions=contract.get('open_questions')
+    return [question for question in questions if isinstance(question,str) and question!=GPU_BUDGET_QUESTION] if isinstance(questions,list) else []
 
 
 def interface_issues(contract):
@@ -115,7 +115,7 @@ def issues(contract):
     if not isinstance(budget,dict) or not budget: errors.append('缺少资源预算')
     elif any(isinstance(x,bool) or not isinstance(x,(int,float)) or not math.isfinite(x) or x<0 for x in budget.values()): errors.append('预算必须是非负有限数值')
     if not isinstance(contract.get('assumptions'),list): errors.append('需记录 assumptions 列表（允许为空）')
-    if not isinstance(contract.get('open_questions'),list): errors.append('需记录 open_questions 列表')
+    if not isinstance(contract.get('open_questions'),list) or any(not isinstance(q,str) for q in contract.get('open_questions',[])): errors.append('需记录 open_questions 列表（元素必须为字符串）')
     elif contract['open_questions']: errors.extend('待澄清: '+str(q) for q in contract['open_questions'])
     if 'example_input' not in contract or 'example_output' not in contract: errors.append('需提供输入/输出示例')
     else:
@@ -430,7 +430,9 @@ class Sessions:
             # Missing task facts and resource authorization must never be invented.
             try:
                 text=response['content'].strip()
-                if text.startswith('```'):text=text.split('\n',1)[1].rsplit('```',1)[0]
+                if text.startswith('```'):
+                    if '\n' not in text:raise ValueError('Incomplete fenced response')
+                    text=text.split('\n',1)[1].rsplit('```',1)[0]
                 draft=normalize_contract(json.loads(text))
                 json.dumps(draft,allow_nan=False)
                 if isinstance(draft,dict):draft.pop('assistant_message',None)
@@ -448,7 +450,9 @@ class Sessions:
         try:
             if not isinstance(response.get('content'),str):raise ValueError('Model response has no contract text')
             text=response['content'].strip()
-            if text.startswith('```'):text=text.split('\n',1)[1].rsplit('```',1)[0]
+            if text.startswith('```'):
+                if '\n' not in text:raise ValueError('Incomplete fenced response')
+                text=text.split('\n',1)[1].rsplit('```',1)[0]
             contract=normalize_contract(json.loads(text))
             if not isinstance(contract,dict):raise ValueError('Model contract must be an object')
             json.dumps(contract,allow_nan=False)
