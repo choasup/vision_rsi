@@ -59,11 +59,13 @@ class ContractFormatRepairTests(unittest.TestCase):
                 self.assertTrue(any('解析失败' in item for item in result['versions'][-1]['issues']))
 
     @patch('vision_rsi.contracts.OpenAICompatibleClient')
-    def test_missing_budget_is_not_repaired_or_invented(self,client):
+    def test_missing_budget_uses_host_default_without_another_model_call(self,client):
         contract=copy.deepcopy(self.valid);contract['budget']=None
         client.return_value.complete.return_value=self.response(contract)
         result=self.store.clarify(self.session,{'model':'fixture'})
-        self.assertEqual(result['status'],'task_defined');self.assertIsNone(result['versions'][-1]['contract']['budget'])
+        self.assertEqual(result['status'],'ready_for_harness')
+        self.assertEqual(result['versions'][-1]['contract']['budget'],{'gpu_hours':100})
+        self.assertEqual(result['versions'][-1]['contract']['gpu_budget_scope'],'experiment')
         client.return_value.complete.assert_called_once()
 
     @patch('vision_rsi.contracts.OpenAICompatibleClient')

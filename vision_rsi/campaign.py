@@ -125,7 +125,7 @@ def execute(action,state,session,config,folder,runs):
         declared_budget=session['versions'][-1]['contract'].get('budget')
         budget=declared_budget.get('gpu_hours') if isinstance(declared_budget,dict) else None
         if not isinstance(budget,bool) and isinstance(budget,(int,float)) and math.isfinite(budget) and budget>0:
-            remaining=runs.remaining(session['session_id'],budget)
+            remaining=budget if session['versions'][-1]['contract'].get('gpu_budget_scope')=='experiment' else runs.remaining(session['session_id'],budget)
             if isinstance(remaining,bool) or not isinstance(remaining,(int,float)) or not math.isfinite(remaining) or not 0<=remaining<=budget:
                 raise ValueError('Invalid session GPU budget snapshot; analysis not persisted')
             analysis.update(authorized_gpu_hours=budget,remaining_gpu_hours=remaining)

@@ -29,7 +29,8 @@ def inspect(session_id,config,sessions,runs,config_path='config.local.json'):
         ledger=TrainingRuns(runs,read_only=True)
         try:
             records=ledger.list(session_id)
-            if authorized:remaining=ledger.remaining(session_id,budget)
+            if authorized:
+                remaining=budget if contract.get('gpu_budget_scope')=='experiment' else ledger.remaining(session_id,budget)
         finally:ledger.close()
     for record in records:
         cost=record['actual_gpu_hours'] if record['actual_gpu_hours'] is not None else record['reserved_gpu_hours']

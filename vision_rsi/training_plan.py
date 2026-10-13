@@ -16,6 +16,8 @@ DEFAULT_RECIPE={'detector':'torchvision_fasterrcnn_resnet50_fpn_v2','epochs':1,'
 
 def budget_blockers(contract):
     """Never silently execute against a cap this Training path cannot enforce."""
+    if contract.get('gpu_budget_scope','session') not in ('session','experiment'):
+        return ['Unsupported GPU budget scope']
     budget=contract.get('budget')
     if budget is None:return []
     if not isinstance(budget,dict):return ['Training budget must be an object']
@@ -63,7 +65,8 @@ def prepare(session,config,root):
         timeout=None
         blockers.append('有效的 world_size 是调度前提。')
     else:
-        timeout=training.get('timeout_seconds',max(0,int(budget*3600/world/3)-5))
+        allocation=1 if contract.get('gpu_budget_scope')=='experiment' else 3
+        timeout=training.get('timeout_seconds',max(0,int(budget*3600/world/allocation)-5))
         if isinstance(timeout,bool) or not isinstance(timeout,(int,float)) or not math.isfinite(timeout) or timeout<=0 or (timeout+5)*recipe['world_size']/3600>budget:
             blockers.append('训练超时与GPU卡数超过任务预算。')
     # Timeout belongs to the scheduler, not the torch model recipe.

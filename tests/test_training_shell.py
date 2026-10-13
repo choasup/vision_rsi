@@ -61,7 +61,7 @@ class TrainingShellTests(unittest.TestCase):
         self.assertNotIn('可以按此推进执行',text)
         self.assertIn('需要构建对应的训练后端',text)
 
-    def test_budget_is_deferred_without_losing_execution_blocker(self):
+    def test_default_budget_is_displayed_without_a_budget_question(self):
         with tempfile.TemporaryDirectory() as tmp:
             store=Sessions(tmp);result=store.create('catdog','猫狗识别')
             contract=json.loads(Path('examples/interface-contract.json').read_text())
@@ -69,10 +69,10 @@ class TrainingShellTests(unittest.TestCase):
             result=store.define(result['session_id'],contract)
             text=conversation_summary(result)
             self.assertNotIn('接下来请回答：'+GPU_BUDGET_QUESTION,text)
-            self.assertIn('GPU 预算可等准备训练时再设置',text)
+            self.assertIn('每轮实验 GPU 小时上限：100',text)
             self.assertIn('需要构建对应的训练后端',text)
-            self.assertIn('缺少资源预算',store.show(result['session_id'])['versions'][-1]['issues'])
-            self.assertIsNone(store.show(result['session_id'])['versions'][-1]['contract']['budget'])
+            self.assertNotIn('缺少资源预算',store.show(result['session_id'])['versions'][-1]['issues'])
+            self.assertEqual(store.show(result['session_id'])['versions'][-1]['contract']['budget'],{'gpu_hours':100})
 
     def test_task_question_precedes_gpu_budget_and_advice_has_legacy_fallback(self):
         result={'versions':[{'contract':{'goal':'猫狗识别','open_questions':[
@@ -84,13 +84,13 @@ class TrainingShellTests(unittest.TestCase):
         self.assertNotIn('接下来请回答：'+GPU_BUDGET_QUESTION,text)
         self.assertEqual(len(result['versions'][0]['contract']['open_questions']),2)
 
-    def test_advice_is_displayed_persisted_and_does_not_authorize_a_budget(self):
+    def test_advice_is_displayed_persisted_and_preserves_default_budget(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);store=Sessions(root/'sessions')
             contract=json.loads(Path('examples/interface-contract.json').read_text())
             contract['budget']=None;contract['open_questions']=[GPU_BUDGET_QUESTION]
             created=store.create('catdog','猫狗识别')
-            store.define(created['session_id'],contract)
+            defined=store.define(created['session_id'],contract)['versions'][-1]['contract']
             response=dict(contract,assistant_message='建议先只整理需求；训练设备确定后再估算用量，现在无需填写预算。')
             config=root/'config.json';config.write_text('{"llm":{}}')
             output=io.StringIO()
@@ -102,7 +102,7 @@ class TrainingShellTests(unittest.TestCase):
                 main(['show','--session-id',created['session_id'],'--sessions',str(store.root),
                       '--config',str(config),'--interactive'])
             saved=Sessions(store.root).show(created['session_id'])
-            self.assertEqual(saved['versions'][-1]['contract'],contract)
+            self.assertEqual(saved['versions'][-1]['contract'],defined)
             self.assertEqual(saved['versions'][-1]['assistant_message'],response['assistant_message'])
             self.assertNotIn('review_required',saved['versions'][-1])
             self.assertNotIn('assistant_message',saved['versions'][-1]['contract'])

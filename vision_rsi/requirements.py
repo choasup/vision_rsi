@@ -19,4 +19,6 @@ def changes(previous,proposed):
             if value is not None and value!='':compare('acceptance.'+key,value,new.get(key) if isinstance(new,dict) else None)
     # Once a task exists, a model cannot create or alter resource authorization.
     if previous.get('budget') or proposed.get('budget'):compare('budget',previous.get('budget'),proposed.get('budget'))
+    if previous.get('gpu_budget_scope') or proposed.get('gpu_budget_scope'):
+        compare('gpu_budget_scope',previous.get('gpu_budget_scope'),proposed.get('gpu_budget_scope'))
     return result

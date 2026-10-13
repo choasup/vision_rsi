@@ -20,6 +20,19 @@ def proposal():
 
 
 class ExperimentTests(unittest.TestCase):
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_new_round_uses_its_own_budget_after_parent_is_settled(self,client):
+        self.parent['contract'].update(budget={'gpu_hours':100},gpu_budget_scope='experiment')
+        Path(self.record['details']['plan_path']).write_text(json.dumps(self.parent))
+        self.record['plan_id']=digest(self.parent)
+        self.runs.remaining.return_value=0
+        client.return_value.complete.return_value={'content':json.dumps(proposal())}
+        result=propose_next(self.record,self.runs,self.llm,self.root/'round-budget','next-round')
+        self.assertEqual(result['status'],'ready_to_submit')
+        self.assertEqual(result['contract']['budget'],{'gpu_hours':100})
+        self.assertEqual(result['contract']['gpu_budget_scope'],'experiment')
+        self.runs.remaining.assert_not_called()
+
     def test_longer_schedule_must_fit_measured_parent_runtime(self):
         longer=proposal();longer['recipe_changes']={'epochs':self.parent['recipe']['epochs']*12}
         with self.assertRaisesRegex(ValueError,'runtime scaled by epochs'):

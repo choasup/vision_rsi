@@ -22,6 +22,12 @@ class TaskReadinessTests(unittest.TestCase):
             session=store.create('fixture','Synthetic readiness only')
             contract=json.loads((Path(__file__).resolve().parents[1]/'examples/interface-contract.json').read_text(encoding='utf-8'))
             contract['budget']=None;store.define(session['session_id'],contract)
+            # Emulate a saved legacy task; read-only inspection must not migrate it.
+            from vision_rsi.contracts import issues
+            with store.db() as db:
+                saved=store.show(session['session_id'])['versions']
+                saved[-1]['contract']=contract;saved[-1]['issues']=issues(contract)
+                db.execute('UPDATE sessions SET versions=? WHERE id=?',(json.dumps(saved),session['session_id']))
             path=root/'sessions/sessions.sqlite3';before=path.read_bytes()
             report=inspect(session['session_id'],{},root/'sessions',root/'runs')
             self.assertEqual(report['status'],'blocked');self.assertIsNone(report['authorized_gpu_hours'])

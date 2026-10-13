@@ -21,6 +21,11 @@ class InitialGpuBudgetTests(unittest.TestCase):
         self.contract['acceptance']['threshold']=60
         self.contract['budget']=None;self.contract['open_questions']=[GPU_BUDGET_QUESTION]
         self.store.define(self.sid,self.contract)
+        # Legacy saved task: no default policy existed when this was recorded.
+        with self.store.db() as db:
+            saved=self.store.show(self.sid)['versions']
+            saved[-1]['contract']=copy.deepcopy(self.contract)
+            db.execute('UPDATE sessions SET versions=? WHERE id=?',(json.dumps(saved),self.sid))
 
     def test_only_explicit_budget_changes_and_unrelated_question_is_retained(self):
         original=copy.deepcopy(self.contract);original['open_questions'].append('Which defect labels are required?')
