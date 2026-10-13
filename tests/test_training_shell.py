@@ -201,6 +201,18 @@ class TrainingShellTests(unittest.TestCase):
             candidate_module=None,candidate_store='candidates',run_id='saved-run',output=None,
             research_root='task-research',repository='source-repo',research_watch_turns=4,harness_root='task-harnesses')
 
+    def test_launch_phrases_dispatch_construction_but_not_negative_or_descriptive_text(self):
+        with patch('vision_rsi.training_cli.main') as invoke, contextlib.redirect_stdout(io.StringIO()):
+            for command in ('启动','启动吧！','启动实验','开始实验',' 启动。 '):
+                self.assertTrue(interactive_action(command,'session',self.settings()))
+                args=invoke.call_args.args[0]
+                self.assertEqual(args[0],'harness-advance')
+                self.assertIn('--autonomous',args)
+            count=invoke.call_count
+            for message in ('不要启动','启动不了','启动之前先修改需求'):
+                self.assertFalse(interactive_action(message,'session',self.settings()))
+            self.assertEqual(invoke.call_count,count)
+
     def test_general_research_shell_preserves_repository_and_limits(self):
         args=self.settings()
         with patch('vision_rsi.training_cli.main') as invoke:

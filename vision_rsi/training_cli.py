@@ -12,8 +12,8 @@ from .contracts import Sessions, GPU_BUDGET_QUESTION, task_questions, validate_s
 
 def interactive_action(message,session,args):
     """Reuse the durable CLI actions; never send unknown slash commands to LLM."""
-    natural=message.rstrip('。！!')
-    if natural in ('开始','开始吧','开始执行','开始做吧','推进','继续推进','继续','下一步','准备训练'):
+    natural=message.strip().rstrip('。！!').strip()
+    if natural in ('开始','开始吧','开始执行','开始做吧','推进','继续推进','继续','下一步','准备训练','启动','启动吧','启动实验','开始实验'):
         print('自动推进候选生成和已配置的隔离检查；遇到真实阻碍时停止。')
         message='/harness-next'
     elif natural=='检查资源':message='/readiness'
