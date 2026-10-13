@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from vision_rsi.candidates import git
 from vision_rsi.contracts import Sessions
-from vision_rsi.harness_progress import advance, status
+from vision_rsi.harness_progress import advance, status, run_until_blocked
 from vision_rsi.runner import atomic_json
 
 
@@ -44,6 +44,40 @@ class HarnessProgressTests(unittest.TestCase):
         self.session=self.store.define(created['session_id'],self.contract)
         self.config={'llm':{'model':'fixture','base_url':'https://fixture.invalid'},'remote':{},'research':{}}
         self.output=self.root/'harness'
+
+    @patch('vision_rsi.remote.check_candidate')
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_continue_crosses_default_permission_gate_and_repairs_in_same_call(self,client,remote):
+        self.config['research']={'allow_candidate_writes':False,'allow_candidate_checks':False}
+        self.assertEqual(self.run_step()['status'],'awaiting_generation')
+        client.return_value.complete.side_effect=[{'content':'invalid JSON'}, {'content':json.dumps(proposal())}]
+        self.config['remote']={'ssh_host':'fixture','workspace':'/fixture'}
+        remote.side_effect=lambda endpoint,request:{'status':'executed_unverified','source_hashes':request['source_hashes'],
+            'observation':{'results':[{'stages':['load_data','train','predict','evaluate'],'training_performed':False}]}}
+        result=run_until_blocked(self.session,self.config,self.output,self.repo)
+        self.assertEqual(result['status'],'backend_protocol_checked')
+        self.assertEqual(client.return_value.complete.call_count,2)
+        self.assertEqual(remote.call_count,1)
+        self.assertFalse(result['training_performed'])
+        self.assertEqual(run_until_blocked(self.session,self.config,self.output,self.repo)['status'],'backend_protocol_checked')
+        self.assertEqual(client.return_value.complete.call_count,2)
+        self.assertEqual(remote.call_count,1)
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_autonomous_unknown_generation_stops_without_retry(self,client):
+        client.return_value.complete.side_effect=RuntimeError('outcome unknown')
+        for _ in range(2):
+            result=run_until_blocked(self.session,self.config,self.output,self.repo)
+            self.assertEqual(result['status'],'generation_uncertain')
+        self.assertEqual(client.return_value.complete.call_count,1)
+
+    @patch('vision_rsi.llm.OpenAICompatibleClient')
+    def test_autonomous_repair_cap_survives_repeated_continue(self,client):
+        client.return_value.complete.return_value={'content':'invalid JSON'}
+        result=run_until_blocked(self.session,self.config,self.output,self.repo)
+        self.assertEqual(len(result['attempts']),2)
+        self.assertEqual(run_until_blocked(self.session,self.config,self.output,self.repo)['status'],'repair_limit_reached')
+        self.assertEqual(client.return_value.complete.call_count,2)
 
     def run_step(self,**kwargs):
         return advance(self.session,self.config,self.output,self.repo,**kwargs)

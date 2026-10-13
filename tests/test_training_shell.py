@@ -12,7 +12,7 @@ from vision_rsi.training_cli import interactive_action, main, execution_summary,
 
 
 class TrainingShellTests(unittest.TestCase):
-    def test_natural_start_builds_and_reuses_checked_artifacts_without_llm_or_training(self):
+    def test_natural_start_reports_missing_api_config_instead_of_permission_loop(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);store=Sessions(root/'sessions')
             created=store.create('catdog','猫狗分类')
@@ -29,7 +29,8 @@ class TrainingShellTests(unittest.TestCase):
                       '--config',str(config),'--interactive'])
             clarify.assert_not_called()
             self.assertIn('已运行输入输出示例检查并通过',output.getvalue())
-            self.assertIn('输入“生成后端”',output.getvalue())
+            self.assertNotIn('输入“生成后端”',output.getvalue())
+            self.assertIn('生成前置条件待补充',output.getvalue())
             self.assertEqual(output.getvalue().count('我理解你想做：'),1)
             self.assertEqual(len(list((root/'harness').rglob('progress.json'))),1)
             self.assertEqual(before,(store.root/'sessions.sqlite3').read_bytes())

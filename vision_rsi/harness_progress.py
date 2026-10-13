@@ -267,6 +267,31 @@ def advance(session, config, root, repository='.', generate_backend=False, check
                       remaining_requirements=requirements['resource_requirements'])
 
 
+def run_until_blocked(session, config, root, repository='.', on_progress=None):
+    """A user's start/continue authorizes construction and configured CPU checks.
+
+    Run through known, repairable failures, stopping at a real prerequisite or
+    uncertain outcome. The durable two-candidate cap in advance still applies.
+    This never grants a GPU budget or dispatches training.
+    """
+    completed=[]
+    for step in range(2):
+        if on_progress:
+            on_progress('正在生成或恢复候选并检查可执行步骤……' if step==0 else
+                        '候选检查失败，正在根据保存的错误修复一次……')
+        result=advance(session,config,root,repository,generate_backend=True,check_backend=True)
+        completed.extend(result.get('completed_this_turn',[]))
+        attempts=result.get('attempts',[])
+        repairable=(result['status'] in ('generation_failed','smoke_failed')
+                    and attempts and len(attempts)<2
+                    and (attempts[-1]['status']=='rejected' or result['status']=='smoke_failed'))
+        if not repairable:
+            break
+    result['completed_this_turn']=completed
+    result['autonomous_construction']=True
+    return result
+
+
 def summary(result):
     labels={'not_started':'尚未构建','awaiting_generation':'接口检查通过，待生成后端',
             'awaiting_smoke':'候选源码已生成，待隔离测试','remote_required':'候选源码已生成，缺少远端配置',
@@ -279,11 +304,14 @@ def summary(result):
     lines.extend('- ' + item for item in result.get('completed_this_turn', []))
     if not result.get('completed_this_turn') and result['status'] != 'not_started':
         lines.append('已复用保存的构建进度。')
-    if result.get('interface'):
+    if result.get('interface') and not result.get('autonomous_construction'):
         lines.append('接口校验程序：' + result['interface']['directory'])
     if result.get('candidate_source'):
         lines.append('候选源码：' + result['candidate_source'])
     lines.append('下一步：' + result['next_step'])
-    lines.append('进度记录：' + result['progress_path'])
+    if result.get('autonomous_construction'):
+        lines.append('输入“查看进度”可查看完整记录和产物路径。')
+    else:
+        lines.append('进度记录：' + result['progress_path'])
     lines.append('尚未进行训练或模型效果验收。')
     return '\n'.join(lines)
