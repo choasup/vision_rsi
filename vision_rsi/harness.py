@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import uuid
 
-from .contracts import issues
+from .contracts import interface_issues
 from .runner import revision,digest
 
 
@@ -13,7 +13,7 @@ def build(session, root):
     if not session['versions']: raise ValueError('No task interface defined')
     latest=session['versions'][-1];contract=latest['contract']
     if latest.get('review_required'):raise ValueError('Review pending requirements changes before building a new harness')
-    blockers=[x for x in issues(contract) if '预算' not in x and not x.startswith('待澄清:')]
+    blockers=interface_issues(contract)
     if blockers: raise ValueError('Interface needs repair: '+'; '.join(blockers))
     source=Path(__file__).with_name('contracts.py').read_text(encoding='utf-8-sig')
     runtime='import json, math, re\nfrom pathlib import Path\n'+source[source.index('TYPES ='):source.index('class Sessions:')]

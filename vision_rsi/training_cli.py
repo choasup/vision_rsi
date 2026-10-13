@@ -114,6 +114,9 @@ def conversation_summary(result):
     from .task_adapters import training_adapter
     supported=training_adapter(contract)['implementation_supported']
     task_complete=not task_questions(contract) and (not latest.get('issues') or result.get('status')=='task_defined')
+    if 'data_source' in contract:
+        from .contracts import interface_issues
+        task_complete=not task_questions(contract) and not interface_issues(contract)
     last_message=next((turn['content'] for turn in reversed(result.get('turns',[]))
                        if turn.get('role')=='user'),'')
     requested_advice=any(word in last_message for word in ('建议','不知道','不确定'))
@@ -146,6 +149,8 @@ def conversation_summary(result):
     questions=task_questions(contract)
     task_issues=[issue for issue in latest.get('issues',[])
                  if issue not in ('缺少资源预算','待澄清: '+GPU_BUDGET_QUESTION)]
+    if 'data_source' in contract:
+        task_issues=interface_issues(contract)
     if questions:
         lines.append('接下来请回答：'+str(questions[0]))
         lines.append('不确定时可以直接说“不知道，请给我建议”。')
@@ -153,6 +158,8 @@ def conversation_summary(result):
         lines.append('任务接口还需整理。请补充你期望的输入、输出或效果；不用填写技术字段。')
     else:
         lines.append('需求已保存，无需重复说明。')
+        if 'data_source' in contract:
+            lines.append('输入、输出、数据来源和验证目标已齐全；接下来检查实验环境。')
         if GPU_BUDGET_QUESTION in (contract.get('open_questions') or []):
             lines.append('GPU 预算可等准备训练时再设置；现在不会启动训练。')
         if supported:
@@ -747,8 +754,24 @@ def main(argv):
         if args.interactive:
             print('直接用中文回答即可。不确定可以说“不知道”。/help 查看操作，/quit 保存退出。')
             show_summary=True
+            prepared_contracts=set()
             while True:
-                if show_summary:print(conversation_summary(result))
+                if show_summary:
+                    print(conversation_summary(result))
+                    latest=result['versions'][-1] if result.get('versions') else {}
+                    contract=latest.get('contract',{})
+                    from .contracts import brief_questions,interface_issues
+                    from .runner import digest
+                    identity=digest(contract)
+                    if ('data_source' in contract and not result.get('pending_request')
+                            and not latest.get('review_required') and not brief_questions(contract)
+                            and not interface_issues(contract) and identity not in prepared_contracts):
+                        from .experiment_prep import prepare as prepare_experiment,summary as preparation_summary
+                        try:
+                            print(preparation_summary(prepare_experiment(result,args.harness_root)))
+                            prepared_contracts.add(identity)
+                        except (ValueError,OSError) as error:
+                            print('实验准备未完成：'+str(error))
                 show_summary=False
                 try:
                     message=input('\n> ').strip()

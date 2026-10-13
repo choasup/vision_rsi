@@ -15,10 +15,40 @@ EVENT_PROTOCOL = 'vision-rsi/event_micro_f1/v1'
 GPU_BUDGET_QUESTION = '首轮真实训练最多允许多少 GPU 小时？'
 
 
+def brief_questions(contract):
+    """Only the four user decisions; implementation defaults are not questions."""
+    questions=[]
+    if not contract.get('inputs'):
+        questions.append('模型接收什么输入？例如单张图片。')
+    schema=contract.get('output_schema') or {}
+    if not isinstance(schema,dict) or not schema.get('properties'):
+        questions.append('希望模型输出什么？例如整张图片属于猫还是狗。')
+    source=contract.get('data_source')
+    if not isinstance(source,dict) or source.get('kind') not in ('local','public') or not isinstance(source.get('location'),str) or not source['location'].strip():
+        questions.append('数据来自哪里？请给出已有数据路径，或说明允许使用哪些公开数据。')
+    acceptance=contract.get('acceptance') or {}
+    if not isinstance(acceptance,dict) or not acceptance.get('metric') or not acceptance.get('evaluation_protocol'):
+        questions.append('希望怎样验证效果？不知道目标数值时，可以先跑基线看结果。')
+    elif acceptance.get('threshold') is None and acceptance.get('mode')!='baseline':
+        questions.append('验证目标是多少？也可以选择先跑基线，不预设达标数值。')
+    return questions
+
+
 def task_questions(contract):
-    """Questions shown during requirements clarification, in display order."""
+    """New briefs use four fields; older saved contracts remain readable."""
+    if 'data_source' in contract:
+        return brief_questions(contract)
     return [question for question in contract.get('open_questions') or []
             if question!=GPU_BUDGET_QUESTION]
+
+
+def interface_issues(contract):
+    """Exploratory interface builds need no final acceptance threshold."""
+    errors=issues(contract)
+    acceptance=contract.get('acceptance') if isinstance(contract,dict) else None
+    if isinstance(acceptance,dict) and acceptance.get('mode')=='baseline' and acceptance.get('threshold') is None:
+        errors=[error for error in errors if error not in ('缺少有限数值验收阈值','事件F1验收阈值需在0..1内')]
+    return [error for error in errors if '预算' not in error and not error.startswith('待澄清:')]
 
 
 def normalize_contract(value):
@@ -305,8 +335,13 @@ class Sessions:
             request_id=uuid.uuid4().hex
             context={'turns':turns,'versions':versions}
             db.execute('INSERT INTO clarification_requests VALUES (?,?,?,?,?)',(request_id,session,json.dumps(context,ensure_ascii=False),'pending','[]'))
-        prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask only one critical question per turn in plain language, with a concrete example or suggested choices when helpful. Keep other missing facts recorded for later turns; do not invent answers or thresholds. Record secondary implementation choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output, and assistant_message (a short plain-language reply). Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum,minItems,maxItems. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
-        previous=normalize_contract(versions[-1]['contract']) if versions else {}
+        prompt={'instruction':'Extract the actual user task, not the act of defining an interface. Preserve all explicit goals and constraints across turns. Ask only for ambiguity that changes the task. Never ask for architecture, optimizer, precision, latency constraints or dataset version unless the user makes them relevant; select reasonable defaults and record assumptions. Budget is an execution prerequisite, not a reason to ask the user to restate the task. Return the contract object directly, never wrap it in contract or issues. Use the language of the user for explanations and questions. Ask only one critical question per turn in plain language, with a concrete example or suggested choices when helpful. Keep other missing facts recorded for later turns; do not invent answers or thresholds. Record secondary implementation choices as explicit assumptions rather than repeatedly asking. Return JSON contract ONLY with goal, inputs, output_schema, acceptance, budget, assumptions, open_questions, example_input, example_output, data_source, and assistant_message (a short plain-language reply). Do not invent thresholds or budget, do not weaken previous requirements; put missing facts in open_questions. Inputs are named fields: type image/image_list/video/text, required boolean. image_list requires min_items,max_items,semantics=joint. video requires processing:{sampling,temporal,audio}. Output schema subset: type,properties,required,items,description,enum,additionalProperties,minimum,maximum,minItems,maxItems. Acceptance:{metric,threshold,direction=maximize/minimize,evaluation_protocol}. budget: numeric resource limits. example_input:{sample_id,inputs:{field:{type,uri or items:[{uri}] or value}}}. Joint multi-image is one sample, batch is multiple samples. Never imply training is implemented or performed.', 'turns':[t for t in turns if t['role']=='user'],'previous_contract':normalize_contract(versions[-1]['contract']) if versions else None}
+        active=normalize_contract(versions[-1]['contract']) if versions else {}
+        previous=normalize_contract(versions[-1].get('proposed_contract',active)) if versions else {}
+        prompt['previous_contract']=previous
+        prompt['active_contract']=active
+        prompt['recent_dialogue']=turns[-12:]
+        prompt['brief_rules']='Collect ONLY input, output, data source and validation goal. Ask only missing fields; preserve answered facts from the working draft and dialogue. Select model, optimizer, data split and interface representation as explicit defaults, never user questions. Add data_source: {kind: local/public/unknown, location: user supplied path or public dataset scope, download_allowed: boolean}. Never infer download permission; public data selection and download are separate decisions. Add acceptance.mode: target or baseline. If the user does not know a target, recommend baseline and use mode=baseline, threshold=null; this is exploration, never acceptance or training authorization. Once the four fields are known, set open_questions to [] (apart from a missing GPU budget) and move to experiment preparation. Do not ask about model choice, GPU hours or numerical acceptance targets during baseline clarification. Preserve explicit target thresholds exactly.'
         questions=task_questions(previous)
         prompt['reply_context']={'question_shown_to_user':questions[0] if questions and not versions[-1].get('review_required') else None,
                                  'user_reply':message,
@@ -381,6 +416,11 @@ class Sessions:
             contract=normalize_contract(json.loads(text))
             if not isinstance(contract,dict):raise ValueError('Model contract must be an object')
             json.dumps(contract,allow_nan=False)
+            if versions:
+                working=versions[-1].get('proposed_contract',versions[-1]['contract'])
+                if 'data_source' not in contract and 'data_source' in working:
+                    # Omission is not a request to forget an answered source.
+                    contract['data_source']=working['data_source']
             guidance=contract.pop('assistant_message',None)
             if isinstance(guidance,str) and guidance.strip():assistant_message=guidance.strip()
             if len(responses)>1:

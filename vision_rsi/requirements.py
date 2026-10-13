@@ -11,7 +11,7 @@ def changes(previous,proposed):
             result.append({'path':path,'before':copy.deepcopy(before),'after':copy.deepcopy(after)})
     if previous.get('goal'):
         compare('goal',previous['goal'],proposed.get('goal'))
-    for key in ('inputs','output_schema'):
+    for key in ('inputs','output_schema','data_source'):
         if previous.get(key):compare(key,previous[key],proposed.get(key))
     old=previous.get('acceptance') or {};new=proposed.get('acceptance') or {}
     if isinstance(old,dict):

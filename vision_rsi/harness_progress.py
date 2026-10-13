@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 from .campaign import lease
-from .contracts import issues
+from .contracts import interface_issues
 from .runner import atomic_json, digest
 
 
@@ -21,8 +21,7 @@ def _location(session, root):
     if latest.get('review_required'):
         raise ValueError('先确认当前需求草案，再构建 harness。')
     contract = latest['contract']
-    blockers = [item for item in issues(contract)
-                if '预算' not in item and not item.startswith('待澄清:')]
+    blockers = interface_issues(contract)
     if blockers:
         raise ValueError('任务接口尚不完整：' + '; '.join(blockers))
     binding = {'session_id': session_id, 'task_id': session['task_id'],
