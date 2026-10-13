@@ -23,6 +23,7 @@ class TrainingShellTests(unittest.TestCase):
             config=root/'config.json';config.write_text('{"llm":{},"remote":{}}')
             output=io.StringIO()
             with patch('builtins.input',side_effect=['开始吧','继续','查看进度','/quit']), \
+                    patch('vision_rsi.intent.resolve',side_effect=[{'action':a,'reason':'test','reply':''} for a in ('advance','advance','status')]), \
                     patch.object(Sessions,'clarify') as clarify,contextlib.redirect_stdout(output):
                 main(['show','--session-id',created['session_id'],'--sessions',str(store.root),
                       '--run-store',str(root/'runs'),'--harness-root',str(root/'harness'),
@@ -80,6 +81,7 @@ class TrainingShellTests(unittest.TestCase):
             output=io.StringIO()
             with patch('vision_rsi.contracts.OpenAICompatibleClient') as client, \
                     patch('builtins.input',side_effect=['给我建议','给我建议','/quit']), \
+                    patch('vision_rsi.intent.resolve',return_value={'action':'clarify','reason':'test','reply':''}), \
                     contextlib.redirect_stdout(output):
                 client.return_value.complete.return_value={'content':json.dumps(response)}
                 main(['show','--session-id',created['session_id'],'--sessions',str(store.root),
@@ -115,6 +117,7 @@ class TrainingShellTests(unittest.TestCase):
             self.assertNotIn('Harness',text)
             config=root/'config.json';config.write_text('{}')
             with patch('builtins.input',side_effect=['是','/quit']), \
+                    patch('vision_rsi.intent.resolve',return_value={'action':'accept','reason':'test','reply':''}), \
                     patch.object(Sessions,'clarify') as clarify,contextlib.redirect_stdout(io.StringIO()):
                 main(['show','--session-id',result['session_id'],'--sessions',str(root/'sessions'),
                       '--config',str(config),'--interactive'])
@@ -133,9 +136,11 @@ class TrainingShellTests(unittest.TestCase):
             with patch('vision_rsi.contracts.OpenAICompatibleClient') as client:
                 client.return_value.complete.return_value={'content':json.dumps(proposed)}
                 store.clarify(result['session_id'],{},'继续')
+            config=root/'config.json';config.write_text('{}')
             with patch('builtins.input',side_effect=['否','/quit']), \
+                    patch('vision_rsi.intent.resolve',return_value={'action':'reject','reason':'test','reply':''}), \
                     patch.object(Sessions,'clarify') as clarify,contextlib.redirect_stdout(io.StringIO()):
-                main(['show','--session-id',result['session_id'],'--sessions',str(root/'sessions'),'--interactive'])
+                main(['show','--session-id',result['session_id'],'--sessions',str(root/'sessions'),'--config',str(config),'--interactive'])
             clarify.assert_not_called()
             self.assertEqual(store.show(result['session_id'])['versions'][-1]['contract'],contract)
 
@@ -201,17 +206,13 @@ class TrainingShellTests(unittest.TestCase):
             candidate_module=None,candidate_store='candidates',run_id='saved-run',output=None,
             research_root='task-research',repository='source-repo',research_watch_turns=4,harness_root='task-harnesses')
 
-    def test_launch_phrases_dispatch_construction_but_not_negative_or_descriptive_text(self):
-        with patch('vision_rsi.training_cli.main') as invoke, contextlib.redirect_stdout(io.StringIO()):
-            for command in ('启动','启动吧！','启动实验','开始实验',' 启动。 '):
-                self.assertTrue(interactive_action(command,'session',self.settings()))
-                args=invoke.call_args.args[0]
-                self.assertEqual(args[0],'harness-advance')
-                self.assertIn('--autonomous',args)
-            count=invoke.call_count
-            for message in ('不要启动','启动不了','启动之前先修改需求'):
+    def test_natural_language_is_never_dispatched_by_the_slash_command_parser(self):
+        with patch('vision_rsi.training_cli.main') as invoke:
+            for message in ('启动','继续','开始吧','生成后端','查看进度','确认','否','不要启动'):
                 self.assertFalse(interactive_action(message,'session',self.settings()))
-            self.assertEqual(invoke.call_count,count)
+            invoke.assert_not_called()
+            self.assertTrue(interactive_action('/harness-next','session',self.settings()))
+            self.assertIn('--autonomous',invoke.call_args.args[0])
 
     def test_general_research_shell_preserves_repository_and_limits(self):
         args=self.settings()

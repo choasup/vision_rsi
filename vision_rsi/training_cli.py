@@ -12,14 +12,6 @@ from .contracts import Sessions, GPU_BUDGET_QUESTION, task_questions, validate_s
 
 def interactive_action(message,session,args):
     """Reuse the durable CLI actions; never send unknown slash commands to LLM."""
-    natural=message.strip().rstrip('。！!').strip()
-    if natural in ('开始','开始吧','开始执行','开始做吧','推进','继续推进','继续','下一步','准备训练','启动','启动吧','启动实验','开始实验'):
-        print('自动推进候选生成和已配置的隔离检查；遇到真实阻碍时停止。')
-        message='/harness-next'
-    elif natural=='检查资源':message='/readiness'
-    elif natural=='生成后端':message='/harness-generate'
-    elif natural=='测试后端':message='/harness-check'
-    elif natural in ('查看进度','进度'):message='/harness-status'
     actions={'/readiness':'readiness','/prepare':'prepare','/run':'advance','/watch':'watch','/status':'agent-status',
              '/job':'status','/logs':'logs','/pause':'agent-pause','/resume':'agent-resume',
              '/research':'research-step','/research-watch':'research-watch','/research-status':'research-status',
@@ -171,13 +163,13 @@ def conversation_summary(result):
 
 
 def review_action(message,result):
-    """Natural confirmations apply only to an explicitly displayed pending draft."""
+    """Explicit review commands apply only to the current pending draft."""
     if result.get('pending_request') or not result.get('versions'):
         return None
     if not result['versions'][-1].get('review_required'):
         return None
-    if message in ('是','确认','/accept'):return 'accept'
-    if message in ('否','/reject'):return 'reject'
+    if message=='/accept':return 'accept'
+    if message=='/reject':return 'reject'
     return None
 
 
@@ -761,9 +753,12 @@ def main(argv):
             print('直接用中文回答即可。不确定可以说“不知道”。/help 查看操作，/quit 保存退出。')
             show_summary=True
             prepared_contracts=set()
+            intent_dialogue=[]
+            shown=''
             while True:
                 if show_summary:
-                    print(conversation_summary(result))
+                    shown=conversation_summary(result)
+                    print(shown)
                     latest=result['versions'][-1] if result.get('versions') else {}
                     contract=latest.get('contract',{})
                     from .contracts import brief_questions,interface_issues
@@ -774,7 +769,9 @@ def main(argv):
                             and not interface_issues(contract) and identity not in prepared_contracts):
                         from .experiment_prep import prepare as prepare_experiment,summary as preparation_summary
                         try:
-                            print(preparation_summary(prepare_experiment(result,args.harness_root)))
+                            prepared_text=preparation_summary(prepare_experiment(result,args.harness_root))
+                            print(prepared_text)
+                            shown+='\n'+prepared_text
                             prepared_contracts.add(identity)
                         except (ValueError,OSError) as error:
                             print('实验准备未完成：'+str(error))
@@ -791,8 +788,28 @@ def main(argv):
                     current=store.show(session)
                     latest=current['versions'][-1] if current['versions'] else {}
                     contract={'active_contract':latest['contract'],'proposed_contract':latest['proposed_contract'],'draft_version':latest['version']} if latest.get('review_required') else latest.get('contract',{})
-                    print(json.dumps(contract,ensure_ascii=False,indent=2))
+                    shown=json.dumps(contract,ensure_ascii=False,indent=2)
+                    print(shown)
                     continue
+                if message and not message.startswith('/'):
+                    from .intent import resolve as resolve_intent
+                    try:
+                        result=store.show(session)
+                        config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
+                        decision=resolve_intent(message,result,config,args.harness_root,shown,intent_dialogue)
+                    except (ValueError,TypeError,KeyError,OSError,RuntimeError) as error:
+                        print('未能可靠判断本次意图，未执行操作。请重述，或用 /help 查看显式命令。原因：'+str(error))
+                        continue
+                    intent_dialogue.append({'user':message,'decision':decision})
+                    intent=decision['action']
+                    if intent in ('explain','stop'):
+                        shown=(decision['reply'] if intent=='explain' else '已停止继续推进；已提交的远端作业不会因此取消。')
+                        print(shown)
+                        continue
+                    if intent!='clarify':
+                        message={'advance':'/harness-next','generate':'/harness-generate',
+                                 'check':'/harness-check','status':'/harness-status',
+                                 'accept':'/accept','reject':'/reject'}[intent]
                 action=review_action(message,result)
                 if action:
                     result=getattr(store,action)(session,result['versions'][-1]['version'])
@@ -806,7 +823,8 @@ def main(argv):
                     continue
                 if message=='/show':
                     result=store.show(session)
-                    print(summary(result))
+                    shown=summary(result)
+                    print(shown)
                 elif message:
                     result=clarify(session,message)
                     show_summary=True
