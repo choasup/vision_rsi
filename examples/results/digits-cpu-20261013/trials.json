@@ -1,0 +1,32 @@
+[
+  {
+    "C": 0.1,
+    "development_correct": 339,
+    "development_total": 359,
+    "development_accuracy": 0.9442896935933147,
+    "training_seconds": 0.01618474500719458,
+    "iterations": [
+      46
+    ]
+  },
+  {
+    "C": 1.0,
+    "development_correct": 344,
+    "development_total": 359,
+    "development_accuracy": 0.958217270194986,
+    "training_seconds": 0.021571907011093572,
+    "iterations": [
+      72
+    ]
+  },
+  {
+    "C": 10.0,
+    "development_correct": 342,
+    "development_total": 359,
+    "development_accuracy": 0.9526462395543176,
+    "training_seconds": 0.026700770991737954,
+    "iterations": [
+      89
+    ]
+  }
+]

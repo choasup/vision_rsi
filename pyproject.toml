@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
+cpu = ["scikit-learn==1.8.0"]
 media = ["Pillow==12.3.0"]
 coco = ["pycocotools==2.0.11", "Pillow==12.3.0"]
 
