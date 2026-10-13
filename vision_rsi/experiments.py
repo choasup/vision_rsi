@@ -108,7 +108,8 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None,research_hi
     if receipt['run_id']!=record['run_id']:raise ValueError('Parent receipt belongs to another run')
     verdict=review(parent,receipt)
     if verdict['passed']:raise ValueError('Training target met; validate serving instead of searching further')
-    remaining=runs.remaining(parent['session_id'],parent['contract']['budget']['gpu_hours'])
+    per_experiment=parent['contract'].get('gpu_budget_scope')=='experiment'
+    remaining=parent['contract']['budget']['gpu_hours'] if per_experiment else runs.remaining(parent['session_id'],parent['contract']['budget']['gpu_hours'])
     if remaining*3600/parent['recipe']['world_size']<6:return {'status':'budget_exhausted','remaining_gpu_hours':remaining}
     root=native_path(root);root.mkdir(parents=True,exist_ok=True)
     context={'run_id':record['run_id'],'parent_plan_id':record['plan_id'],'receipt_sha256':digest(receipt),
@@ -193,7 +194,8 @@ def propose_next(record,runs,llm,root,request_id,research_brief=None,research_hi
             text=response['content'].strip()
             if text.startswith('```'):text=text.split('\n',1)[1].rsplit('```',1)[0]
             proposal=json.loads(text);json.dumps(proposal,allow_nan=False)
-            result=compile_plan(parent,record,proposal,runs.remaining(parent['session_id'],parent['contract']['budget']['gpu_hours']),root/'plans',research_brief)
+            remaining=parent['contract']['budget']['gpu_hours'] if per_experiment else runs.remaining(parent['session_id'],parent['contract']['budget']['gpu_hours'])
+            result=compile_plan(parent,record,proposal,remaining,root/'plans',research_brief)
         except (ValueError,TypeError,KeyError,AttributeError) as error:
             result={'status':'proposal_rejected','reason':str(error),'training_performed':False}
             if research_brief is not None:result['strategy_brief_sha256']=digest(research_brief)

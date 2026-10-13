@@ -75,6 +75,7 @@ def configured_resources(contract):
     budget=contract.get('budget')
     result={'status':'resource_binding_required','class_labels_from_contract':classes,
             'gpu_budget_from_contract':budget.get('gpu_hours') if isinstance(budget,dict) else None,
+            'gpu_budget_scope':contract.get('gpu_budget_scope','session'),
             'dataset_bound':False,'example_uri_is_dataset':False,
             'declared_data_source':contract.get('data_source'),
             'clarification_questions':[

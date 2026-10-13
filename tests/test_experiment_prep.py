@@ -57,7 +57,7 @@ class ExperimentPreparationTests(unittest.TestCase):
     def test_refining_pending_draft_keeps_working_draft_and_active_contract_separate(self,client):
         active=copy.deepcopy(self.contract)
         active['acceptance'].update(mode='target',threshold=80)
-        self.store.define(self.sid,active)
+        active=self.store.define(self.sid,active)['versions'][-1]['contract']
         proposed=copy.deepcopy(active);proposed['goal']='更改后的分类目标'
         client.return_value.complete.return_value={'content':json.dumps(proposed)}
         first=self.store.clarify(self.sid,{},'修改目标')

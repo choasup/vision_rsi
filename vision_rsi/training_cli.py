@@ -154,6 +154,8 @@ def conversation_summary(result):
             lines.append('输入、输出、数据来源和验证目标已齐全；接下来检查实验环境。')
         if GPU_BUDGET_QUESTION in (contract.get('open_questions') or []):
             lines.append('GPU 预算可等准备训练时再设置；现在不会启动训练。')
+        if contract.get('gpu_budget_scope')=='experiment':
+            lines.append('每轮实验 GPU 小时上限：'+str(contract['budget']['gpu_hours'])+'；恢复与重试共享该轮预算。')
         if supported:
             lines.append('下一步：输入 /prepare 检查训练资源；这一步不会启动训练。')
         else:
@@ -210,7 +212,7 @@ def summary(result):
         lines.append('草案版本: '+str(latest['version'])+'；/accept 接受，/reject 保留原要求；也可继续自然语言修正。')
     elif result['status']=='task_defined':
         lines.append('需求已保存，无需重复说明。Agent 会选择模型和训练方法。')
-        if not contract.get('budget'): lines.append('执行前待补充: 最多允许多少 GPU 小时（8 卡运行 1 小时 = 8 GPU 小时）。')
+        if not contract.get('budget'): lines.append('旧任务尚无执行预算；请设置一次初始上限。新任务默认每轮 100 GPU 小时。')
         else: lines.append('执行前会核查剩余问题；/contract 可查看完整定义。')
     elif latest['issues']:
         questions=task_questions(contract)

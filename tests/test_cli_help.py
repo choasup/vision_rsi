@@ -16,7 +16,7 @@ class CLIHelpTests(unittest.TestCase):
             self.assertIn('training start --task-id',output)
             self.assertIn('training readiness',output)
             self.assertIn('test --task-id TASK --manifest',output)
-            self.assertIn('explicit task budget',output)
+            self.assertIn('100 GPU-hours per experiment',output)
             self.assertIn('synthetic fixtures',output)
             self.assertIn('video training are incomplete',output)
 

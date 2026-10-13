@@ -16,7 +16,7 @@ def show_help():
   test --task-id TASK --input sample.json
   test --task-id TASK --manifest samples.jsonl --output-dir results
 
-Use COMMAND --help for options. Training requires an explicit task budget.
+Use COMMAND --help for options. New tasks default to 100 GPU-hours per experiment.
 Test requires a registered, validated capability; task definition alone is insufficient.
 Single, joint-image and video inputs follow the task contract. General model/harness
 adaptation and video training are incomplete; current real training uses the COCO adapter.

@@ -39,11 +39,15 @@ class TrainingRuns:
                         [*row[:3],json.loads(row[3]),*row[4:7],json.loads(row[7])]))
     def list(self,session):
         return [self.get(row[0]) for row in self.db.execute('SELECT id FROM runs WHERE session=? ORDER BY created',(session,)).fetchall()]
-    def remaining(self,session,total):
+    def remaining(self,session,total,plan_id=None):
         if isinstance(total,bool) or not isinstance(total,(int,float)) or not math.isfinite(total) or total<=0:raise ValueError('Invalid session GPU budget')
-        frozen=self.db.execute('SELECT gpu_hours FROM budgets WHERE session=?',(session,)).fetchone()
+        key=session if plan_id is None else session+':experiment:'+plan_id
+        frozen=self.db.execute('SELECT gpu_hours FROM budgets WHERE session=?',(key,)).fetchone()
         if frozen and frozen[0]!=total:raise ValueError('Session GPU budget changed; no implicit authorization increase')
-        used=self.db.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM runs WHERE session=?',(session,)).fetchone()[0]
+        query='SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM runs WHERE session=?'
+        args=(session,)
+        if plan_id is not None:query+=' AND plan=?';args+=(plan_id,)
+        used=self.db.execute(query,args).fetchone()[0]
         return max(0,total-used)
     def update(self,run_id,state,details,actual=None):
         with self.db:self.db.execute('UPDATE runs SET state=?,details=?,actual=? WHERE id=?',(state,json.dumps(details),actual,run_id))
@@ -53,6 +57,8 @@ class TrainingRuns:
         from .training_plan import require_supported_budget
         require_supported_budget(plan['contract'])
         scheduler=dict(plan['scheduler']);total=plan['contract']['budget']['gpu_hours']
+        per_experiment=plan['contract'].get('gpu_budget_scope')=='experiment'
+        budget_key=plan['session_id']+':experiment:'+plan['plan_id'] if per_experiment else plan['session_id']
         identity={'session':plan['session_id'],'plan':plan['plan_id'],'remote':remote_identity(remote)}
         if attempt is not None: identity['attempt']=attempt
         run_id='train-'+digest(identity)[:32]
@@ -64,9 +70,16 @@ class TrainingRuns:
                 pending=self.db.execute('SELECT details FROM runs WHERE session=? AND actual IS NULL',(plan['session_id'],)).fetchall()
                 if any(json.loads(row[0]).get('output_directory')==active_output for row in pending):
                     raise ValueError('Another active or uncertain attempt owns this Training output')
-            previous=self.db.execute('SELECT gpu_hours FROM budgets WHERE session=?',(plan['session_id'],)).fetchone()
+            if per_experiment and self.db.execute('SELECT 1 FROM budgets WHERE session=?',(plan['session_id'],)).fetchone():
+                raise ValueError('Existing session budget cannot be converted to per-experiment accounting')
+            if not per_experiment and self.db.execute('SELECT 1 FROM budgets WHERE session LIKE ?',(plan['session_id']+':experiment:%',)).fetchone():
+                raise ValueError('Existing per-experiment budget cannot be converted to session accounting')
+            previous=self.db.execute('SELECT gpu_hours FROM budgets WHERE session=?',(budget_key,)).fetchone()
             if previous and previous[0]!=total: raise ValueError('Session GPU budget changed; explicit budget revision support is pending')
-            used=self.db.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM runs WHERE session=?',(plan['session_id'],)).fetchone()[0]
+            query='SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM runs WHERE session=?'
+            args=(plan['session_id'],)
+            if per_experiment:query+=' AND plan=?';args+=(plan['plan_id'],)
+            used=self.db.execute(query,args).fetchone()[0]
             devices=len(scheduler['gpu_devices'])
             if cap_to_remaining:
                 if not devices: raise ValueError('GPU devices required for Training resume')
@@ -75,7 +88,7 @@ class TrainingRuns:
             if not math.isfinite(reserved) or reserved<=0 or scheduler['timeout_seconds']<=0 or reserved>total:
                 raise ValueError('Insufficient remaining Training budget')
             if used+reserved>total+1e-12: raise ValueError('Session GPU budget exhausted by completed or reserved runs')
-            self.db.execute('INSERT OR IGNORE INTO budgets VALUES (?,?)',(plan['session_id'],total))
+            self.db.execute('INSERT OR IGNORE INTO budgets VALUES (?,?)',(budget_key,total))
             details={'plan_path':plan['plan_path'],'job_id':run_id,'phase':'reserved','scheduler':scheduler}
             if active_output: details['output_directory']=active_output
             self.db.execute('INSERT INTO runs VALUES (?,?,?,?,?,NULL,?,?,?)',(run_id,plan['session_id'],plan['plan_id'],json.dumps(remote_identity(remote)),reserved,'reserved',json.dumps(details),time.time()))
