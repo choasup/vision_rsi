@@ -70,6 +70,8 @@ sh ./vision-rsi.sh llm-check --config config.local.json
 sh ./vision-rsi.sh training start --task-id mac-trial --interactive --config config.local.json
 ```
 
+再次运行相同 `training start --task-id mac-trial --interactive` 会恢复已有会话；有多个时显示摘要供选择。只有明确加 `--new-session` 才会为已有任务另建会话。继续使用原来的工作目录（或相同 `--sessions` 路径），以找到已有记录。
+
 自然语言描述目标、输入、输出和验收要求。用 `/show`、`/contract` 检查理解，`/prepare` 核对资源。确认后才显式启动训练。新任务需要明确初始 GPU 预算，不自动继承现有 COCO 会话的192 GPU小时授权。
 
 需求确认后可以输入“开始吧”：程序会生成任务规格和接口校验程序，实际检查输入输出示例。缺少内置后端时，“开始吧”或“继续”会调用 LLM 编写候选代码，并在已配置的 Linux 远端隔离环境检查协议；明确失败时自动修复一次，不再要求逐个输入内部命令。缺少执行条件时停止并显示具体阻碍。Mac 不会直接执行模型生成的代码。

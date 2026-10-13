@@ -238,6 +238,42 @@ class Sessions:
         return [{'session_id': r['session_id'], 'task_id': r['task_id'], 'status': r['status'],
                  'contract_version': len(r['versions'])} for r in (self.show(row[0]) for row in rows)]
 
+    def start(self,name,goal=None,new_session=False,session_id=None):
+        """Atomically resume a task or explicitly create another conversation."""
+        task_id(name)
+        if new_session and session_id:
+            raise ValueError('--new-session cannot be combined with --session-id')
+        selected=None;created=False;matches=[]
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if session_id:
+                row=db.execute('SELECT task FROM sessions WHERE id=?',(session_id,)).fetchone()
+                if not row or row[0]!=name:
+                    raise ValueError('所选会话不存在或不属于当前 task-id。')
+                selected=session_id
+            elif not new_session:
+                matches=[row[0] for row in db.execute('SELECT id FROM sessions WHERE task=? ORDER BY rowid DESC',(name,))]
+                if len(matches)==1:selected=matches[0]
+            if not selected and (new_session or not matches):
+                if not isinstance(goal,str) or not goal.strip():
+                    return {'status':'goal_required'}
+                selected=uuid.uuid4().hex;created=True
+                db.execute('INSERT INTO sessions VALUES (?,?,?,?,0)',
+                           (selected,name,json.dumps([{'role':'user','content':goal}],ensure_ascii=False),'[]'))
+        if selected:
+            return {'status':'created' if created else 'resumed','session':self.show(selected)}
+        choices=[]
+        for candidate in matches:
+            saved=self.show(candidate)
+            latest=saved['versions'][-1] if saved['versions'] else {}
+            contract=latest.get('proposed_contract',latest.get('contract',{}))
+            initial=saved['turns'][0]['content'] if saved['turns'] else ''
+            last_user=next((turn['content'] for turn in reversed(saved['turns']) if turn['role']=='user'),'')
+            choices.append({'session_id':candidate,'task_id':name,'status':saved['status'],
+                            'contract_version':len(saved['versions']),'goal':contract.get('goal') or initial,
+                            'last_user_message':last_user,'pending_request':saved['pending_request']})
+        return {'status':'selection_required','task_id':name,'sessions':choices}
+
     def create(self,name,goal):
         task_id(name)
         if not isinstance(goal,str) or not goal.strip(): raise ValueError('goal is required')

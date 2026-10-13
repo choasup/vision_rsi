@@ -284,6 +284,7 @@ def main(argv):
     parser=argparse.ArgumentParser(prog='vision-rsi training')
     parser.add_argument('action',choices=['harness-advance','harness-status','harness-generate','harness-smoke','harness-plan','start','reply','show','budget','accept','reject','recover','abandon-request','list','build','prepare','advance','watch','campaigns','audit','memory','readiness','release-status','research-init','research-step','research-status','research-watch','research-pause','research-resume','agent-status','agent-pause','agent-resume','status','logs','cancel','collect','resume','register','register-candidate','accept-candidate','candidate-acceptance-status','candidate-serving-check','candidate-infer','promote-candidate','deliver-candidate','delivery-status','select-candidate','serving-evaluate','runs','diagnose','define','validate','export','run'])
     parser.add_argument('--task-id');parser.add_argument('--session-id')
+    parser.add_argument('--new-session',action='store_true',help='Explicitly create a fresh session for start, preserving all existing sessions')
     parser.add_argument('--goal');parser.add_argument('--requirements');parser.add_argument('--message')
     parser.add_argument('--gpu-hours',type=float,help='Explicit initial GPU-hour cap; never resets an existing execution budget')
     parser.add_argument('--contract');parser.add_argument('--sample');parser.add_argument('--result');parser.add_argument('--output')
@@ -323,6 +324,8 @@ def main(argv):
     parser.add_argument('--check-backend',action='store_true',help='Authorize the backend isolated protocol check')
     parser.add_argument('--select-development',action='store_true',help='Select from frozen paused development research before delivery; replaces --version')
     args=parser.parse_args(argv)
+    if args.new_session and args.action!='start':parser.error('--new-session is only supported for start')
+    if args.new_session and args.session_id:parser.error('--new-session cannot be combined with --session-id')
     if args.action in ('harness-advance','harness-status'):
         from .harness_progress import advance as advance_harness,status as harness_status,summary as harness_summary
         if not args.session_id:parser.error('harness progress requires --session-id')
@@ -680,14 +683,51 @@ def main(argv):
             print(json.dumps(store.list(),ensure_ascii=False,indent=2))
             return
         if args.action=='start':
-            goal=Path(args.requirements).read_text(encoding='utf-8') if args.requirements else args.goal
-            if args.interactive and (not goal or goal.strip().lower()=='describe requirements'):
-                goal=input('你想完成什么任务？例如：输入一张图片，判断是猫还是狗。\n> ').strip()
-            result=store.create(args.task_id,goal)
-            session=result['session_id']
-            print('session_id: '+session,flush=True)
-            if args.contract: result=store.define(session,json.loads(Path(args.contract).read_text(encoding='utf-8')))
-            elif not args.offline: result=clarify(session)
+            # Resolve existing work before prompting for a goal or reading files.
+            opening=store.start(args.task_id,session_id=args.session_id,new_session=args.new_session)
+            if opening['status']=='goal_required':
+                goal=Path(args.requirements).read_text(encoding='utf-8') if args.requirements else args.goal
+                if args.interactive and (not goal or goal.strip().lower()=='describe requirements'):
+                    try:goal=input('你想完成什么任务？例如：输入一张图片，判断是猫还是狗。\n> ').strip()
+                    except (EOFError,KeyboardInterrupt):
+                        print('已取消；未新建会话。');return
+                if not goal or not goal.strip():raise ValueError('新任务需要 --goal，或使用 --interactive 描述目标。')
+                # Another process may have created this task while we prompted.
+                opening=store.start(args.task_id,goal,new_session=args.new_session)
+            if opening['status']=='selection_required':
+                if args.json:
+                    print(json.dumps(opening,ensure_ascii=False,indent=2))
+                else:
+                    print('同一任务有多个会话，请选择要恢复的记录（按创建时间由新到旧）：')
+                    for index,choice in enumerate(opening['sessions'],1):
+                        goal=' '.join(str(choice['goal']).split())[:160]
+                        last=' '.join(str(choice['last_user_message']).split())[:120]
+                        print(str(index)+'. '+choice['session_id']+' | '+choice['status']+' | 需求版本 '+str(choice['contract_version']))
+                        print('   目标：'+goal+'\n   最近输入：'+last)
+                    print('可指定 --session-id 恢复；明确重新开始时使用 --new-session。')
+                if not args.interactive or args.json:
+                    parser.exit(2)
+                while True:
+                    try:selection=input('输入编号或完整 session_id；/quit 退出：').strip()
+                    except (EOFError,KeyboardInterrupt):
+                        print('已取消；未新建会话。');return
+                    if selection=='/quit':return
+                    choices=opening['sessions']
+                    selected=next((choice['session_id'] for choice in choices if choice['session_id']==selection),None)
+                    if selected is None and selection.isascii() and selection.isdigit() and len(selection)<8:
+                        number=int(selection)
+                        if 1<=number<=len(choices):selected=choices[number-1]['session_id']
+                    if selected:
+                        opening=store.start(args.task_id,session_id=selected)
+                        break
+                    print('选择无效，请输入列表中的编号或完整 session_id。')
+            result=opening['session'];session=result['session_id']
+            if not args.json:print(('已恢复会话。' if opening['status']=='resumed' else '已创建会话。')+'session_id: '+session,flush=True)
+            if opening['status']=='created':
+                if args.contract:result=store.define(session,json.loads(Path(args.contract).read_text(encoding='utf-8')))
+                elif not args.offline:result=clarify(session)
+            elif not args.json and any((args.goal,args.requirements,args.contract)):
+                print('已保留原需求；--goal、--requirements、--contract 仅用于新建。修改需求请在会话中描述。')
         else:
             session=args.session_id
             result=store.show(session)
