@@ -68,8 +68,9 @@ def configured_resources(contract):
     source=contract.get('data_source')
     source=source if isinstance(source,dict) else {}
     classes=(contract.get('output_schema') or {}).get('properties',{}).get('label',{}).get('enum')
-    return {'status':'resource_binding_required','class_labels_from_contract':classes,
-            'gpu_budget_from_contract':(contract.get('budget') or {}).get('gpu_hours'),
+    budget=contract.get('budget')
+    result={'status':'resource_binding_required','class_labels_from_contract':classes,
+            'gpu_budget_from_contract':budget.get('gpu_hours') if isinstance(budget,dict) else None,
             'dataset_bound':False,'example_uri_is_dataset':False,
             'declared_data_source':contract.get('data_source'),
             'clarification_questions':[
@@ -81,3 +82,7 @@ def configured_resources(contract):
                                     '复核原任务指标、刻度与剩余预算'],
             'acceptance_metric':acceptance.get('metric'),
             'scope':'Questions only; no resource inspection, download or user authorization inferred.'}
+
+    if budget is not None and not isinstance(budget,dict):
+        result['budget_issue']='预算格式无效：需要对象（例如 gpu_hours 字段）；原始值已保留，未推定资源授权。'
+    return result

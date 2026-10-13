@@ -9,7 +9,7 @@ from .llm import OpenAICompatibleClient
 from .runner import atomic_json
 
 
-ACTIONS=frozenset(('advance','generate','check','status','accept','reject','stop','clarify','explain'))
+ACTIONS=frozenset(('advance','generate','check','status','accept','reject','stop','clarify','explain','data'))
 
 
 def resolve(message, session, config, root, shown, dialogue):
@@ -28,11 +28,14 @@ def resolve(message, session, config, root, shown, dialogue):
              'review_required':bool(latest.get('review_required')),
              'pending_request':bool(session.get('pending_request')),
              'shown_to_user':shown,'progress':progress,
+             'capabilities':{'candidate_generation':True,'configured_cpu_checks':True,
+                             'dataset_search':False,'dataset_download':False,'general_gpu_training':False},
              'requirement_dialogue':session.get('turns',[])[-12:],
              'recent_interaction':dialogue[-12:]}
     system='''Infer the user's conversational intent using meaning, negation, temporal scope and the supplied task state, not keyword matching. Return JSON only: {"action": ..., "reason": ..., "reply": ...}.
 Allowed actions:
-advance: user requests proceeding with the current plan; controller may generate a candidate and run configured CPU isolation checks. This cannot launch GPU training.
+data: user requests finding, selecting or downloading training data. This is separate from candidate generation; the controller will report that dataset search/download execution is not connected. Never map this request to advance merely because the user wants progress.
+advance: user requests proceeding with candidate construction in the current plan; controller may generate a candidate and run configured CPU isolation checks. This cannot launch GPU training.
 generate: user specifically requests candidate source generation only.
 check: user specifically requests candidate isolated checking only.
 status: user asks to inspect saved progress.

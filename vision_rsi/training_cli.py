@@ -802,6 +802,10 @@ def main(argv):
                         continue
                     intent_dialogue.append({'user':message,'decision':decision})
                     intent=decision['action']
+                    if intent=='data':
+                        shown='当前尚未接入公开数据搜索和下载执行器；本次未下载数据，也未生成后端。可以提供已下载的数据路径继续准备。'
+                        print(shown)
+                        continue
                     if intent in ('explain','stop'):
                         shown=(decision['reply'] if intent=='explain' else '已停止继续推进；已提交的远端作业不会因此取消。')
                         print(shown)

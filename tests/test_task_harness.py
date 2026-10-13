@@ -2,7 +2,7 @@ import copy
 import tempfile
 import unittest
 
-from vision_rsi.task_harness import plan
+from vision_rsi.task_harness import plan, configured_resources
 from vision_rsi.classification_eval import evaluate
 
 
@@ -26,6 +26,17 @@ class TaskHarnessTests(unittest.TestCase):
             session['versions'][0]['contract']['acceptance']['threshold']=90
             self.assertNotEqual(first['plan_id'],plan(session,root)['plan_id'])
         self.assertEqual(original['versions'][0]['contract']['acceptance']['threshold'],80)
+
+    def test_budget_shape_is_checked_before_resource_extraction(self):
+        for budget in (10,0,True,'10',[10]):
+            with self.subTest(budget=budget):
+                result=configured_resources({'budget':budget})
+                self.assertIsNone(result['gpu_budget_from_contract'])
+                self.assertIn('budget_issue',result)
+        for budget,expected in ((None,None),({},None),({'gpu_hours':10},10)):
+            result=configured_resources({'budget':budget})
+            self.assertEqual(result['gpu_budget_from_contract'],expected)
+            self.assertNotIn('budget_issue',result)
 
     def test_accuracy_units_and_complete_coverage(self):
         truth=[{'sample_id':'1','label':'cat'},{'sample_id':'2','label':'dog'}]

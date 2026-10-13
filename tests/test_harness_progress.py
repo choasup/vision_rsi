@@ -79,6 +79,22 @@ class HarnessProgressTests(unittest.TestCase):
         self.assertEqual(run_until_blocked(self.session,self.config,self.output,self.repo)['status'],'repair_limit_reached')
         self.assertEqual(client.return_value.complete.call_count,2)
 
+    def test_saved_scalar_budget_resumes_without_crash_or_inferred_authorization(self):
+        self.contract['budget']=10
+        self.contract['acceptance'].update(mode='baseline',threshold=None)
+        self.session=self.store.define(self.session['session_id'],self.contract)
+        with patch('vision_rsi.llm.OpenAICompatibleClient') as client:
+            first=self.run_step()
+            restored=self.store.show(self.session['session_id'])
+            again=advance(restored,self.config,self.output,self.repo)
+        client.assert_not_called()
+        self.assertEqual(first['status'],'awaiting_generation')
+        self.assertEqual(first['plan'],again['plan'])
+        self.assertIsNone(first['plan']['resource_requirements']['gpu_budget_from_contract'])
+        self.assertIn('预算格式无效',first['plan']['resource_requirements']['budget_issue'])
+        self.assertEqual(restored['versions'][-1]['contract']['budget'],10)
+        self.assertFalse(first['training_performed'])
+
     def run_step(self,**kwargs):
         return advance(self.session,self.config,self.output,self.repo,**kwargs)
 

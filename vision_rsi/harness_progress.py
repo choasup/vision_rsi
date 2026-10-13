@@ -308,6 +308,8 @@ def summary(result):
         lines.append('接口校验程序：' + result['interface']['directory'])
     if result.get('candidate_source'):
         lines.append('候选源码：' + result['candidate_source'])
+    budget_issue=result.get('plan',{}).get('resource_requirements',{}).get('budget_issue')
+    if budget_issue:lines.append(budget_issue)
     lines.append('下一步：' + result['next_step'])
     if result.get('autonomous_construction'):
         lines.append('输入“查看进度”可查看完整记录和产物路径。')

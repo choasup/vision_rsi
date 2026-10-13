@@ -77,6 +77,16 @@ class IntentTests(unittest.TestCase):
                   '--config',str(self.config),'--interactive'])
         self.assertEqual(dispatch.call_args.args[0],'/harness-next')
 
+    def test_data_request_does_not_dispatch_backend_generation(self):
+        with patch('builtins.input',side_effect=['你自己搜索搜索下载','/quit']), \
+                patch('vision_rsi.intent.resolve',return_value={'action':'data','reason':'获取数据','reply':''}), \
+                patch('vision_rsi.training_cli.interactive_action') as dispatch, \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            main(['show','--session-id',self.sid,'--sessions',str(self.root/'sessions'),
+                  '--config',str(self.config),'--interactive'])
+        dispatch.assert_not_called()
+        self.assertIn('未下载数据，也未生成后端',output.getvalue())
+
     def test_router_failure_leaves_session_and_execution_untouched(self):
         before=self.store.show(self.sid)
         with patch('builtins.input',side_effect=['执行一下','/quit']), \
