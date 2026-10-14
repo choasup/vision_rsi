@@ -10,7 +10,7 @@ COCO 目标检测是第一个验证实验。项目面向不同视觉任务，包
 
 **macOS 用户：**参阅 [Mac 安装与运行](MACOS.md)，使用 `sh ./vision-rsi.sh`。Mac 负责交互和调度，训练继续在 Linux GPU 服务器执行。
 
-服务器端任务控制台的访问方式和当前范围见 [服务器部署说明](SERVER.md)。
+网页操作入口见 [Dashboard 试用](DASHBOARD.md)：查看任务、推进 Harness、查看后台日志，并运行真实 CPU 示例实验。服务器访问方式另见 [服务器部署说明](SERVER.md)。
 
 ## 两种使用模式
 

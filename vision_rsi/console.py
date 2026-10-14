@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 
 from .contracts import Sessions
 from .task_harness import configured_resources
-from .training_cli import summary
+from .training_cli import conversation_summary as summary
 
 
 def detail(store,session_id):
@@ -16,12 +16,14 @@ def detail(store,session_id):
     contract=session['versions'][-1]['contract'] if session['versions'] else {}
     return {'session':session,'summary':summary(session),
             'resources':configured_resources(contract) if contract else None,
-            'training_started':False,'scope':'Authoritative task requirements; execution control not yet connected to this console.'}
+            'training_started':False,'scope':'任务需求与 CLI 共用；候选构建可推进，通用训练尚未接通。'}
 
 
-def make_server(root,config,port):
+def make_server(root,config,port,*,sessions_root=None,harness_root=None,repository=None):
     root=Path(root).resolve();root.mkdir(parents=True,exist_ok=True)
-    sessions=Sessions(root/'sessions')
+    sessions=Sessions(sessions_root or root/'sessions')
+    from .console_jobs import Jobs, ARTIFACTS
+    jobs=Jobs(root,sessions.root,harness_root or root/'harnesses',repository or Path(__file__).resolve().parent.parent,config)
     sessions.list()  # Initialize schema before HTTP requests.
     token=secrets.token_urlsafe(32);host='127.0.0.1:'+str(port)
     page=Path(__file__).with_name('console.html').read_text(encoding='utf-8').replace('__TOKEN__',token)
@@ -42,11 +44,25 @@ def make_server(root,config,port):
             try:
                 if self.path=='/api/tasks':return self.send(200,sessions.list())
                 match=re.fullmatch('/api/tasks/([a-f0-9]{32})',self.path)
-                if match:return self.send(200,detail(sessions,match[1]))
+                if match:
+                    result=detail(sessions,match[1])
+                    from .harness_progress import status
+                    try:result['progress']=status(result['session'],jobs.harness_root)
+                    except (ValueError,KeyError,TypeError,OSError) as error:result['progress']={'status':'requirements_pending','next_step':str(error)}
+                    result['jobs']=[job for job in jobs.list() if job['task_id']==result['session']['task_id']]
+                    return self.send(200,result)
+                if self.path=='/api/jobs':return self.send(200,jobs.list())
+                match=re.fullmatch('/api/jobs/([a-f0-9]{32})',self.path)
+                if match:return self.send(200,jobs.show(match[1]))
+                match=re.fullmatch('/api/jobs/([a-f0-9]{32})/artifacts/([a-z.-]+)',self.path)
+                if match:
+                    job_id,name=match.groups()
+                    if name not in ARTIFACTS:raise ValueError('Unknown artifact')
+                    return self.send(200,json.loads((jobs.folder(job_id)/'experiment'/name).read_text()))
                 if self.path=='/api/health':
                     from .credentials import read_key
                     key,_=read_key(config.get('llm',{}).get('api_key_env','DEEPSEEK_API_KEY'))
-                    return self.send(200,{'status':'ready','storage':str(root),'execution_enabled':False,'llm_key_present':bool(key)})
+                    return self.send(200,{'status':'ready','storage':str(root),'execution_enabled':True,'general_training_enabled':False,'llm_key_present':bool(key)})
                 self.send(404,{'error':'Not found'})
             except (ValueError,KeyError,TypeError,OSError) as error:self.send(400,{'error':str(error)})
         def do_POST(self):
@@ -55,26 +71,40 @@ def make_server(root,config,port):
                 size=int(self.headers.get('Content-Length','0'))
                 if not 0<size<=20000:raise ValueError('Invalid body size')
                 value=json.loads(self.rfile.read(size))
+                if not isinstance(value,dict):raise ValueError('Body must be an object')
                 if self.path=='/api/tasks':
                     # Save first, then clarify separately. No GPU or API side
                     # effects are hidden behind creating a task.
                     goal=value['goal'];task=value['task_id']
                     if not isinstance(goal,str) or not 1<=len(goal)<=4000:raise ValueError('Goal required, at most 4000 characters')
-                    return self.send(200,sessions.create(task,goal))
-                match=re.fullmatch('/api/tasks/([a-f0-9]{32})/(reply|budget)',self.path)
+                    opening=sessions.start(task,goal)
+                    if opening['status']=='selection_required':return self.send(409,{'error':'该任务已有多个会话，请从左侧任务列表选择。'})
+                    return self.send(200,opening['session'])
+                if self.path=='/api/demo':return self.send(202,jobs.start('cpu-demo'))
+                match=re.fullmatch('/api/jobs/([a-f0-9]{32})/stop',self.path)
+                if match:return self.send(200,jobs.stop(match[1]))
+                match=re.fullmatch('/api/tasks/([a-f0-9]{32})/(reply|advance|accept|reject|budget)',self.path)
                 if match:
                     session_id,action=match.groups()
-                    if action=='budget':sessions.set_gpu_budget(session_id,value['gpu_hours'])
+                    session=sessions.show(session_id)
+                    if action in ('advance','accept','reject'):
+                        return self.send(202,jobs.start(action,session,version=value.get('version')))
+                    if action=='budget':
+                        with jobs.lock:
+                            if any(j['task_id']==session['task_id'] and j['status'] in ('queued','running','stopping') for j in jobs.list()):
+                                raise ValueError('请等待当前操作结束再修改预算。')
+                            sessions.set_gpu_budget(session_id,value['gpu_hours'])
                     else:
                         message=value.get('message')
                         if not isinstance(message,str) or not 1<=len(message)<=4000:raise ValueError('Message required')
-                        sessions.clarify(session_id,config['llm'],message)
+                        return self.send(202,jobs.start('reply',session,message))
                     return self.send(200,detail(sessions,session_id))
                 self.send(404,{'error':'Not found'})
             except (ValueError,KeyError,TypeError,OSError,RuntimeError) as error:self.send(400,{'error':str(error)})
     server=ThreadingHTTPServer(('127.0.0.1',port),Handler)
     host='127.0.0.1:'+str(server.server_address[1])
     server.agent_token=token
+    server.jobs=jobs
     return server
 
 
@@ -82,12 +112,15 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root',required=True);parser.add_argument('--config',required=True)
     parser.add_argument('--port',type=int,default=8780)
+    parser.add_argument('--sessions',help='Existing CLI training-sessions directory')
+    parser.add_argument('--harness-root',help='Existing CLI task-harnesses directory')
+    parser.add_argument('--repository',default=str(Path(__file__).resolve().parent.parent))
     args=parser.parse_args()
     config=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
     from .campaign import lease
     root=Path(args.root).resolve();root.mkdir(parents=True,exist_ok=True)
     with lease(root/'console.lock',owner='Task console single writer'):
-        server=make_server(root,config,args.port)
+        server=make_server(root,config,args.port,sessions_root=args.sessions,harness_root=args.harness_root,repository=args.repository)
         print('Vision RSI task console: http://127.0.0.1:'+str(args.port),flush=True)
         try:server.serve_forever()
         finally:server.server_close()
