@@ -59,7 +59,7 @@ class Jobs:
         return result
 
     def start(self, action, session=None, message=None, version=None):
-        if action not in {'advance', 'reply', 'accept', 'reject', 'cpu-demo'}:
+        if action not in {'advance', 'reply', 'accept', 'reject', 'train', 'cpu-demo'}:
             raise ValueError('Unknown action')
         if action != 'cpu-demo' and not session:
             raise ValueError('Session required')
@@ -116,7 +116,9 @@ def execute(folder):
     if action == 'reply':
         if session['versions']:
             from .intent import resolve
-            decision = resolve(request['message'], session, config, root, conversation_summary(session), [])
+            from .task_adapters import training_adapter
+            compatible=training_adapter(session['versions'][-1]['contract'])['implementation_supported']
+            decision = resolve(request['message'], session, config, root, conversation_summary(session), [],training_available=compatible)
             print(decision['reason'], flush=True)
             action = decision['action']
             if action in ('explain', 'stop'):
@@ -137,7 +139,16 @@ def execute(folder):
         session = getattr(store, action)(session['session_id'], request['version'])
         return {'status': session['status'], 'message': conversation_summary(session)}
     if action == 'status':
-        return status(session, root)
+        from .training_runs import TrainingRuns
+        run_root=Path(request['sessions']).parent/'training-runs'
+        if (run_root/'training-runs.sqlite3').exists():
+            runs=TrainingRuns(run_root)
+            try:records=runs.list(session['session_id'])
+            finally:runs.close()
+            if records:action='train'
+        if action=='status':return status(session, root)
+    if action == 'train':
+        return train_and_monitor(session,config,request,folder)
     if action in ('generate', 'check'):
         return advance(session, config, root, repository, generate_backend=action == 'generate', check_backend=action == 'check')
     if action == 'advance':
@@ -150,11 +161,32 @@ def execute(folder):
             contract = latest.get('contract', {})
             if session['pending_request'] or latest.get('review_required') or interface_issues(contract) or task_questions(contract):
                 return {'status': 'blocked', 'message': conversation_summary(session)}
+        from .task_adapters import training_adapter
+        if training_adapter(session['versions'][-1]['contract'])['implementation_supported']:
+            return train_and_monitor(session,config,request,folder)
         result = run_until_blocked(session, config, root, repository, on_progress=lambda message: print(message, flush=True))
         from .harness_progress import summary
         result['message'] = summary(result)
+        if result['status']=='existing_backend_available':
+            return train_and_monitor(session,config,request,folder)
         return result
     raise ValueError('Unsupported action')
+
+
+def train_and_monitor(session,config,request,folder):
+    from .dashboard_training import advance_training
+    storage=Path(request['sessions']).parent
+    deadline=time.monotonic()+3300
+    while True:
+        result=advance_training(session,config,storage)
+        atomic_json(folder/'result.json',result)
+        print(result.get('message',''),flush=True)
+        if result['status'] not in ('submitted','submitting','submission_uncertain','running','waiting'):
+            return result
+        if time.monotonic()>=deadline:
+            result['message']+=' 本次观察结束；远端作业继续运行，可再次点击查看同一作业。'
+            return result
+        time.sleep(15)
 
 
 def supervise(folder):
@@ -188,6 +220,10 @@ def supervise(folder):
                       exit_code=child.returncode, finished_at=time.time())
         if not interrupted and child.returncode == 0 and (str(result.get('status', '')).startswith('blocked') or result.get('status') in {'remote_required', 'generation_prerequisite_missing', 'generation_failed', 'generation_not_dispatched', 'generation_uncertain', 'smoke_uncertain', 'smoke_failed', 'interface_check_failed', 'repair_limit_reached'}):
             record['status'] = 'blocked'
+        if not interrupted and child.returncode==0 and result.get('status') in ('failed','cancelled','timed_out'):
+            record['status']=result['status']
+        if not interrupted and child.returncode==0 and result.get('status') in ('running','waiting','submitted','submission_uncertain'):
+            record['status']='observation_finished'
         if interrupted:
             record['message'] = '本地操作已停止；远端请求或作业可能仍在运行，需查询原记录，不能据此自动重试。'
     except Exception as error:

@@ -24,7 +24,7 @@ def capabilities(config):
             'checks': [
                 {'ready': cpu, 'message': 'CPU 示例实验可运行，无需模型凭据。' if cpu else 'CPU 示例缺少依赖，请先运行：'+sys.executable+' -m pip install "scikit-learn==1.8.0"（Python 3.11+）。'},
                 {'ready': model_ready, 'message': '模型配置与凭据已找到；实际连通性将在请求时验证。' if model_ready else '任务对话暂不可用：请在配置中设置模型，并在启动环境中设置 '+llm.get('api_key_env','DEEPSEEK_API_KEY')+'。CPU 示例不需要它。'},
-                {'ready': False, 'message': '猫狗等通用训练尚未接通；可保存需求。候选后端构建在高级详情中提供。'}]}
+                {'ready': False, 'message': '已接入兼容 COCO 检测任务的训练准备与提交；其他任务仍需对应后端。'}]}
 
 
 def local_host(value):
@@ -48,14 +48,14 @@ def experiment_readiness(session):
         blockers.append('有未完成的需求请求，请先核对原请求结果。')
     if not adapter['implementation_supported']:
         blockers.append('此任务与现有 COCO 检测训练适配器不兼容，尚无可直接启动的训练后端。')
-    else:
-        blockers.append('任务接口兼容 COCO，但工作台尚未接入该适配器的训练提交；需通过 Training CLI 检查配置和运行。')
+
     source = contract.get('data_source')
     if isinstance(source, dict) and source.get('kind') == 'public':
-        blockers.append('公开数据搜索和下载尚未接通，当前没有已校验的数据可供此入口训练。')
-    return {'can_start': False, 'status': 'blocked', 'training_started': False,
+        blockers.append('公开数据不会自动下载；执行前将检查配置中的 COCO 数据路径和内容。')
+    can_start=adapter['implementation_supported'] and not latest.get('review_required') and not session.get('pending_request')
+    return {'can_start': can_start, 'status': 'ready_for_preflight' if can_start else 'blocked', 'training_started': False,
             'blockers': blockers, 'adapter': adapter,
-            'next_step': '需求会保留。候选构建仅生成和检查代码，不等于启动训练；CPU 示例是另一个独立实验。'}
+            'next_step': '点击后检查数据、权重、设备和预算；检查通过后提交训练，并持续查询同一作业。' if can_start else '需求已保留。需先解决上述接口或需求问题。'}
 
 
 def detail(store,session_id):
@@ -111,7 +111,7 @@ def make_server(root,config,port,*,sessions_root=None,harness_root=None,reposito
                 if self.path=='/api/health':
                     from .credentials import read_key
                     key,_=read_key(config.get('llm',{}).get('api_key_env','DEEPSEEK_API_KEY'))
-                    return self.send(200,{'status':'ready','storage':str(root),'execution_enabled':True,'general_training_enabled':False,'llm_key_present':bool(key),'capabilities':capabilities(config)})
+                    return self.send(200,{'status':'ready','storage':str(root),'execution_enabled':True,'general_training_enabled':False,'coco_training_enabled':True,'llm_key_present':bool(key),'capabilities':capabilities(config)})
                 self.send(404,{'error':'Not found'})
             except (ValueError,KeyError,TypeError,OSError) as error:self.send(400,{'error':str(error)})
         def do_HEAD(self):
@@ -146,7 +146,8 @@ def make_server(root,config,port,*,sessions_root=None,harness_root=None,reposito
                     session=sessions.show(session_id)
                     if action=='start':
                         readiness=experiment_readiness(session)
-                        return self.send(409,{'error':'实验未启动：'+'；'.join(readiness['blockers']), 'experiment':readiness})
+                        if not readiness['can_start']:return self.send(409,{'error':'实验未启动：'+'；'.join(readiness['blockers']), 'experiment':readiness})
+                        return self.send(202,jobs.start('train',session))
                     if action in ('advance','accept','reject'):
                         return self.send(202,jobs.start(action,session,version=value.get('version')))
                     if action=='budget':

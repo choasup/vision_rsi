@@ -69,6 +69,23 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(len(self.request('/api/tasks')), 1)
         self.assertEqual(self.request('/api/health')['status'], 'ready')
 
+    def test_supported_start_runs_real_preparation_without_model(self):
+        session=self.request('/api/tasks',{'task_id':'coco','goal':'COCO detection'})
+        contract={'goal':'COCO detection','inputs':{'image':{'type':'image','required':True}},
+                  'output_schema':{'type':'object','properties':{'detections':{'type':'array','items':{'type':'object','properties':{}}}}},
+                  'acceptance':{'metric':'box_AP','threshold':50,'direction':'maximize','evaluation_protocol':'COCO bbox AP'},
+                  'budget':{'gpu_hours':1},'assumptions':[],'open_questions':[],
+                  'example_input':{'sample_id':'one','inputs':{'image':{'type':'image','uri':'image.jpg'}}},'example_output':{'detections':[]}}
+        Sessions(self.root/'sessions').define(session['session_id'],contract)
+        detail=self.request('/api/tasks/'+session['session_id'])
+        self.assertTrue(detail['experiment']['can_start'])
+        for action in ('start','advance'):
+            job=self.request('/api/tasks/'+session['session_id']+'/'+action,{})
+            result=self.wait(job)
+            self.assertEqual(result['status'],'blocked',result)
+            self.assertIn('remote.ssh_host',result['result']['message'])
+            self.assertTrue(Path(result['result']['plan_path']).is_file())
+
     def test_training_preflight_preserves_task_without_dispatch(self):
         task = self.request('/api/tasks', {'goal': '猫狗分类，先跑基线'})
         with self.assertRaises(HTTPError) as failure:
