@@ -61,7 +61,8 @@ def experiment_readiness(session):
 def detail(store,session_id):
     session=store.show(session_id)
     contract=session['versions'][-1]['contract'] if session['versions'] else {}
-    return {'session':session,'summary':summary(session),'experiment':experiment_readiness(session),
+    from .requirements import review_lines
+    return {'review_summary':review_lines(session['versions'][-1].get('review_required',[])) if session['versions'] else [],'session':session,'summary':summary(session),'experiment':experiment_readiness(session),
             'resources':configured_resources(contract) if contract else None,
             'training_started':False,'scope':'任务需求与 CLI 共用；候选构建可推进，通用训练尚未接通。'}
 

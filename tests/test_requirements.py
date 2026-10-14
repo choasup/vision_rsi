@@ -98,3 +98,39 @@ class RequirementsTests(unittest.TestCase):
         result=self.store.clarify(self.session,{'model':'fixture'},'Continue')
         text=summary(result)
         self.assertIn('60 → 40',text);self.assertIn('/accept',text);self.assertIn('/reject',text)
+
+    @patch('vision_rsi.contracts.OpenAICompatibleClient')
+    def test_legacy_budget_null_is_preserved_without_confirmation(self,client):
+        for budget in ({'gpu_hours':10},10):
+            contract=copy.deepcopy(self.contract);contract['budget']=budget
+            contract.pop('gpu_budget_scope',None)
+            self.store.define(self.session,contract)
+            proposed=copy.deepcopy(contract);proposed['budget']=None
+            client.return_value.complete.return_value={'content':json.dumps(proposed)}
+            result=self.store.clarify(self.session,{'model':'fixture'},'继续')
+            self.assertEqual(result['versions'][-1]['contract']['budget'],budget)
+            self.assertNotIn('review_required',result['versions'][-1])
+
+    @patch('vision_rsi.contracts.OpenAICompatibleClient')
+    def test_description_only_rewrite_does_not_require_confirmation(self,client):
+        proposed=copy.deepcopy(self.contract)
+        proposed['output_schema']['description']='只是解释输出格式'
+        for field in proposed['inputs'].values():field['description']='模型接收的内容'
+        client.return_value.complete.return_value={'content':json.dumps(proposed)}
+        result=self.store.clarify(self.session,{'model':'fixture'},'继续')
+        self.assertNotIn('review_required',result['versions'][-1])
+        changed=copy.deepcopy(proposed)
+        changed['output_schema']['properties']['new_field']={'type':'boolean'}
+        self.assertTrue(changes(proposed,changed))
+
+    def test_review_text_shows_decisions_without_model_monologue_or_dicts(self):
+        from vision_rsi.training_cli import conversation_summary
+        session=self.store.show(self.session)
+        session['versions'][-1].update(review_required=[{'path':'data_source',
+            'before':{'kind':'public','location':'公开数据','download_allowed':True},
+            'after':{'kind':'public','location':'COCO','download_allowed':True}}],
+            proposed_contract=self.contract,assistant_message='长篇重复解释'*100)
+        text=conversation_summary(session)
+        self.assertIn('数据来源：公开数据（允许下载） → COCO（允许下载）',text)
+        self.assertNotIn('长篇重复解释',text)
+        self.assertNotIn('download_allowed',text)

@@ -141,6 +141,8 @@ def execute(folder):
     if action in ('generate', 'check'):
         return advance(session, config, root, repository, generate_backend=action == 'generate', check_backend=action == 'check')
     if action == 'advance':
+        if session['versions'] and session['versions'][-1].get('review_required'):
+            return {'status':'requirements_review','message':conversation_summary(session)}
         if not session['versions']:
             session = store.clarify(session['session_id'], config['llm'])
             from .contracts import interface_issues, task_questions

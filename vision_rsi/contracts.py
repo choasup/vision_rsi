@@ -475,6 +475,11 @@ class Sessions:
             json.dumps(contract,allow_nan=False)
             if versions:
                 working=versions[-1].get('proposed_contract',versions[-1]['contract'])
+                # Model omission never revokes an already recorded budget.
+                saved_budget=working.get('budget')
+                if saved_budget is None:saved_budget=versions[-1]['contract'].get('budget')
+                if contract.get('budget') is None and saved_budget is not None:
+                    contract['budget']=saved_budget
                 if 'data_source' not in contract and 'data_source' in working:
                     # Omission is not a request to forget an answered source.
                     contract['data_source']=working['data_source']

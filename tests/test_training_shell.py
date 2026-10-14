@@ -128,7 +128,7 @@ class TrainingShellTests(unittest.TestCase):
             self.assertNotIn('我理解你想做：'+contract['goal']+'\n',text)
             self.assertIn('0.8 → 0.6',text)
             self.assertIn('资源预算',text)
-            self.assertIn('输入“是”确认',text)
+            self.assertIn('接受这些变化，还是保留原需求',text)
             self.assertNotIn('Harness',text)
             config=root/'config.json';config.write_text('{}')
             with patch('builtins.input',side_effect=['是','/quit']), \

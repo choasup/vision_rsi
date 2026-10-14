@@ -121,21 +121,10 @@ def conversation_summary(result):
                          '准备好数据和训练设备后，先估算一次小规模试验的用量，再由你确认上限。'
                          'GPU 小时 = 使用的 GPU 卡数 × 运行小时数。')
     if reviewing:
-        labels={'goal':'任务目标','inputs':'输入内容','output_schema':'输出内容',
-                'acceptance':'验收要求','acceptance.metric':'验收指标',
-                'acceptance.threshold':'效果目标','acceptance.direction':'指标方向',
-                'acceptance.evaluation_protocol':'评测方法','budget':'资源预算'}
-        for change in latest['review_required']:
-            path=change['path']
-            if path=='goal':continue
-            label=labels.get(path,path)
-            if path in ('inputs','output_schema'):
-                lines.append(label+'有调整，可输入 /contract 查看完整草案。')
-            else:
-                lines.append(label+'：'+str(change['before'])+' → '+str(change['after']))
-        lines.append('以上是待确认的新需求，尚未生效。是否正确？')
-        lines.append('输入“是”确认，输入“否”保留原需求，或直接说要修改什么。')
-        return '\n'.join(lines)
+        from .requirements import review_lines
+        return '\n'.join(['有以下需求变化需要你决定：']+
+                         ['- '+line for line in review_lines(latest['review_required'])]+
+                         ['接受这些变化，还是保留原需求？你也可以直接说明要改哪一项。'])
     # Keep authorization gaps in the ledger and execution checks, but do not
     # make a novice choose GPU hours before defining the task.
     questions=task_questions(contract)
