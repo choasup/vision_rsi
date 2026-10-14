@@ -1,5 +1,7 @@
 # 服务器任务控制台（开发预览）
 
+推荐入口：在项目目录运行 `sh ./vision-rsi.sh dashboard`，自动检查配置和端口，并显示访问说明。详见 [简化启动流程](DASHBOARD.md)。下面为手工启动方式。
+
 入口为 `python3 -m vision_rsi.console --root /绝对路径/control-state --config /绝对路径/config.local.json --port 8780`。
 
 监听地址固定为 `127.0.0.1`，Mac/Windows 通过 SSH 隧道访问，不开放公网管理端口：

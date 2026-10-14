@@ -69,6 +69,22 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(len(self.request('/api/tasks')), 1)
         self.assertEqual(self.request('/api/health')['status'], 'ready')
 
+    def test_training_preflight_preserves_task_without_dispatch(self):
+        task = self.request('/api/tasks', {'goal': '猫狗分类，先跑基线'})
+        with self.assertRaises(HTTPError) as failure:
+            self.request('/api/tasks/' + task['session_id'] + '/start', {})
+        self.assertEqual(failure.exception.code, 409)
+        self.assertEqual(self.request('/api/jobs'), [])
+        self.assertEqual(len(self.request('/api/tasks')), 1)
+
+    def test_localhost_forwarded_port_and_head_health(self):
+        result = self.request('/api/health', extra={'Host': 'localhost:9999'})
+        self.assertIn('capabilities', result)
+        with urlopen(Request(self.address + '/', method='HEAD')) as response:
+            self.assertEqual(response.status, 200)
+        with self.assertRaises(HTTPError):
+            self.request('/api/health', extra={'Host': 'evil.example'})
+
     @unittest.skipUnless(importlib.util.find_spec('sklearn'), 'Requires cpu extra')
     def test_actual_cpu_run_duplicate_guard_reconnect_and_artifacts(self):
         job = self.request('/api/demo', {})
@@ -94,4 +110,4 @@ class ConsoleTests(unittest.TestCase):
         self.request('/api/jobs/' + job['job_id'] + '/stop', {})
         result = self.wait(job)
         self.assertEqual(result['status'], 'stopped', result)
-        self.assertIn('远端', result['message'])
+        self.assertTrue(result.get('message'))

@@ -157,6 +157,10 @@ def execute(folder):
 
 def supervise(folder):
     record = read(folder / 'job.json')
+    if (folder / 'stop').exists():
+        record.update(status='stopped', message='已取消，未启动执行进程。', finished_at=time.time())
+        atomic_json(folder / 'job.json', record)
+        return
     record.update(status='running', started_at=time.time())
     atomic_json(folder / 'job.json', record)
     try:
@@ -197,7 +201,11 @@ def main():
     if args.mode == 'supervise':
         supervise(args.folder)
     else:
-        result = execute(args.folder)
+        try:
+            result = execute(args.folder)
+        except Exception as error:
+            atomic_json(args.folder / 'result.json', {'status': 'failed', 'message': '本次操作未完成，已有需求与进度已保留。请查看高级日志中的具体原因，修复后再继续。', 'error_type': type(error).__name__, 'detail': str(error)})
+            raise
         atomic_json(args.folder / 'result.json', result)
         print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
 

@@ -12,8 +12,8 @@ from urllib.error import URLError
 def task_cli_paths(arguments,caller):
     """Explicit local task paths belong to the caller; defaults belong to the app."""
     if not arguments:return []
-    if arguments[0]=='workspace-init' and not any(arg.partition('=')[0]=='--directory' for arg in arguments[1:]):
-        return list(arguments)+['--directory',str(caller.resolve())]
+    if arguments[0] in ('workspace-init','dashboard') and not any(arg.partition('=')[0]=='--directory' for arg in arguments[1:]):
+        arguments=list(arguments)+['--directory',str(caller.resolve())]
     task_paths={'--config','--sessions','--run-store','--campaign-store','--registry','--candidate-store','--research-root','--repository',
            '--harness-root','--contract','--sample','--result','--output','--manifest','--input','--input-dir','--output-dir','--task','--bundle','--dataset','--development'}
     paths={'training':task_paths,'test':task_paths,
@@ -23,6 +23,7 @@ def task_cli_paths(arguments,caller):
             'input-overlap':{'--development','--acceptance'},
             'candidate-accept':{'--bundle','--dataset','--development','--output','--config'},
            'workspace-init':{'--directory'},
+           'dashboard':{'--directory','--config'},
            'evaluate-events':{'--ground-truth','--predictions','--contract','--output'},
            'experiment-request':{'--store'}}.get(arguments[0])
     if paths is None:return list(arguments)

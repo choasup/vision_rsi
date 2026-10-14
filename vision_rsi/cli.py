@@ -8,6 +8,7 @@ def show_help():
         description='Vision RSI Agent: define a task, run bounded research, and test a validated capability.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''Start here:
+  dashboard
   workspace-init --directory PATH
   training start --task-id TASK --goal "Describe requirements" --interactive
   training list
@@ -22,7 +23,7 @@ Single, joint-image and video inputs follow the task contract. General model/har
 adaptation and video training are incomplete; current real training uses the COCO adapter.
 Legacy run/demo/compare commands use synthetic fixtures and do not establish RSI quality.''')
     parser.add_argument('command',nargs='?',choices=[
-        'workspace-init','training','test','capabilities','doctor','llm-usage','experiment-request',
+        'dashboard','workspace-init','training','test','capabilities','doctor','llm-usage','experiment-request',
         'candidate','candidate-run','candidate-evaluate','candidate-accept','input-overlap','study','evaluate-coco','evaluate-events','resources','resources-train',
         'resources-equivalence','baseline-evaluate','baseline-watch','baseline-status','baseline-audit',
         'remote-check','llm-check','coco-train','serve','job-submit','job-status','job-logs','job-cancel',
@@ -33,6 +34,9 @@ Legacy run/demo/compare commands use synthetic fixtures and do not establish RSI
 def main():
     if len(sys.argv)==1 or sys.argv[1] in ('--help','-h'):
         return show_help()
+    if sys.argv[1]=='dashboard':
+        from .dashboard import main as dashboard_main
+        return dashboard_main(sys.argv[2:])
     if sys.argv[1]=='workspace-init':
         from .workspace import main as workspace_main
         return workspace_main(sys.argv[2:])
