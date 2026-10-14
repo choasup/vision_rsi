@@ -74,6 +74,11 @@ class ConsoleTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as failure:
             self.request('/api/tasks/' + task['session_id'] + '/start', {})
         self.assertEqual(failure.exception.code, 409)
+        failure_body=json.load(failure.exception)
+        self.assertFalse(failure_body['experiment']['can_start'])
+        detail=self.request('/api/tasks/'+task['session_id'])
+        self.assertEqual(detail['experiment'],failure_body['experiment'])
+        self.assertTrue(detail['experiment']['blockers'])
         self.assertEqual(self.request('/api/jobs'), [])
         self.assertEqual(len(self.request('/api/tasks')), 1)
 

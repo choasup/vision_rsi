@@ -33,10 +33,35 @@ def local_host(value):
     return bool(match and (match[2] is None or 1 <= int(match[2]) <= 65535))
 
 
+def experiment_readiness(session):
+    """Report actual console execution limits; no API calls or task rewriting."""
+    from .task_adapters import training_adapter
+    latest = session['versions'][-1] if session.get('versions') else {}
+    contract = latest.get('contract') or {}
+    adapter = training_adapter(contract)
+    blockers = []
+    if not contract:
+        blockers.append('需求已保存，尚未形成可执行的任务定义。')
+    if latest.get('review_required'):
+        blockers.append('需求变更尚未确认。')
+    if session.get('pending_request'):
+        blockers.append('有未完成的需求请求，请先核对原请求结果。')
+    if not adapter['implementation_supported']:
+        blockers.append('此任务与现有 COCO 检测训练适配器不兼容，尚无可直接启动的训练后端。')
+    else:
+        blockers.append('任务接口兼容 COCO，但工作台尚未接入该适配器的训练提交；需通过 Training CLI 检查配置和运行。')
+    source = contract.get('data_source')
+    if isinstance(source, dict) and source.get('kind') == 'public':
+        blockers.append('公开数据搜索和下载尚未接通，当前没有已校验的数据可供此入口训练。')
+    return {'can_start': False, 'status': 'blocked', 'training_started': False,
+            'blockers': blockers, 'adapter': adapter,
+            'next_step': '需求会保留。候选构建仅生成和检查代码，不等于启动训练；CPU 示例是另一个独立实验。'}
+
+
 def detail(store,session_id):
     session=store.show(session_id)
     contract=session['versions'][-1]['contract'] if session['versions'] else {}
-    return {'session':session,'summary':summary(session),
+    return {'session':session,'summary':summary(session),'experiment':experiment_readiness(session),
             'resources':configured_resources(contract) if contract else None,
             'training_started':False,'scope':'任务需求与 CLI 共用；候选构建可推进，通用训练尚未接通。'}
 
@@ -118,7 +143,9 @@ def make_server(root,config,port,*,sessions_root=None,harness_root=None,reposito
                 if match:
                     session_id,action=match.groups()
                     session=sessions.show(session_id)
-                    if action=='start':return self.send(409,{'error':'当前任务的自动训练后端尚未接通，需求已保存。可以先体验 CPU 示例，或在高级详情中构建候选后端。'})
+                    if action=='start':
+                        readiness=experiment_readiness(session)
+                        return self.send(409,{'error':'实验未启动：'+'；'.join(readiness['blockers']), 'experiment':readiness})
                     if action in ('advance','accept','reject'):
                         return self.send(202,jobs.start(action,session,version=value.get('version')))
                     if action=='budget':
